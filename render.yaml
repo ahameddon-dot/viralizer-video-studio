@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: viralizer-video-studio
+    runtime: docker
+    healthCheckPath: /health
+    envVars:
+      - key: MCP_SERVER_URL
+        value: https://mcp.viralizer.ai/mcp
+      - key: MCP_TOOL_NAME
+        value: analyze_topic
+      - key: MCP_TOPIC_ARGUMENT
+        value: keyword
+      - key: MCP_API_KEY
+        sync: false
+      - key: PIXVERSE_API_KEY
+        sync: false
+      - key: RUNWAYML_API_SECRET
+        sync: false
+      - key: HEYGEN_API_KEY
+        sync: false
+      - key: APP_DATA_DIR
+        value: /var/data
+      - key: DAILY_TRENDS_ENABLED
+        value: "true"
+      - key: DAILY_TRENDS_TIME
+        value: "07:00"
+    disk:
+      name: viralizer-data
+      mountPath: /var/data
+      sizeGB: 1

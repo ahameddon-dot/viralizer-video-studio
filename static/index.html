@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Viralizer Video Studio</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090611;--card:#151022;--purple:#8b5cf6;--muted:#aaa2ba}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:radial-gradient(circle at 80% 0,#31145b 0,transparent 35%),var(--bg);color:#fff;min-height:100vh}
+    main{max-width:920px;margin:auto;padding:48px 20px}h1{font-size:clamp(32px,6vw,58px);margin:0 0 8px}.sub{color:var(--muted);margin-bottom:32px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#151022dd;border:1px solid #342746;border-radius:20px;padding:22px}label{display:block;font-weight:700;margin-bottom:9px}textarea,input,select{width:100%;background:#0d0915;color:#fff;border:1px solid #45345d;border-radius:12px;padding:12px;font:inherit}textarea{min-height:290px;resize:vertical}.row{display:flex;gap:12px;margin-top:14px}.row>*{flex:1}button{width:100%;border:0;border-radius:13px;padding:15px;font-weight:800;font-size:16px;color:#fff;background:linear-gradient(110deg,#7c3aed,#a855f7);cursor:pointer;margin-top:18px}button:disabled{opacity:.55;cursor:wait}.status{min-height:24px;color:#c4b5fd;margin-top:14px}.video{width:100%;border-radius:14px;margin-top:14px;background:#000}.hint{font-size:13px;color:var(--muted);margin-top:8px}.topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-top:14px}.topic-card{overflow:hidden;text-align:left;margin:0;padding:0;background:#100a1a;border:1px solid #45345d}.topic-card img{width:100%;height:105px;object-fit:cover;display:block}.topic-card span{display:block;padding:12px;line-height:1.35}.topic-card small{display:block;color:#c4b5fd;margin-top:5px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.toolbar button{width:auto;margin:0;padding:10px 16px}.filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.filters button{width:auto;margin:0;padding:8px 13px;background:#241737;border:1px solid #51386e;font-size:13px}.filters button.active{background:#7c3aed;border-color:#a78bfa}.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}.kpi{background:#0d0915;border:1px solid #45345d;border-radius:14px;padding:15px}.kpi small{display:block;color:var(--muted);margin-bottom:5px}.kpi strong{font-size:24px}.metadata-grid{display:grid;grid-template-columns:1.3fr .7fr;gap:18px}.metadata-fields{display:grid;gap:13px}.thumbnail-preview{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:13px;background:#090611;border:1px solid #45345d}.daily-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:15px}.daily-topic{background:#0d0915;border:1px solid #45345d;border-radius:14px;padding:15px}.daily-topic h3{margin:8px 0;font-size:16px}.badge{display:inline-block;background:#6d28d9;border-radius:999px;padding:4px 9px;font-size:11px}.tablewrap{overflow:auto;margin-top:16px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:10px;border-bottom:1px solid #352746;white-space:nowrap}th{color:#c4b5fd}@media(max-width:700px){.grid,.metadata-grid{grid-template-columns:1fr}.row{flex-direction:column}.kpis{grid-template-columns:1fr}}
+    .main-tabs{display:flex;gap:10px;margin-bottom:20px}.main-tabs button{width:auto;margin:0;background:#21162f;border:1px solid #4c3566}.main-tabs button.active{background:linear-gradient(110deg,#7c3aed,#a855f7)}.betting-controls{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end}.betting-list{display:grid;gap:14px;margin-top:16px}.betting-card{background:#0d0915;border:1px solid #45345d;border-radius:16px;padding:17px}.betting-card h3{margin:8px 0}.market-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin:12px 0}.market-metrics div{background:#171021;border-radius:9px;padding:9px}.market-metrics small{display:block;color:var(--muted)}.source-link{color:#c4b5fd}.warning{border-left:3px solid #f59e0b;padding-left:10px;color:#fcd34d}.early{border-color:#a855f7}
+  </style>
+</head>
+<body><main>
+  <h1>Turn hot topics into video</h1>
+  <p class="sub">Review the outline returned by your MCP, then send its video concept directly to PixVerse.</p>
+  <nav class="main-tabs"><button class="active" id="hotTab">HOT TOPICS</button><button id="regionalTab">SAUDI &amp; ARABIC TOPICS</button><button id="bettingTab">BETTING TOPICS</button></nav>
+  <section id="regionalView" hidden>
+    <section class="card" style="margin-bottom:18px"><h2 style="margin-top:0">SAUDI &amp; ARABIC TOPICS</h2><p class="hint">A separate worldwide scan of English and Arabic coverage related to Saudi Arabia, the Gulf, MENA, and Arabic-language audiences.</p><div class="row"><input id="regionalSearch" placeholder="Search Saudi, Riyadh, AI, business, sports, entertainment..."><button id="scanRegional" style="margin-top:0">Get Saudi &amp; Arabic topics</button></div><div class="filters" id="regionalFilters"><button class="active" data-region="ALL">ALL</button><button data-region="Saudi Arabia">SAUDI ARABIA</button><button data-region="السعودية">السعودية</button><button data-region="الخليج">الخليج</button><button data-region="محتوى عربي">ARABIC CONTENT</button><button data-region="MENA">MENA</button></div><div class="status" id="regionalStatus">Click the button to scan worldwide sources.</div></section>
+    <div class="betting-list" id="regionalTopics"></div>
+  </section>
+  <section id="bettingView" hidden>
+    <section class="card" style="margin-bottom:18px"><h2 style="margin-top:0">BETTING TOPICS</h2><p class="hint">Prediction-market opportunities from Polymarket + Kalshi. Prices show what traders are pricing, not confirmed facts.</p><div class="betting-controls"><div><label for="bettingSearch">Search markets</label><input id="bettingSearch" placeholder="NVIDIA, OpenAI, Bitcoin, Trump, Fed, Tesla, Oscars"></div><button id="scanBetting" style="margin:0">Scan betting topics</button><select id="bettingSort"><option value="trending">Trending</option><option value="moving">Fastest moving</option><option value="volume">Highest volume</option><option value="viralizer">Best Viralizer opportunity</option><option value="newest">Newest</option></select></div><div class="filters" id="bettingFilters"><button class="active" data-bet="ALL">ALL</button><button data-bet="POLYMARKET">POLYMARKET</button><button data-bet="KALSHI">KALSHI</button><button data-bet="FINANCE">FINANCE</button><button data-bet="CRYPTO">CRYPTO</button><button data-bet="POLITICS">POLITICS</button><button data-bet="TECH / AI">TECH / AI</button><button data-bet="SPORTS">SPORTS</button><button data-bet="ENTERTAINMENT">ENTERTAINMENT</button><button data-bet="ECONOMY">ECONOMY</button></div><div class="status" id="bettingStatus">Click Scan betting topics to query Polymarket, Kalshi, and Viralizer.</div></section>
+    <h2>EARLY SIGNALS</h2><div class="betting-list" id="earlySignals"></div><h2>HOTTEST BETTING TOPICS TODAY</h2><div class="betting-list" id="bettingTopics"></div>
+  </section>
+  <div id="hotView">
+  <section class="card" style="margin-bottom:18px">
+    <div class="toolbar"><div><label style="margin:0">Daily trend discovery</label><span class="hint" id="dailySchedule">Fresh public trends ready for later Viralizer validation</span></div><button id="runDaily">Run daily discovery</button></div>
+    <div class="status" id="dailyStatus">Checking for the latest report...</div>
+    <div class="daily-grid" id="dailyTopFive"></div>
+    <div class="filters" id="dailyCategoryFilters"></div>
+    <div class="tablewrap" id="dailyTable"></div>
+  </section>
+  <section class="card" style="margin-bottom:18px">
+    <div class="toolbar"><div><label style="margin:0">Current hot topics</label><span class="hint">Live from Viralizer MCP</span></div><button id="refreshTopics">Get current topics</button></div>
+    <div class="status" id="topicsStatus"></div>
+    <div class="filters" id="topicFilters" hidden>
+      <button class="active" data-filter="all">All</button><button data-filter="google">Google</button><button data-filter="twitter">Twitter/X</button><button data-filter="US">United States</button><button data-filter="business">Business</button><button data-filter="entertainment">Entertainment</button>
+    </div>
+    <div class="topics" id="topics"></div>
+  </section>
+  <section class="card" style="margin-bottom:18px">
+    <label for="topic">What topic should the MCP research?</label>
+    <div class="row"><input id="topic" placeholder="Example: NVIDIA's newest AI platform"><button id="getContent" style="margin-top:0">Get content from MCP</button></div>
+    <div class="status" id="mcpStatus"></div>
+  </section>
+  <section class="card" id="metadataPanel" style="margin-bottom:18px" hidden>
+    <label style="font-size:20px">Video generator content</label>
+    <div class="kpis"><div class="kpi"><small>Estimated resonance</small><strong id="resonanceKpi">—</strong></div><div class="kpi"><small>Viral topic rank</small><strong id="rankKpi">—</strong></div><div class="kpi"><small>Total audience</small><strong id="audienceKpi">—</strong></div></div>
+    <div class="metadata-grid">
+      <div class="metadata-fields">
+        <div><label for="suggestedTitle">Suggested title</label><input id="suggestedTitle"></div>
+        <div><label for="hookSuggestion">Hook</label><input id="hookSuggestion" list="hookOptions"><datalist id="hookOptions"></datalist><p class="hint">Select a suggestion or type your own hook.</p></div>
+        <div><label for="tagsKeywords">Tags and keywords</label><input id="tagsKeywords" placeholder="#topic, keyword, another keyword"></div>
+      </div>
+      <div><label for="thumbnailSelect">Thumbnail</label><select id="thumbnailSelect"></select><img id="thumbnailPreview" class="thumbnail-preview" alt="Selected thumbnail preview"></div>
+    </div>
+  </section>
+  <div class="grid">
+    <section class="card">
+      <label for="content">MCP topic content (JSON)</label>
+      <textarea id="content" spellcheck="false"></textarea>
+      <p class="hint">This is populated automatically by the MCP. You can still edit it before generating.</p>
+    </section>
+    <section class="card">
+      <label for="videoProvider">AI video generator</label>
+      <select id="videoProvider"></select>
+      <p class="hint" id="providerNote">Loading available providers...</p>
+      <label for="prompt">PixVerse prompt preview</label>
+      <textarea id="prompt" placeholder="Leave empty to build the prompt automatically from the MCP content."></textarea>
+      <div class="row">
+        <div><label for="duration">Duration</label><select id="duration"><option>5</option><option>8</option><option>10</option><option selected>15</option></select><p class="hint">15 seconds is recommended for explanatory videos.</p></div>
+        <div><label for="quality">Quality</label><select id="quality"><option>720p</option><option>1080p</option><option>540p</option></select></div>
+      </div>
+      <button id="generate">Generate video with PixVerse</button>
+      <div class="status" id="status"></div>
+      <div id="result"></div>
+    </section>
+  </div>
+  </div>
+  <script>
+    const content = document.querySelector('#content'), prompt = document.querySelector('#prompt');
+    const button = document.querySelector('#generate'), status = document.querySelector('#status'), result = document.querySelector('#result');
+    const videoProvider=document.querySelector('#videoProvider'), providerNote=document.querySelector('#providerNote');let providerCatalog=[];
+    const topic = document.querySelector('#topic'), getContent = document.querySelector('#getContent'), mcpStatus = document.querySelector('#mcpStatus');
+    const topics = document.querySelector('#topics'), topicsStatus = document.querySelector('#topicsStatus'), refreshTopics = document.querySelector('#refreshTopics');
+    const topicFilters = document.querySelector('#topicFilters'); let allHotTopics=[]; let activeTopicFilter='all';
+    const metadataPanel=document.querySelector('#metadataPanel'), suggestedTitle=document.querySelector('#suggestedTitle'), hookSuggestion=document.querySelector('#hookSuggestion'), hookOptions=document.querySelector('#hookOptions'), tagsKeywords=document.querySelector('#tagsKeywords');
+    const thumbnailSelect=document.querySelector('#thumbnailSelect'), thumbnailPreview=document.querySelector('#thumbnailPreview'), resonanceKpi=document.querySelector('#resonanceKpi'), rankKpi=document.querySelector('#rankKpi'), audienceKpi=document.querySelector('#audienceKpi');
+    const runDaily=document.querySelector('#runDaily'), dailyStatus=document.querySelector('#dailyStatus'), dailyTopFive=document.querySelector('#dailyTopFive'), dailyTable=document.querySelector('#dailyTable'), dailySchedule=document.querySelector('#dailySchedule'),dailyCategoryFilters=document.querySelector('#dailyCategoryFilters');let latestDailyReport=null;let activeDailyCategory='ALL';
+    const hotTab=document.querySelector('#hotTab'),regionalTab=document.querySelector('#regionalTab'),bettingTab=document.querySelector('#bettingTab'),hotView=document.querySelector('#hotView'),regionalView=document.querySelector('#regionalView'),bettingView=document.querySelector('#bettingView'),scanBetting=document.querySelector('#scanBetting'),bettingSearch=document.querySelector('#bettingSearch'),bettingStatus=document.querySelector('#bettingStatus'),earlySignals=document.querySelector('#earlySignals'),bettingTopics=document.querySelector('#bettingTopics'),bettingFilters=document.querySelector('#bettingFilters'),bettingSort=document.querySelector('#bettingSort'),scanRegional=document.querySelector('#scanRegional'),regionalSearch=document.querySelector('#regionalSearch'),regionalStatus=document.querySelector('#regionalStatus'),regionalTopics=document.querySelector('#regionalTopics'),regionalFilters=document.querySelector('#regionalFilters');let bettingData=[];let bettingFilter='ALL';let regionalData=[];let regionalFilter='ALL';
+    const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
+    async function json(response){const data=await response.json();if(!response.ok)throw new Error(data.detail||'Request failed');return data}
+    const metric=value=>value===null||value===undefined||value===''?'—':value;
+    function selectMainTab(active){[hotTab,regionalTab,bettingTab].forEach(tab=>tab.classList.toggle('active',tab===active));hotView.hidden=active!==hotTab;regionalView.hidden=active!==regionalTab;bettingView.hidden=active!==bettingTab}
+    hotTab.onclick=()=>selectMainTab(hotTab);regionalTab.onclick=()=>selectMainTab(regionalTab);bettingTab.onclick=()=>selectMainTab(bettingTab);
+    function renderRegional(){regionalTopics.replaceChildren();const list=regionalData.filter(item=>regionalFilter==='ALL'||item.section===regionalFilter);list.forEach(item=>{const card=document.createElement('article');card.className='betting-card';card.dir='auto';const badge=document.createElement('span');badge.className='badge';badge.textContent=`#${item.rank} · ${item.section}`;const heading=document.createElement('h3');heading.textContent=item.topic;const info=document.createElement('p');info.className='hint';info.textContent=`${item.languages.join(' + ')} · ${item.global_mentions} worldwide source signal${item.global_mentions===1?'':'s'} · ${new Date(item.published_at).toLocaleString()}`;const actions=document.createElement('div');actions.className='row';const video=document.createElement('button');video.textContent='Generate video';video.onclick=()=>getDailyTopicReport(item,video);const pdf=document.createElement('button');pdf.textContent='Get PDF';pdf.style.background='#334155';pdf.onclick=()=>getDailyTopicPdf(item,pdf);const source=document.createElement('a');source.href=item.source_urls[0]||'#';source.target='_blank';source.rel='noopener';source.className='source-link';source.textContent='Open news source';actions.append(video,pdf,source);card.append(badge,heading,info,actions);regionalTopics.append(card)});if(!list.length)regionalTopics.textContent='No matching regional topics found.'}
+    scanRegional.onclick=async()=>{scanRegional.disabled=true;regionalStatus.textContent='Scanning worldwide English and Arabic sources...';try{const data=await fetch(`/api/regional/topics?query=${encodeURIComponent(regionalSearch.value.trim())}`).then(json);regionalData=data.topics;regionalStatus.textContent=`${data.count} Saudi and Arabic-related topics found worldwide.`;renderRegional()}catch(error){regionalStatus.textContent=error.message}finally{scanRegional.disabled=false}};regionalFilters.onclick=event=>{const selected=event.target.closest('[data-region]');if(!selected)return;regionalFilter=selected.dataset.region;regionalFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderRegional()};regionalSearch.onkeydown=event=>{if(event.key==='Enter')scanRegional.click()};
+    const money=value=>value?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact'}).format(value):'Not provided';
+    function bettingCard(item,index,early=false){const card=document.createElement('article');card.className=`betting-card${early?' early':''}`;const platforms=(item.platforms||[]).map(p=>`${p.source}: ${metric(p.probability)}% (${p.change_24h===null?'change not provided':`${p.change_24h>=0?'+':''}${p.change_24h} pp`})`).join(' · ');const viral=item.viralizer||{};card.innerHTML=`<span class="badge">#${index+1} · ${item.trend_status}</span> ${item.cross_market_signal?`<span class="badge">${item.cross_market_signal}</span>`:''}<h3></h3><div class="warning">PREDICTION MARKET DATA: ${platforms}</div><div class="market-metrics"><div><small>Source</small>${item.source}</div><div><small>Volume</small>${money(item.volume)}</div><div><small>Event date</small>${item.event_date?new Date(item.event_date).toLocaleDateString():'Not provided'}</div><div><small>Prediction signal</small>${item.prediction_signal}</div><div><small>Viralizer rank</small>${metric(viral.rank)}</div><div><small>Viralizer score</small>${metric(viral.score)}</div><div><small>Resonance</small>${metric(viral.resonance)}</div><div><small>Boost reach</small>${metric(viral.boost_reach)}</div><div><small>Remaining reach</small>${metric(viral.remaining_reach)}</div><div><small>Competition</small>${metric(viral.competition)}</div></div><p><b>Why odds are moving:</b> ${item.why_odds_moving}</p><p><b>VIRALIZER - Why it matters:</b> ${item.why_it_matters||item.viralizer_error||'Not provided'}</p><p><b>Best content angle:</b> ${item.best_content_angle||'Not provided'}</p><p><b>Suggested headline:</b> ${item.suggested_headline||item.topic}</p><p><b>Action:</b> ${item.action}</p>`;card.querySelector('h3').textContent=item.topic;const actions=document.createElement('div');actions.className='row';const video=document.createElement('button');video.textContent='Generate video';video.onclick=()=>getDailyTopicReport(item,video);const pdf=document.createElement('button');pdf.textContent='Get PDF';pdf.style.background='#334155';pdf.onclick=()=>getDailyTopicPdf(item,pdf);const link=document.createElement('a');link.href=item.source_url;link.target='_blank';link.rel='noopener';link.className='source-link';link.textContent='Open source market';actions.append(video,pdf,link);card.append(actions);return card}
+    function renderBetting(){let list=bettingData.filter(item=>bettingFilter==='ALL'||item.source===bettingFilter||item.category===bettingFilter);const mode=bettingSort.value;list=[...list].sort((a,b)=>mode==='moving'?Math.abs(b.change_24h||0)-Math.abs(a.change_24h||0):mode==='volume'?b.volume-a.volume:mode==='viralizer'?(Number(a.viralizer?.rank)||9999)-(Number(b.viralizer?.rank)||9999):mode==='newest'?new Date(b.created_at||0)-new Date(a.created_at||0):0);earlySignals.replaceChildren();bettingTopics.replaceChildren();list.filter(x=>['EXPLODING','VERY HOT'].includes(x.trend_status)).slice(0,5).forEach((x,i)=>earlySignals.append(bettingCard(x,i,true)));list.forEach((x,i)=>bettingTopics.append(bettingCard(x,i)));if(!list.length)bettingTopics.textContent='No content-worthy markets match this filter.'}
+    scanBetting.onclick=async()=>{scanBetting.disabled=true;bettingStatus.textContent='Scanning Polymarket and Kalshi, then checking Viralizer opportunities...';try{const data=await fetch(`/api/betting/topics?query=${encodeURIComponent(bettingSearch.value.trim())}`).then(json);bettingData=data.topics;bettingStatus.textContent=`${bettingData.length} meaningful prediction-market topics found. Market probabilities are trader prices, not confirmed facts.`;renderBetting()}catch(error){bettingStatus.textContent=error.message}finally{scanBetting.disabled=false}};
+    bettingFilters.onclick=event=>{const selected=event.target.closest('[data-bet]');if(!selected)return;bettingFilter=selected.dataset.bet;bettingFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderBetting()};bettingSort.onchange=renderBetting;bettingSearch.onkeydown=event=>{if(event.key==='Enter')scanBetting.click()};
+    function renderDailyReport(report){
+      latestDailyReport=report;
+      dailyTopFive.replaceChildren();dailyTable.replaceChildren();
+      dailyStatus.textContent=`Latest report: ${new Date(report.generated_at).toLocaleString()}. ${report.candidate_count} discovered; ${report.pending_validation_count??report.topics?.length??0} ready for later validation.`;
+      (report.top_5||[]).forEach(item=>{const card=document.createElement('article');card.className='daily-topic';const badge=document.createElement('span');badge.className='badge';badge.textContent=`#${item.rank} · ${item.discovery_heat}`;const title=document.createElement('h3');title.textContent=item.topic;const info=document.createElement('div');info.className='hint';info.textContent=`${item.category} · ${item.mentions} public signal${item.mentions===1?'':'s'} · Pending Viralizer validation`;card.append(badge,title,info);dailyTopFive.append(card)});
+      dailyCategoryFilters.replaceChildren();['ALL',...Object.keys(report.category_topics||{})].forEach(name=>{const filter=document.createElement('button');filter.textContent=name==='ALL'?`ALL (${report.topics.length})`:`${name} (${(report.category_topics[name]||[]).length})`;filter.dataset.dailyCategory=name;filter.classList.toggle('active',name===activeDailyCategory);dailyCategoryFilters.append(filter)});
+      renderDailyRows(activeDailyCategory==='ALL'?report.topics:(report.category_topics?.[activeDailyCategory]||[]));
+    }
+    function renderDailyRows(items){
+      dailyTable.replaceChildren();if(!items.length){dailyTable.textContent='No fresh topics were found in this category.';return}
+      const table=document.createElement('table'),head=document.createElement('thead'),body=document.createElement('tbody'),trh=document.createElement('tr');
+      ['#','Topic and report','Category','Sources','Heat','Cross-source signals','Published'].forEach(label=>{const th=document.createElement('th');th.textContent=label;trh.append(th)});head.append(trh);
+      items.forEach((item,index)=>{const tr=document.createElement('tr');const rankCell=document.createElement('td');rankCell.textContent=item.category_rank||item.rank||index+1;const topicCell=document.createElement('td');const topicTitle=document.createElement('div');topicTitle.textContent=item.topic;topicTitle.dir='auto';topicTitle.style.cssText='white-space:normal;min-width:240px;margin-bottom:8px';const actions=document.createElement('div');actions.style.cssText='display:flex;gap:7px;flex-wrap:wrap';const reportButton=document.createElement('button');reportButton.textContent='Generate video';reportButton.style.cssText='width:auto;margin:0;padding:8px 12px;font-size:12px';reportButton.onclick=()=>getDailyTopicReport(item,reportButton);const pdfButton=document.createElement('button');pdfButton.textContent='Get PDF';pdfButton.style.cssText='width:auto;margin:0;padding:8px 12px;font-size:12px;background:#334155';pdfButton.onclick=()=>getDailyTopicPdf(item,pdfButton);actions.append(reportButton,pdfButton);topicCell.append(topicTitle,actions);tr.append(rankCell,topicCell);[item.category,(item.source_platforms||['Google News']).join(' + '),item.discovery_heat,item.mentions,new Date(item.published_at).toLocaleString()].forEach(value=>{const td=document.createElement('td');td.textContent=metric(value);tr.append(td)});body.append(tr)});table.append(head,body);dailyTable.append(table);
+    }
+    dailyCategoryFilters.onclick=event=>{const selected=event.target.closest('[data-daily-category]');if(!selected||!latestDailyReport)return;activeDailyCategory=selected.dataset.dailyCategory;dailyCategoryFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderDailyRows(activeDailyCategory==='ALL'?latestDailyReport.topics:(latestDailyReport.category_topics?.[activeDailyCategory]||[]))};
+    async function getDailyTopicReport(item,reportButton){
+      reportButton.disabled=true;reportButton.textContent='Loading...';dailyStatus.textContent=`Getting the Viralizer report for ${item.topic}...`;
+      try{const outline=await fetch('/api/daily/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:item.topic})}).then(json);topic.value=outline.topic||item.topic;applyOutline(outline);reportButton.textContent='Report loaded';dailyStatus.textContent=`Viralizer report loaded for ${item.topic}.`;metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
+      catch(error){reportButton.disabled=false;reportButton.textContent='Generate video';dailyStatus.textContent=`Could not prepare this topic: ${error.message}`}
+    }
+    async function getDailyTopicPdf(item,pdfButton){
+      pdfButton.disabled=true;pdfButton.textContent='Building PDF...';dailyStatus.textContent=`Getting the full Viralizer report and building its PDF for ${item.topic}...`;
+      try{const response=await fetch('/api/daily/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:item.topic})});if(!response.ok){const error=await response.json();throw new Error(error.detail||'Could not create PDF')}const blob=await response.blob();const disposition=response.headers.get('content-disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/i);const filename=match?.[1]||'viralizer-report.pdf';const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);pdfButton.textContent='Download again';dailyStatus.textContent=`Full Viralizer PDF is ready for ${item.topic}.`}
+      catch(error){pdfButton.textContent='Try PDF again';dailyStatus.textContent=`Could not get the Viralizer PDF: ${error.message}`}
+      finally{pdfButton.disabled=false}
+    }
+    async function loadLatestDaily(){try{renderDailyReport(await fetch('/api/daily/latest').then(json))}catch(error){dailyStatus.textContent=error.message.includes('No daily')?'No daily report yet. Click Run daily discovery or wait for the scheduled run.':error.message}}
+    async function pollDaily(){try{const state=await fetch('/api/daily/status').then(json);dailySchedule.textContent=`Runs daily at ${state.schedule} while the app is running · Viralizer validation is postponed`;runDaily.disabled=state.running;if(state.running){dailyStatus.textContent=state.progress;setTimeout(pollDaily,4000);return}if(state.last_error)dailyStatus.textContent=`Daily workflow error: ${state.last_error}`;else await loadLatestDaily()}catch(error){dailyStatus.textContent=error.message;runDaily.disabled=false}}
+    runDaily.onclick=async()=>{runDaily.disabled=true;dailyTopFive.replaceChildren();dailyTable.replaceChildren();dailyStatus.textContent='Starting daily discovery...';try{await fetch('/api/daily/run',{method:'POST'}).then(json);setTimeout(pollDaily,1000)}catch(error){dailyStatus.textContent=error.message;runDaily.disabled=false}};
+    function refreshProviderUI(){
+      const selected=providerCatalog.find(item=>item.id===videoProvider.value);if(!selected)return;
+      providerNote.textContent=selected.description+(selected.configured?' — ready':selected.enabled?' — API key required':' — not yet available');
+      button.textContent=`Generate video with ${selected.name}`;
+      document.querySelector('label[for="prompt"]').textContent=`${selected.name} prompt preview`;
+    }
+    fetch('/api/video/providers').then(r=>r.json()).then(data=>{
+      providerCatalog=data.providers;videoProvider.replaceChildren();
+      data.providers.forEach(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=`${item.name}${item.configured?'':' — '+(item.enabled?'not configured':'coming soon')}`;option.disabled=!item.enabled;videoProvider.append(option)});
+      videoProvider.value='pixverse';refreshProviderUI();
+    }).catch(error=>providerNote.textContent=error.message);
+    videoProvider.onchange=refreshProviderUI;
+    function updateOutline(changes){
+      try{const outline=JSON.parse(content.value);Object.assign(outline,changes);content.value=JSON.stringify(outline,null,2);prompt.value=''}catch(error){mcpStatus.textContent='The MCP JSON must be valid before editing generator content.'}
+    }
+    function renderGeneratorContent(outline){
+      metadataPanel.hidden=false;suggestedTitle.value=outline.suggested_title||outline.hook||'';hookSuggestion.value=outline.hook||'';tagsKeywords.value=(outline.hashtags||[]).join(', ');
+      resonanceKpi.textContent=outline.estimated_resonance||'—';rankKpi.textContent=outline.viral_rank?`#${outline.viral_rank}`:'—';audienceKpi.textContent=outline.total_audience||'—';
+      hookOptions.replaceChildren();[outline.hook,...(outline.alternative_hooks||[])].filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index).forEach(value=>{const option=document.createElement('option');option.value=value;hookOptions.append(option)});
+      thumbnailSelect.replaceChildren();(outline.thumbnails||[]).forEach((item,index)=>{const option=document.createElement('option');option.value=item.url;option.textContent=item.label||`Thumbnail ${index+1}`;thumbnailSelect.append(option)});
+      const chosen=outline.selected_thumbnail||(outline.thumbnails||[])[0]?.url||'';thumbnailSelect.value=chosen;thumbnailPreview.src=/^https?:\/\//.test(chosen)?chosen:'';thumbnailPreview.hidden=!thumbnailPreview.src;
+    }
+    function applyOutline(outline){content.value=JSON.stringify(outline,null,2);prompt.value='';renderGeneratorContent(outline)}
+    suggestedTitle.oninput=()=>updateOutline({suggested_title:suggestedTitle.value});
+    hookSuggestion.oninput=()=>updateOutline({hook:hookSuggestion.value});
+    tagsKeywords.oninput=()=>updateOutline({hashtags:tagsKeywords.value.split(',').map(x=>x.trim()).filter(Boolean)});
+    thumbnailSelect.onchange=()=>{thumbnailPreview.src=thumbnailSelect.value;thumbnailPreview.hidden=!thumbnailSelect.value;updateOutline({selected_thumbnail:thumbnailSelect.value})};
+    fetch('/api/topic/sample').then(r=>r.json()).then(applyOutline);
+    async function chooseHotTopic(item){
+      document.querySelectorAll('.topic-card').forEach(x=>x.disabled=true); mcpStatus.textContent='Loading this hot topic from MCP...';
+      try{
+        const outline=await fetch(`/api/topics/hot/${encodeURIComponent(item.topic_id)}`).then(json);
+        topic.value=outline.topic||item.topic; applyOutline(outline);
+        mcpStatus.textContent='Hot-topic content is ready. Review it, then generate the video.';
+        content.scrollIntoView({behavior:'smooth',block:'center'});
+      }catch(error){mcpStatus.textContent=error.message}finally{document.querySelectorAll('.topic-card').forEach(x=>x.disabled=false)}
+    }
+    function renderHotTopics(){
+      topics.replaceChildren();
+      const visible=activeTopicFilter==='all'?allHotTopics:allHotTopics.filter(item=>item.group_keys.includes(activeTopicFilter));
+      visible.forEach(item=>{
+          const card=document.createElement('button'); card.className='topic-card';
+          if(item.image&&/^https?:\/\//.test(item.image)){const img=document.createElement('img');img.src=item.image;img.alt='';img.loading='lazy';card.append(img)}
+          const label=document.createElement('span');label.textContent=item.topic;
+          const group=document.createElement('small');group.textContent=item.groups.join(' / ');label.append(group);card.append(label);
+          card.onclick=()=>chooseHotTopic(item);topics.append(card);
+      });
+      topicsStatus.textContent=visible.length?`${visible.length} current topics available.`:'No topics in this filter.';
+    }
+    topicFilters.onclick=event=>{
+      const selected=event.target.closest('button[data-filter]');if(!selected)return;
+      activeTopicFilter=selected.dataset.filter;topicFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderHotTopics();
+    };
+    async function loadHotTopics(){
+      refreshTopics.disabled=true; topicsStatus.textContent='Loading current topics from MCP...'; topics.replaceChildren();
+      try{
+        const data=await fetch('/api/topics/hot').then(json);allHotTopics=data.topics;topicFilters.hidden=false;renderHotTopics();
+      }catch(error){topicsStatus.textContent=error.message}finally{refreshTopics.disabled=false}
+    }
+    refreshTopics.onclick=loadHotTopics;
+    getContent.onclick = async () => {
+      if(!topic.value.trim()){mcpStatus.textContent='Enter a topic first.';return}
+      getContent.disabled=true; mcpStatus.textContent='Asking the MCP to create the video outline...';
+      try{
+        const outline=await fetch('/api/topic/from-mcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic.value.trim()})}).then(json);
+        applyOutline(outline);
+        mcpStatus.textContent='Outline received from MCP. Review it, then generate the video.';
+      }catch(error){mcpStatus.textContent=error.message}finally{getContent.disabled=false}
+    };
+    button.onclick = async () => {
+      button.disabled=true; result.innerHTML='';
+      try {
+        const outline=JSON.parse(content.value);
+        const providerName=providerCatalog.find(item=>item.id===videoProvider.value)?.name||videoProvider.value;
+        status.textContent=`Sending the video concept to ${providerName}...`;
+        const job=await fetch('/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:videoProvider.value,content:outline,prompt:prompt.value||null,duration:Number(document.querySelector('#duration').value),quality:document.querySelector('#quality').value})}).then(json);
+        if(!prompt.value) prompt.value=job.prompt;
+        for(let attempts=0;attempts<120;attempts++){
+          await wait(5000); status.textContent=`${providerName} is generating your video...`;
+          const current=await fetch(`/api/video/${encodeURIComponent(job.provider)}/${encodeURIComponent(job.job_id)}`).then(json);
+          if(current.status==='complete'&&current.url){status.textContent='Your video is ready.';result.innerHTML=`<video class="video" controls autoplay src="${current.url}"></video><a href="${current.url}" target="_blank"><button>Open or download video</button></a>`;return}
+          if(current.status==='failed')throw new Error(`${providerName} could not generate this video. Try adjusting the prompt or provider settings.`);
+        }
+        throw new Error('Generation is still running. Please try checking again shortly.');
+      } catch(error){status.textContent=error.message} finally{button.disabled=false}
+    };
+    pollDaily();
+  </script>
+</main></body></html>
