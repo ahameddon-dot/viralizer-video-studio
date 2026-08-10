@@ -1,12 +1,15 @@
 import asyncio
+import hashlib
+import hmac
 import json
+import os
 import re
 import httpx
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -33,6 +36,76 @@ from regional_trends import regional_report
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
+
+AUTH_COOKIE = "viralizer_access"
+
+
+def configured_password() -> str:
+    return os.getenv("APP_PASSWORD", "").strip()
+
+
+def access_token(password: str) -> str:
+    return hmac.new(password.encode("utf-8"), b"viralizer-video-studio", hashlib.sha256).hexdigest()
+
+
+def is_authenticated(request: Request) -> bool:
+    password = configured_password()
+    if not password:
+        return True
+    supplied = request.cookies.get(AUTH_COOKIE, "")
+    return hmac.compare_digest(supplied, access_token(password))
+
+
+@app.middleware("http")
+async def require_password(request: Request, call_next):
+    public_paths = {"/login", "/health"}
+    if request.url.path not in public_paths and not is_authenticated(request):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Password required"}, status_code=401)
+        return RedirectResponse("/login", status_code=303)
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: str = ""):
+    if is_authenticated(request):
+        return RedirectResponse("/", status_code=303)
+    message = '<p class="error">Incorrect password. Please try again.</p>' if error else ""
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Viralizer Studio · Sign in</title><style>
+*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#29154b,#090611 65%);color:#fff;font-family:Inter,Arial,sans-serif}}
+.card{{width:min(420px,calc(100% - 32px));padding:36px;border:1px solid #563483;border-radius:20px;background:rgba(19,13,30,.94);box-shadow:0 24px 80px #0008}}
+.mark{{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#8b3dff;font-size:24px;font-weight:800}}h1{{margin:20px 0 8px;font-size:30px}}p{{color:#bdb2d2;line-height:1.5}}
+label{{display:block;margin:24px 0 8px;font-weight:700}}input{{width:100%;padding:14px 16px;border:1px solid #56496a;border-radius:11px;background:#0d0915;color:#fff;font-size:17px;outline:none}}input:focus{{border-color:#a66cff;box-shadow:0 0 0 3px #8b3dff33}}
+button{{width:100%;margin-top:16px;padding:14px;border:0;border-radius:11px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-size:16px;font-weight:800;cursor:pointer}}.error{{color:#ff9aaf;margin:14px 0 0}}
+</style></head><body><main class="card"><div class="mark">V</div><h1>Viralizer Video Studio</h1><p>Enter the access password to continue.</p>{message}
+<form method="post" action="/login"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" autofocus required><button type="submit">Open studio</button></form></main></body></html>""")
+
+
+@app.post("/login")
+async def login(request: Request, password: str = Form(...)):
+    expected = configured_password()
+    if not expected or not hmac.compare_digest(password, expected):
+        return RedirectResponse("/login?error=1", status_code=303)
+    response = RedirectResponse("/", status_code=303)
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    response.set_cookie(
+        AUTH_COOKIE,
+        access_token(expected),
+        max_age=86400,
+        httponly=True,
+        secure=forwarded_proto == "https",
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(AUTH_COOKIE)
+    return response
 
 
 @app.on_event("startup")
