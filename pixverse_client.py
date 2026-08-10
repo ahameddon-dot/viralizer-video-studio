@@ -113,12 +113,15 @@ class PixVerseClient:
             "seed": 0,
             "water_mark": False,
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{PIXVERSE_BASE_URL}/video/text/generate",
-                headers=self._headers(unique_request=True),
-                json=payload,
-            )
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}/video/text/generate",
+                    headers=self._headers(unique_request=True),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not connect to PixVerse: {exc}") from exc
         result = self._unwrap(response)
         video_id = result.get("video_id")
         if video_id is None:
@@ -126,9 +129,12 @@ class PixVerseClient:
         return int(video_id)
 
     async def status(self, video_id: int) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(
-                f"{PIXVERSE_BASE_URL}/video/result/{video_id}",
-                headers=self._headers(),
-            )
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{PIXVERSE_BASE_URL}/video/result/{video_id}",
+                    headers=self._headers(unique_request=True),
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not check the PixVerse video: {exc}") from exc
         return self._unwrap(response)
