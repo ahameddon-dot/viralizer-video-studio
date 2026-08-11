@@ -158,8 +158,8 @@ editions covering Saudi Arabia, the Gulf, MENA, and Arabic-language business, te
 and entertainment. Original headlines remain visible, but per-topic Viralizer requests use a
 concise maximum of 10 words first to improve matching for long news headlines.
 The normal Hot Topics report keeps up to 30 fresh topics for Breaking News, AI, Technology,
-Business, Stock Market, Investing/Money, Cryptocurrency, Startups, Creator Economy, Social Media,
-Entertainment, Gaming, Sports, Beauty/Makeup, Fashion, Health, and Science. Category sub-buttons
+Business, Supply Chain, E-commerce, Gen Z, Stock Market, Investing/Money, Cryptocurrency, Startups,
+Creator Economy, Social Media, Entertainment, Gaming, Sports, Beauty/Makeup, Fashion, Health, and Science. Category sub-buttons
 switch the table without mixing categories. Saudi/Arabic coverage and Prediction Markets remain
 independent modules in their own main tabs.
 
