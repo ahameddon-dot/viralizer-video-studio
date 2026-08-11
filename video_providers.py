@@ -54,6 +54,7 @@ def provider_catalog() -> list[dict[str, Any]]:
             "configured": bool(info["configured"]()),
         }
         for provider_id, info in PROVIDERS.items()
+        if provider_id == "pixverse"
     ]
 
 

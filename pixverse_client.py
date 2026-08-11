@@ -64,6 +64,30 @@ def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
     return " ".join(words[:200])
 
 
+def build_image_prompt(content: dict[str, Any]) -> str:
+    """Turn the hidden MCP outline into a detailed square social-image prompt."""
+    def clip(value: Any, limit: int) -> str:
+        return " ".join(str(value or "").strip().split()[:limit])
+
+    topic = clip(content.get("topic"), 24)
+    title = clip(content.get("suggested_title") or content.get("hook"), 18)
+    hook = clip(content.get("hook"), 24)
+    idea = clip(content.get("video_idea"), 75)
+    angle = clip(content.get("creator_angle"), 35)
+    why = clip(content.get("why_it_matters"), 45)
+    return " ".join(filter(None, [
+        "Create a polished square 1:1 Instagram editorial post image that visually explains the supplied story.",
+        f"Topic: {topic}." if topic else "",
+        f"Main message: {title}." if title else "",
+        f"Attention hook: {hook}." if hook else "",
+        f"Content that the image must communicate: {idea}." if idea else "",
+        f"Creator angle: {angle}." if angle else "",
+        f"Why it matters: {why}." if why else "",
+        "Use one strong focal subject, specific supporting objects and a clear visual hierarchy. Make the subject immediately understandable on a phone screen. Use premium newsroom-meets-social-media art direction, realistic details, strong contrast and safe margins for Instagram cropping.",
+        "Do not invent facts, people, brands, flags, statistics, or events that are not in the supplied content. Avoid gibberish, illegible typography, random symbols, watermarks and fake logos. Prefer visual storytelling instead of paragraphs of text.",
+    ]))[:3500]
+
+
 class PixVerseClient:
     def __init__(self, api_key: str | None = None, timeout: float = 30.0):
         self.api_key = api_key or os.getenv("PIXVERSE_API_KEY", "")
@@ -137,4 +161,39 @@ class PixVerseClient:
                 )
         except httpx.HTTPError as exc:
             raise PixVerseError(f"Could not check the PixVerse video: {exc}") from exc
+        return self._unwrap(response)
+
+    async def generate_image(self, prompt: str) -> int:
+        path = os.getenv("PIXVERSE_IMAGE_GENERATE_PATH", "/image/text/generate")
+        payload = {
+            "prompt": prompt,
+            "aspect_ratio": "1:1",
+            "model": os.getenv("PIXVERSE_IMAGE_MODEL", "gpt-image-2"),
+            "quality": os.getenv("PIXVERSE_IMAGE_QUALITY", "1024p"),
+            "seed": 0,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}{path}",
+                    headers=self._headers(unique_request=True),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not connect to PixVerse image generation: {exc}") from exc
+        result = self._unwrap(response)
+        image_id = result.get("image_id")
+        if image_id is None:
+            raise PixVerseError("PixVerse did not return an image id.")
+        return int(image_id)
+
+    async def image_status(self, image_id: int) -> dict[str, Any]:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{PIXVERSE_BASE_URL}/image/result/{image_id}",
+                    headers=self._headers(unique_request=True),
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not check the PixVerse image: {exc}") from exc
         return self._unwrap(response)
