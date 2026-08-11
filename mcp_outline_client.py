@@ -350,11 +350,22 @@ async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
                         for tool in listed.tools
                         if "idea" in tool.name.lower() and "smith" in tool.name.lower()
                     ]
+                    is_fallback = not matching
+                    if is_fallback:
+                        fallback = next(
+                            (item for item in listed.tools if item.name == "analyze_topic"), None
+                        )
+                        if not fallback:
+                            available = ", ".join(sorted(tool.name for tool in listed.tools)) or "none"
+                            raise MCPOutlineError(
+                                "Viralizer's Idea Smith MCP tool is not currently available and "
+                                f"no topic-analysis fallback was found. Available tools: {available}."
+                            )
+                        matching = [fallback]
+
                     if not matching:
-                        available = ", ".join(sorted(tool.name for tool in listed.tools)) or "none"
                         raise MCPOutlineError(
-                            "Viralizer's Idea Smith MCP tool is not currently available. "
-                            f"Available tools: {available}."
+                            "Viralizer's Idea Smith MCP tool is not currently available."
                         )
 
                     tool = matching[0]
@@ -403,4 +414,17 @@ async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
             str(getattr(item, "text", "")) for item in getattr(result, "content", [])
         ).strip()
         raise MCPOutlineError(message or "Idea Smith reported an error.")
-    return {"tool": tool.name, "query": topic.strip(), "result": payload}
+    if is_fallback:
+        payload = _viralizer_outline(payload, subject)
+    return {
+        "tool": tool.name,
+        "mode": "viralizer_topic_ideas" if is_fallback else "idea_smith",
+        "notice": (
+            "Viralizer has not exposed Idea Smith as an MCP tool yet; these ideas use "
+            "Viralizer topic analysis as the temporary fallback."
+            if is_fallback
+            else ""
+        ),
+        "query": topic.strip(),
+        "result": payload,
+    }
