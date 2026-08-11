@@ -14,7 +14,7 @@
 <body><main>
   <h1>Turn hot topics into video</h1>
   <p class="sub">Review the outline returned by your MCP, then send its video concept directly to PixVerse.</p>
-  <nav class="main-tabs"><button class="active" id="hotTab">HOT TOPICS</button><button id="regionalTab">SAUDI &amp; ARABIC TOPICS</button><button id="bettingTab">BETTING TOPICS</button></nav>
+  <nav class="main-tabs"><button class="active" id="hotTab">HOT TOPICS</button><button id="viralizerTab">VIRALIZER TOPICS</button><button id="regionalTab">SAUDI &amp; ARABIC TOPICS</button><button id="bettingTab">BETTING TOPICS</button></nav>
   <section id="regionalView" hidden>
     <section class="card" style="margin-bottom:18px"><h2 style="margin-top:0">SAUDI &amp; ARABIC TOPICS</h2><p class="hint">A separate worldwide scan of English and Arabic coverage related to Saudi Arabia, the Gulf, MENA, and Arabic-language audiences.</p><div class="row"><input id="regionalSearch" placeholder="Search Saudi, Riyadh, AI, business, sports, entertainment..."><button id="scanRegional" style="margin-top:0">Get Saudi &amp; Arabic topics</button></div><div class="filters" id="regionalFilters"><button class="active" data-region="ALL">ALL</button><button data-region="Saudi Arabia">SAUDI ARABIA</button><button data-region="السعودية">السعودية</button><button data-region="الخليج">الخليج</button><button data-region="محتوى عربي">ARABIC CONTENT</button><button data-region="MENA">MENA</button></div><div class="status" id="regionalStatus">Click the button to scan worldwide sources.</div></section>
     <div class="betting-list" id="regionalTopics"></div>
@@ -31,13 +31,16 @@
     <div class="filters" id="dailyCategoryFilters"></div>
     <div class="tablewrap" id="dailyTable"></div>
   </section>
+  </div>
+  <section id="viralizerView" hidden>
   <section class="card" style="margin-bottom:18px">
-    <div class="toolbar"><div><label style="margin:0">Current hot topics</label><span class="hint">Live from Viralizer MCP</span></div><button id="refreshTopics">Get current topics</button></div>
+    <div class="toolbar"><div><label style="margin:0">Viralizer Topics</label><span class="hint">Current hot topics live from Viralizer MCP</span></div><button id="refreshTopics">Get current topics</button></div>
     <div class="status" id="topicsStatus"></div>
     <div class="filters" id="topicFilters" hidden>
       <button class="active" data-filter="all">All</button><button data-filter="google">Google</button><button data-filter="twitter">Twitter/X</button><button data-filter="US">United States</button><button data-filter="business">Business</button><button data-filter="entertainment">Entertainment</button>
     </div>
     <div class="topics" id="topics"></div>
+  </section>
   </section>
   <section class="card" style="margin-bottom:18px">
     <label for="topic">What topic should the MCP research?</label>
@@ -77,7 +80,6 @@
       <div id="result"></div>
     </section>
   </div>
-  </div>
   <script>
     const content = document.querySelector('#content'), prompt = document.querySelector('#prompt');
     const button = document.querySelector('#generate'), status = document.querySelector('#status'), result = document.querySelector('#result');
@@ -88,12 +90,12 @@
     const metadataPanel=document.querySelector('#metadataPanel'), suggestedTitle=document.querySelector('#suggestedTitle'), hookSuggestion=document.querySelector('#hookSuggestion'), hookOptions=document.querySelector('#hookOptions'), tagsKeywords=document.querySelector('#tagsKeywords');
     const thumbnailSelect=document.querySelector('#thumbnailSelect'), thumbnailPreview=document.querySelector('#thumbnailPreview'), resonanceKpi=document.querySelector('#resonanceKpi'), rankKpi=document.querySelector('#rankKpi'), audienceKpi=document.querySelector('#audienceKpi');
     const runDaily=document.querySelector('#runDaily'), dailyStatus=document.querySelector('#dailyStatus'), dailyTopFive=document.querySelector('#dailyTopFive'), dailyTable=document.querySelector('#dailyTable'), dailySchedule=document.querySelector('#dailySchedule'),dailyCategoryFilters=document.querySelector('#dailyCategoryFilters');let latestDailyReport=null;let activeDailyCategory='ALL';
-    const hotTab=document.querySelector('#hotTab'),regionalTab=document.querySelector('#regionalTab'),bettingTab=document.querySelector('#bettingTab'),hotView=document.querySelector('#hotView'),regionalView=document.querySelector('#regionalView'),bettingView=document.querySelector('#bettingView'),scanBetting=document.querySelector('#scanBetting'),bettingSearch=document.querySelector('#bettingSearch'),bettingStatus=document.querySelector('#bettingStatus'),earlySignals=document.querySelector('#earlySignals'),bettingTopics=document.querySelector('#bettingTopics'),bettingFilters=document.querySelector('#bettingFilters'),bettingSort=document.querySelector('#bettingSort'),scanRegional=document.querySelector('#scanRegional'),regionalSearch=document.querySelector('#regionalSearch'),regionalStatus=document.querySelector('#regionalStatus'),regionalTopics=document.querySelector('#regionalTopics'),regionalFilters=document.querySelector('#regionalFilters');let bettingData=[];let bettingFilter='ALL';let regionalData=[];let regionalFilter='ALL';
+    const hotTab=document.querySelector('#hotTab'),viralizerTab=document.querySelector('#viralizerTab'),regionalTab=document.querySelector('#regionalTab'),bettingTab=document.querySelector('#bettingTab'),hotView=document.querySelector('#hotView'),viralizerView=document.querySelector('#viralizerView'),regionalView=document.querySelector('#regionalView'),bettingView=document.querySelector('#bettingView'),scanBetting=document.querySelector('#scanBetting'),bettingSearch=document.querySelector('#bettingSearch'),bettingStatus=document.querySelector('#bettingStatus'),earlySignals=document.querySelector('#earlySignals'),bettingTopics=document.querySelector('#bettingTopics'),bettingFilters=document.querySelector('#bettingFilters'),bettingSort=document.querySelector('#bettingSort'),scanRegional=document.querySelector('#scanRegional'),regionalSearch=document.querySelector('#regionalSearch'),regionalStatus=document.querySelector('#regionalStatus'),regionalTopics=document.querySelector('#regionalTopics'),regionalFilters=document.querySelector('#regionalFilters');let bettingData=[];let bettingFilter='ALL';let regionalData=[];let regionalFilter='ALL';
     const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
     async function json(response){const data=await response.json();if(!response.ok)throw new Error(data.detail||'Request failed');return data}
     const metric=value=>value===null||value===undefined||value===''?'—':value;
-    function selectMainTab(active){[hotTab,regionalTab,bettingTab].forEach(tab=>tab.classList.toggle('active',tab===active));hotView.hidden=active!==hotTab;regionalView.hidden=active!==regionalTab;bettingView.hidden=active!==bettingTab}
-    hotTab.onclick=()=>selectMainTab(hotTab);regionalTab.onclick=()=>selectMainTab(regionalTab);bettingTab.onclick=()=>selectMainTab(bettingTab);
+    function selectMainTab(active){[hotTab,viralizerTab,regionalTab,bettingTab].forEach(tab=>tab.classList.toggle('active',tab===active));hotView.hidden=active!==hotTab;viralizerView.hidden=active!==viralizerTab;regionalView.hidden=active!==regionalTab;bettingView.hidden=active!==bettingTab}
+    hotTab.onclick=()=>selectMainTab(hotTab);viralizerTab.onclick=()=>selectMainTab(viralizerTab);regionalTab.onclick=()=>selectMainTab(regionalTab);bettingTab.onclick=()=>selectMainTab(bettingTab);
     function renderRegional(){regionalTopics.replaceChildren();const list=regionalData.filter(item=>regionalFilter==='ALL'||item.section===regionalFilter);list.forEach(item=>{const card=document.createElement('article');card.className='betting-card';card.dir='auto';const badge=document.createElement('span');badge.className='badge';badge.textContent=`#${item.rank} · ${item.section}`;const heading=document.createElement('h3');heading.textContent=item.topic;const info=document.createElement('p');info.className='hint';info.textContent=`${item.languages.join(' + ')} · ${item.global_mentions} worldwide source signal${item.global_mentions===1?'':'s'} · ${new Date(item.published_at).toLocaleString()}`;const actions=document.createElement('div');actions.className='row';const video=document.createElement('button');video.textContent='Generate video';video.onclick=()=>getDailyTopicReport(item,video);const pdf=document.createElement('button');pdf.textContent='Get PDF';pdf.style.background='#334155';pdf.onclick=()=>getDailyTopicPdf(item,pdf);const source=document.createElement('a');source.href=item.source_urls[0]||'#';source.target='_blank';source.rel='noopener';source.className='source-link';source.textContent='Open news source';actions.append(video,pdf,source);card.append(badge,heading,info,actions);regionalTopics.append(card)});if(!list.length)regionalTopics.textContent='No matching regional topics found.'}
     scanRegional.onclick=async()=>{scanRegional.disabled=true;regionalStatus.textContent='Scanning worldwide English and Arabic sources...';try{const data=await fetch(`/api/regional/topics?query=${encodeURIComponent(regionalSearch.value.trim())}`).then(json);regionalData=data.topics;regionalStatus.textContent=`${data.count} Saudi and Arabic-related topics found worldwide.`;renderRegional()}catch(error){regionalStatus.textContent=error.message}finally{scanRegional.disabled=false}};regionalFilters.onclick=event=>{const selected=event.target.closest('[data-region]');if(!selected)return;regionalFilter=selected.dataset.region;regionalFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderRegional()};regionalSearch.onkeydown=event=>{if(event.key==='Enter')scanRegional.click()};
     const money=value=>value?new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact'}).format(value):'Not provided';
