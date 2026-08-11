@@ -334,3 +334,73 @@ async def get_hot_topic_details_from_mcp(topic_id: str) -> dict[str, Any]:
     if not str(outline.get("video_idea", "")).strip():
         raise MCPOutlineError("Viralizer returned no video outline for this hot topic.")
     return outline
+
+
+async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
+    """Discover and call Viralizer's Idea Smith tool without hard-coding its schema."""
+    url, headers = _mcp_config()
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=180.0) as http_client:
+            async with streamable_http_client(url, http_client=http_client) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    listed = await session.list_tools()
+                    matching = [
+                        tool
+                        for tool in listed.tools
+                        if "idea" in tool.name.lower() and "smith" in tool.name.lower()
+                    ]
+                    if not matching:
+                        available = ", ".join(sorted(tool.name for tool in listed.tools)) or "none"
+                        raise MCPOutlineError(
+                            "Viralizer's Idea Smith MCP tool is not currently available. "
+                            f"Available tools: {available}."
+                        )
+
+                    tool = matching[0]
+                    schema = tool.inputSchema or {}
+                    properties = schema.get("properties") or {}
+                    required = schema.get("required") or []
+                    subject = topic.strip() or "current trending content opportunities"
+                    arguments: dict[str, Any] = {}
+                    preferred = ("topic", "keyword", "query", "q", "prompt", "subject", "niche")
+                    selected = next((name for name in preferred if name in properties), None)
+                    if selected:
+                        arguments[selected] = subject
+                    for name in required:
+                        if name in arguments:
+                            continue
+                        definition = properties.get(name) or {}
+                        if "default" in definition:
+                            arguments[name] = definition["default"]
+                        elif definition.get("enum"):
+                            arguments[name] = definition["enum"][0]
+                        elif definition.get("type") == "string":
+                            arguments[name] = subject
+                        else:
+                            raise MCPOutlineError(
+                                f"Idea Smith requires '{name}'. Its current MCP schema needs a UI update."
+                            )
+
+                    result = await session.call_tool(tool.name, arguments)
+                    payload = _extract_outline(result)
+                    records = payload.get("records", {}) if isinstance(payload, dict) else {}
+                    task_id = payload.get("task_id") or records.get("task_id")
+                    if task_id:
+                        poll_tool = next((item for item in listed.tools if item.name == "poll_task_page"), None)
+                        if poll_tool:
+                            result = await session.call_tool(
+                                "poll_task_page", {"task_id": task_id, "timeout_seconds": 150}
+                            )
+                            payload = _extract_outline(result)
+    except MCPOutlineError:
+        raise
+    except Exception as exc:
+        raise MCPOutlineError(_connection_error(exc, url)) from exc
+
+    if getattr(result, "isError", False):
+        message = " ".join(
+            str(getattr(item, "text", "")) for item in getattr(result, "content", [])
+        ).strip()
+        raise MCPOutlineError(message or "Idea Smith reported an error.")
+    return {"tool": tool.name, "query": topic.strip(), "result": payload}

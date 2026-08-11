@@ -26,6 +26,7 @@ from mcp_outline_client import (
     get_full_report_from_mcp,
     get_hot_topic_details_from_mcp,
     get_hot_topics_from_mcp,
+    get_idea_smith_from_mcp,
     get_outline_from_mcp,
 )
 from viralizer_pdf import build_viralizer_pdf
@@ -128,6 +129,10 @@ class GenerateRequest(BaseModel):
 
 class TopicRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=500)
+
+
+class IdeaSmithRequest(BaseModel):
+    topic: str = Field(default="", max_length=500)
 
 
 @app.get("/api/betting/topics")
@@ -241,6 +246,14 @@ async def hot_topics():
 async def hot_topic_details(topic_id: str):
     try:
         return await get_hot_topic_details_from_mcp(topic_id)
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/ideas/smith")
+async def idea_smith(request: IdeaSmithRequest):
+    try:
+        return await get_idea_smith_from_mcp(request.topic)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
 
