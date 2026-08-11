@@ -116,10 +116,29 @@
       items.forEach((item,index)=>{const tr=document.createElement('tr');const rankCell=document.createElement('td');rankCell.textContent=item.category_rank||item.rank||index+1;const topicCell=document.createElement('td');const topicTitle=document.createElement('div');topicTitle.textContent=item.topic;topicTitle.dir='auto';topicTitle.style.cssText='white-space:normal;min-width:240px;margin-bottom:8px';const actions=document.createElement('div');actions.style.cssText='display:flex;gap:7px;flex-wrap:wrap';const reportButton=document.createElement('button');reportButton.textContent='Generate video';reportButton.style.cssText='width:auto;margin:0;padding:8px 12px;font-size:12px';reportButton.onclick=()=>getDailyTopicReport(item,reportButton);const pdfButton=document.createElement('button');pdfButton.textContent='Get PDF';pdfButton.style.cssText='width:auto;margin:0;padding:8px 12px;font-size:12px;background:#334155';pdfButton.onclick=()=>getDailyTopicPdf(item,pdfButton);actions.append(reportButton,pdfButton);topicCell.append(topicTitle,actions);tr.append(rankCell,topicCell);[item.category,(item.source_platforms||['Google News']).join(' + '),item.discovery_heat,item.mentions,new Date(item.published_at).toLocaleString()].forEach(value=>{const td=document.createElement('td');td.textContent=metric(value);tr.append(td)});body.append(tr)});table.append(head,body);dailyTable.append(table);
     }
     dailyCategoryFilters.onclick=event=>{const selected=event.target.closest('[data-daily-category]');if(!selected||!latestDailyReport)return;activeDailyCategory=selected.dataset.dailyCategory;dailyCategoryFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderDailyRows(activeDailyCategory==='ALL'?latestDailyReport.topics:(latestDailyReport.category_topics?.[activeDailyCategory]||[]))};
+    function dailyTopicFallback(item){
+      const subject=item.topic.trim(),category=item.category||'Current events',signals=Number(item.mentions)||1,heat=item.discovery_heat||'Trending';
+      return {
+        topic:subject,
+        suggested_title:subject,
+        hook:`Why is everyone suddenly paying attention to ${subject}?`,
+        alternative_hooks:[`The story behind ${subject} in under 15 seconds`,`What ${subject} could mean next`],
+        creator_angle:`Explain the central event or claim behind ${subject}, show the people or organizations involved, then illustrate its likely real-world impact for viewers interested in ${category}.`,
+        why_it_matters:`This ${category.toLowerCase()} topic is showing ${signals} public source signal${signals===1?'':'s'} and is currently ranked ${heat.toLowerCase()}. Viewers need a concise explanation of what happened, why attention is growing, and what may happen next.`,
+        video_idea:`Open with a literal visual representation of ${subject}. Establish who or what is involved and where the story is happening. Reconstruct the key event in a clear cause-and-effect sequence. Show why public attention is increasing across the discovered sources. End by visualizing the practical consequence or next development viewers should watch. Keep every scene directly connected to the topic and avoid generic cinematic filler.`,
+        hashtags:[category.replace(/\s+/g,''), 'TrendingNow', 'Explained'],
+        estimated_resonance:heat,
+        viral_rank:item.rank||item.category_rank||'',
+        total_audience:`${signals} source signal${signals===1?'':'s'}`,
+        thumbnails:[],
+        source:'Daily trend discovery fallback'
+      };
+    }
     async function getDailyTopicReport(item,reportButton){
       reportButton.disabled=true;reportButton.textContent='Loading...';dailyStatus.textContent=`Getting the Viralizer report for ${item.topic}...`;
       try{const outline=await fetch('/api/daily/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:item.topic})}).then(json);topic.value=outline.topic||item.topic;applyOutline(outline);reportButton.textContent='Report loaded';dailyStatus.textContent=`Viralizer report loaded for ${item.topic}.`;metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
-      catch(error){reportButton.disabled=false;reportButton.textContent='Generate video';dailyStatus.textContent=`Could not prepare this topic: ${error.message}`}
+      catch(error){const outline=dailyTopicFallback(item);topic.value=item.topic;applyOutline(outline);reportButton.textContent='Video content ready';dailyStatus.textContent='Viralizer did not return a detailed outline, so usable video content was prepared from the discovered topic. Review it below, then click Generate video with PixVerse.';metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
+      finally{reportButton.disabled=false}
     }
     async function getDailyTopicPdf(item,pdfButton){
       pdfButton.disabled=true;pdfButton.textContent='Building PDF...';dailyStatus.textContent=`Getting the full Viralizer report and building its PDF for ${item.topic}...`;
