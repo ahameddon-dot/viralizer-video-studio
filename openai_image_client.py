@@ -29,6 +29,9 @@ def _selected_source_url(content: dict[str, Any]) -> str:
 async def _source_excerpt(url: str) -> str:
     if not url:
         return ""
+    parsed = urlparse(url)
+    if parsed.hostname in {"news.google.com", "www.news.google.com"}:
+        return ""
     try:
         async with httpx.AsyncClient(
             timeout=15.0,
@@ -46,7 +49,11 @@ async def _source_excerpt(url: str) -> str:
     page = re.sub(r"(?is)<(script|style|svg|noscript).*?>.*?</\1>", " ", page)
     page = re.sub(r"(?s)<[^>]+>", " ", page)
     page = html.unescape(page)
-    return " ".join(page.split())[:5000]
+    page = " ".join(page.split())
+    script_signals = ("use strict", "function(", "var window", "copyright the closure library", "spdx-license")
+    if any(signal in page.lower() for signal in script_signals):
+        return ""
+    return page[:1800]
 
 
 async def prepare_image_prompt(content: dict[str, Any], purpose: str = "instagram") -> str:
@@ -58,21 +65,28 @@ async def prepare_image_prompt(content: dict[str, Any], purpose: str = "instagra
     angle = clip(content.get("creator_angle"), 35)
     why = clip(content.get("why_it_matters"), 55)
     idea = clip(content.get("video_idea"), 75)
+    question_story = "?" in str(content.get("topic") or "") or "?" in str(content.get("suggested_title") or "")
+    tension_direction = (
+        "Show a clear visual contrast between two sides of the story: the affected audience on one side and the organization, leaders, or industry being challenged on the other. Use two or three expressive people in a tight reaction-driven editorial composition, not an anonymous lifestyle scene."
+        if question_story else
+        "Show the central subject performing or experiencing the specific action and consequence described by the story, with expressive human emotion where people are involved."
+    )
     prompt = " ".join(filter(None, [
-        "Create one static editorial image, not a video frame sequence, storyboard, montage, reel, or collage.",
+        "Create one static, attention-grabbing editorial social image. Do not create a storyboard, montage, reel, or generic stock photo.",
         f"Subject: {topic}." if topic else "",
-        f"Central message to communicate visually: {message}." if message else "",
-        f"Factual story context: {idea}." if idea else "",
-        f"Editorial angle: {angle}." if angle else "",
-        f"Why the story matters: {why}." if why else "",
-        "Choose the single most meaningful real-world moment, person, product, place, or consequence as the focal subject. Use only a few concrete supporting objects that clarify the story. Make the relationship between the focal subject and the supporting details immediately understandable on a phone screen.",
-        "Use realistic premium editorial photography, strong visual hierarchy, natural depth, accurate identities, and high contrast. Compose vertically in a 4:5 Instagram-post layout with clear negative space near the top for a headline that will be added later by the application.",
-        "Do not render any words, letters, numbers, captions, headlines, logos made from fake lettering, interface elements, random symbols, watermarks, borders, or decorative typography. Do not include camera movement, transitions, multiple scenes, a timeline, narration, or video instructions. Do not invent facts absent from the supplied content.",
+        f"Story message: {message}." if message else "",
+        f"Essential context: {idea}." if idea else "",
+        f"Editorial focus: {angle}." if angle else "",
+        f"Audience relevance: {why}." if why else "",
+        tension_direction,
+        "Choose specific people, expressions, clothing, objects, and setting that make this exact subject recognizable immediately. Use a tight medium shot, prominent faces, direct visual tension, bold contrasting colors, clean background, premium realistic editorial photography, and strong mobile-thumbnail hierarchy.",
+        "Compose vertically in a 4:5 Instagram layout. Reserve clean space at the top for a headline that the application adds later.",
+        "Render no words, letters, numbers, captions, fake logos, watermarks, interface elements, or random symbols. One coherent scene only. Do not invent named people, statistics, or events.",
     ]))
     if purpose == "pixverse":
         prompt = prompt.replace(
-            "Compose vertically in a 4:5 Instagram-post layout with clear negative space near the top for a headline that will be added later by the application.",
-            "Compose vertically in a 2:3 layout suitable as a clean PixVerse source image. Keep the main subject centered with safe space around it for later animation."
+            "Compose vertically in a 4:5 Instagram layout. Reserve clean space at the top for a headline that the application adds later.",
+            "Compose vertically in a 2:3 PixVerse source-image layout. Keep faces and the main action centered with safe space around them for later animation."
         )
     source_url = _selected_source_url(content)
     excerpt = await _source_excerpt(source_url)

@@ -24,7 +24,7 @@ async def _generate(prompt: str) -> bytes:
             response = await client.post(
                 url,
                 headers={"Authorization": f"Bearer {token}"},
-                json={"prompt": prompt[:2048], "steps": 8},
+                json={"prompt": _compact_cloudflare_prompt(prompt), "steps": 8},
             )
     except httpx.HTTPError as exc:
         raise CloudflareImageError(f"Could not connect to Cloudflare Workers AI: {exc}") from exc
@@ -43,6 +43,21 @@ async def _generate(prompt: str) -> bytes:
         return base64.b64decode(encoded)
     except (ValueError, TypeError) as exc:
         raise CloudflareImageError("Cloudflare Workers AI returned invalid image data.") from exc
+
+
+def _compact_cloudflare_prompt(prompt: str) -> str:
+    """Keep the visual brief intact inside FLUX Schnell's 2,048 character limit."""
+    prompt = prompt.split(" Selected-topic source:", 1)[0]
+    prompt = prompt.split(" Selected-topic source URL:", 1)[0]
+    prompt = " ".join(prompt.split())
+    if len(prompt) <= 2000:
+        return prompt
+    sentences = [item.strip() for item in prompt.split(". ") if item.strip()]
+    priority_terms = ("subject:", "story message:", "visual contrast", "specific people", "compose vertically", "render no")
+    prioritized = [item for item in sentences if any(term in item.lower() for term in priority_terms)]
+    remainder = [item for item in sentences if item not in prioritized]
+    result = ". ".join(prioritized + remainder)
+    return result[:2000].rsplit(" ", 1)[0]
 
 
 async def generate_cloudflare_image(
