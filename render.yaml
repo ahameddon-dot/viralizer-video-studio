@@ -23,7 +23,7 @@ services:
       - key: CLOUDFLARE_API_TOKEN
         sync: false
       - key: CLOUDFLARE_IMAGE_MODEL
-        value: "@cf/black-forest-labs/flux-1-schnell"
+        value: "@cf/leonardo/lucid-origin"
       - key: RUNWAYML_API_SECRET
         sync: false
       - key: HEYGEN_API_KEY

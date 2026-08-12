@@ -17,14 +17,21 @@ async def _generate(prompt: str) -> bytes:
     token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
     if not account_id or not token:
         raise CloudflareImageError("Cloudflare Workers AI is not configured on the server.")
-    model = os.getenv("CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell")
+    model = os.getenv("CLOUDFLARE_IMAGE_MODEL", "@cf/leonardo/lucid-origin")
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
             response = await client.post(
                 url,
                 headers={"Authorization": f"Bearer {token}"},
-                json={"prompt": _compact_cloudflare_prompt(prompt), "steps": 8},
+                json={
+                    "prompt": _compact_cloudflare_prompt(prompt),
+                    "negative_prompt": "generic stock photo, empty background, plain split portrait, cropped faces, duplicated person, text, letters, logo, watermark, collage grid, illustration, cartoon",
+                    "width": 768,
+                    "height": 1024,
+                    "guidance": 7.5,
+                    "num_steps": 28,
+                },
             )
     except httpx.HTTPError as exc:
         raise CloudflareImageError(f"Could not connect to Cloudflare Workers AI: {exc}") from exc
@@ -50,10 +57,20 @@ def _compact_cloudflare_prompt(prompt: str) -> str:
     prompt = prompt.split(" Selected-topic source:", 1)[0]
     prompt = prompt.split(" Selected-topic source URL:", 1)[0]
     prompt = " ".join(prompt.split())
+    if "visual contrast between two sides" in prompt.lower():
+        prompt += (
+            " Build a complete conceptual diptych separated by a dramatic vertical torn-paper edge. "
+            "On the left, show the younger audience in the foreground actively holding or using the positive, sustainable, or changing elements named in the story; surround them with visible environmental and product evidence. "
+            "On the right, show brand executives or industry decision-makers reacting thoughtfully in the foreground, surrounded by the old system's negative consequence described by the story. "
+            "Each half must have a clearly different environment, mood, color palette, and meaningful objects. Faces, hands, clothing, background, and consequences must all tell the same story without words."
+        )
     if len(prompt) <= 2000:
         return prompt
     sentences = [item.strip() for item in prompt.split(". ") if item.strip()]
-    priority_terms = ("subject:", "story message:", "visual contrast", "specific people", "compose vertically", "render no")
+    priority_terms = (
+        "subject:", "story message:", "visual contrast", "specific people", "compose vertically",
+        "render no", "conceptual diptych", "on the left", "on the right", "each half",
+    )
     prioritized = [item for item in sentences if any(term in item.lower() for term in priority_terms)]
     remainder = [item for item in sentences if item not in prioritized]
     result = ". ".join(prioritized + remainder)
