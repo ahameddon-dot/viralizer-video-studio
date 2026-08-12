@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
 from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image, prepare_image_prompt
+from cloudflare_image_client import CloudflareImageError, generate_cloudflare_album, generate_cloudflare_image
 from video_providers import (
     VideoProviderError,
     generate_video as generate_with_provider,
@@ -133,6 +134,7 @@ class ImageGenerateRequest(BaseModel):
     content: dict[str, Any]
     prompt: str | None = None
     purpose: str = "instagram"
+    provider: str = "openai"
 
 
 class TopicRequest(BaseModel):
@@ -381,6 +383,18 @@ async def generate_openai_image(request: ImageGenerateRequest):
     )
 
 
+@app.post("/api/image/generate")
+async def generate_image(request: ImageGenerateRequest):
+    try:
+        if request.provider == "cloudflare":
+            image = await generate_cloudflare_image(request.content, request.prompt, request.purpose)
+        else:
+            image = await generate_instagram_image(request.content, request.prompt, request.purpose)
+    except (OpenAIImageError, CloudflareImageError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return Response(content=image, media_type="image/png")
+
+
 @app.post("/api/image/prompt")
 async def image_prompt(request: ImageGenerateRequest):
     return {"prompt": await prepare_image_prompt(request.content, request.purpose)}
@@ -395,3 +409,15 @@ async def generate_openai_album(request: ImageGenerateRequest):
     return {
         "images": [f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}" for image in images]
     }
+
+
+@app.post("/api/image/album")
+async def generate_image_album(request: ImageGenerateRequest):
+    try:
+        if request.provider == "cloudflare":
+            images = await generate_cloudflare_album(request.content, 5, request.prompt)
+        else:
+            images = await generate_instagram_album(request.content, 5, request.prompt)
+    except (OpenAIImageError, CloudflareImageError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"images": [f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}" for image in images]}

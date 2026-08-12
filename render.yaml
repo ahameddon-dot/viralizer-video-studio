@@ -18,6 +18,12 @@ services:
         sync: false
       - key: OPENAI_IMAGE_MODEL
         value: gpt-image-2
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_IMAGE_MODEL
+        value: "@cf/black-forest-labs/flux-1-schnell"
       - key: RUNWAYML_API_SECRET
         sync: false
       - key: HEYGEN_API_KEY
