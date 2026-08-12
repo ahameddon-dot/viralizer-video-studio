@@ -169,22 +169,42 @@ def topic_variants(topic: str) -> list[str]:
 
 async def outline_with_fallback(topic: str):
     last_error = None
-    for variant in topic_variants(topic):
-        try:
-            return await get_outline_from_mcp(variant)
-        except MCPOutlineError as exc:
-            last_error = exc
+    variants = topic_variants(topic)
+    for attempt in range(3):
+        for variant in variants:
+            try:
+                return await get_outline_from_mcp(variant)
+            except MCPOutlineError as exc:
+                last_error = exc
+        if attempt < 2:
+            await asyncio.sleep(2 * (attempt + 1))
     raise last_error or MCPOutlineError("Viralizer returned no report for this topic.")
 
 
 async def full_report_with_fallback(topic: str):
     last_error = None
-    for variant in topic_variants(topic):
+    variants = topic_variants(topic)
+    for attempt in range(3):
+        for variant in variants:
+            try:
+                return await get_full_report_from_mcp(variant)
+            except MCPOutlineError as exc:
+                last_error = exc
+        if attempt < 2:
+            await asyncio.sleep(2 * (attempt + 1))
+    raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
+
+
+async def hot_topic_details_with_retry(topic_id: str):
+    last_error = None
+    for attempt in range(3):
         try:
-            return await get_full_report_from_mcp(variant)
+            return await get_hot_topic_details_from_mcp(topic_id)
         except MCPOutlineError as exc:
             last_error = exc
-    raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
+            if attempt < 2:
+                await asyncio.sleep(2 * (attempt + 1))
+    raise last_error or MCPOutlineError("Viralizer returned no report for this hot topic.")
 
 
 @app.get("/")
@@ -237,7 +257,7 @@ async def daily_topic_pdf(request: TopicRequest):
 @app.post("/api/topic/from-mcp")
 async def topic_from_mcp(request: TopicRequest):
     try:
-        return await get_outline_from_mcp(request.topic.strip())
+        return await outline_with_fallback(request.topic.strip())
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -253,7 +273,7 @@ async def hot_topics():
 @app.get("/api/topics/hot/{topic_id}")
 async def hot_topic_details(topic_id: str):
     try:
-        return await get_hot_topic_details_from_mcp(topic_id)
+        return await hot_topic_details_with_retry(topic_id)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
 

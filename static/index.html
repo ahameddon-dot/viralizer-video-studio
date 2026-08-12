@@ -190,7 +190,7 @@
     thumbnailUpload.onchange=()=>{const file=thumbnailUpload.files[0];if(!file)return;if(uploadedThumbnailUrl)URL.revokeObjectURL(uploadedThumbnailUrl);uploadedThumbnailUrl=URL.createObjectURL(file);thumbnailSelect.value='';thumbnailPreview.src=uploadedThumbnailUrl;thumbnailPreview.hidden=false;updateOutline({selected_thumbnail:''})};
     fetch('/api/topic/sample').then(r=>r.json()).then(applyOutline);
     async function chooseHotTopic(item){
-      document.querySelectorAll('.topic-card').forEach(x=>x.disabled=true); mcpStatus.textContent='Loading this hot topic from MCP...';
+      document.querySelectorAll('.topic-card').forEach(x=>x.disabled=true); mcpStatus.textContent='Waiting for Viralizer’s full report. The app will retry automatically if needed...';
       try{
         const outline=await fetch(`/api/topics/hot/${encodeURIComponent(item.topic_id)}`).then(json);
         topic.value=outline.topic||item.topic; applyOutline(attachTopicSource(outline,item));
@@ -223,7 +223,7 @@
     refreshTopics.onclick=loadHotTopics;
     getContent.onclick = async () => {
       if(!topic.value.trim()){mcpStatus.textContent='Enter a topic first.';return}
-      getContent.disabled=true; mcpStatus.textContent='Asking the MCP to create the video outline...';
+      getContent.disabled=true; mcpStatus.textContent='Waiting for Viralizer’s full report. The app will retry automatically up to three times...';
       try{
         const outline=await fetch('/api/topic/from-mcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic.value.trim()})}).then(json);
         applyOutline(outline);
