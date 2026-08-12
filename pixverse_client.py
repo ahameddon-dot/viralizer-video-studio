@@ -162,38 +162,3 @@ class PixVerseClient:
         except httpx.HTTPError as exc:
             raise PixVerseError(f"Could not check the PixVerse video: {exc}") from exc
         return self._unwrap(response)
-
-    async def generate_image(self, prompt: str) -> int:
-        path = os.getenv("PIXVERSE_IMAGE_GENERATE_PATH", "/image/text/generate")
-        payload = {
-            "prompt": prompt,
-            "aspect_ratio": "1:1",
-            "model": os.getenv("PIXVERSE_IMAGE_MODEL", "gpt-image-2"),
-            "quality": os.getenv("PIXVERSE_IMAGE_QUALITY", "1024p"),
-            "seed": 0,
-        }
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{PIXVERSE_BASE_URL}{path}",
-                    headers=self._headers(unique_request=True),
-                    json=payload,
-                )
-        except httpx.HTTPError as exc:
-            raise PixVerseError(f"Could not connect to PixVerse image generation: {exc}") from exc
-        result = self._unwrap(response)
-        image_id = result.get("image_id")
-        if image_id is None:
-            raise PixVerseError("PixVerse did not return an image id.")
-        return int(image_id)
-
-    async def image_status(self, image_id: int) -> dict[str, Any]:
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{PIXVERSE_BASE_URL}/image/result/{image_id}",
-                    headers=self._headers(unique_request=True),
-                )
-        except httpx.HTTPError as exc:
-            raise PixVerseError(f"Could not check the PixVerse image: {exc}") from exc
-        return self._unwrap(response)

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 from typing import Any
@@ -11,11 +12,10 @@ class OpenAIImageError(RuntimeError):
     pass
 
 
-async def generate_instagram_image(content: dict[str, Any], prompt: str | None = None) -> bytes:
+async def _generate_image(image_prompt: str) -> bytes:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise OpenAIImageError("ChatGPT image generation is not configured. Add OPENAI_API_KEY to the server.")
-    image_prompt = (prompt or build_image_prompt(content)).strip()
     payload = {
         "model": os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
         "prompt": image_prompt,
@@ -47,3 +47,24 @@ async def generate_instagram_image(content: dict[str, Any], prompt: str | None =
         return base64.b64decode(encoded)
     except (ValueError, TypeError) as exc:
         raise OpenAIImageError("ChatGPT image generation returned invalid image data.") from exc
+
+
+async def generate_instagram_image(content: dict[str, Any], prompt: str | None = None) -> bytes:
+    return await _generate_image((prompt or build_image_prompt(content)).strip())
+
+
+async def generate_instagram_album(content: dict[str, Any], count: int = 5) -> list[bytes]:
+    base = build_image_prompt(content)
+    topic = " ".join(str(content.get("topic") or "the topic").split()[:24])
+    story_beats = [
+        "Cover slide: introduce the topic with the strongest single visual and an immediate curiosity gap.",
+        "Context slide: clearly establish the people, place, organization, product, or event involved.",
+        "Explanation slide: visualize the central cause, process, or development using concrete details.",
+        "Impact slide: show why this matters to the audience and the practical real-world consequence.",
+        "Closing slide: show what viewers should watch next, with a memorable concluding visual.",
+    ][:max(1, min(5, count))]
+    prompts = [
+        f"{base} This is image {index + 1} of {len(story_beats)} in one cohesive Instagram carousel about {topic}. {beat} Keep the same color palette, art direction, visual identity, and subject continuity across every carousel image. Create this slide as a complete standalone square image."
+        for index, beat in enumerate(story_beats)
+    ]
+    return list(await asyncio.gather(*(_generate_image(prompt) for prompt in prompts)))

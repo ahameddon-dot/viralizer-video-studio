@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
@@ -13,8 +14,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from pixverse_client import PixVerseClient, PixVerseError, build_image_prompt, build_video_prompt
-from openai_image_client import OpenAIImageError, generate_instagram_image
+from pixverse_client import build_video_prompt
+from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image
 from video_providers import (
     VideoProviderError,
     generate_video as generate_with_provider,
@@ -296,29 +297,6 @@ async def video_status(provider: str, job_id: str):
     return {"job_id": job_id, "provider": provider, **result}
 
 
-@app.post("/api/image/pixverse")
-async def generate_pixverse_image(request: ImageGenerateRequest):
-    prompt = (request.prompt or build_image_prompt(request.content)).strip()
-    if not prompt:
-        raise HTTPException(422, "The MCP content did not contain a usable image prompt.")
-    try:
-        image_id = await PixVerseClient().generate_image(prompt)
-        return {"image_id": image_id, "status": "processing", "prompt": prompt}
-    except PixVerseError as exc:
-        raise HTTPException(502, str(exc)) from exc
-
-
-@app.get("/api/image/pixverse/{image_id}")
-async def pixverse_image_status(image_id: int):
-    try:
-        result = await PixVerseClient().image_status(image_id)
-    except PixVerseError as exc:
-        raise HTTPException(502, str(exc)) from exc
-    raw_status = result.get("status")
-    state = "complete" if raw_status == 1 else "failed" if raw_status in (6, 7, 8) else "processing"
-    return {"image_id": image_id, "status": state, "url": result.get("url"), "result": result}
-
-
 @app.post("/api/image/openai")
 async def generate_openai_image(request: ImageGenerateRequest):
     try:
@@ -330,3 +308,14 @@ async def generate_openai_image(request: ImageGenerateRequest):
         media_type="image/png",
         headers={"Content-Disposition": 'inline; filename="instagram-post.png"'},
     )
+
+
+@app.post("/api/image/openai/album")
+async def generate_openai_album(request: ImageGenerateRequest):
+    try:
+        images = await generate_instagram_album(request.content, 5)
+    except OpenAIImageError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {
+        "images": [f"data:image/png;base64,{base64.b64encode(image).decode('ascii')}" for image in images]
+    }
