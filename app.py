@@ -9,12 +9,12 @@ import httpx
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from pixverse_client import build_video_prompt
+from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
 from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image, prepare_image_prompt
 from video_providers import (
     VideoProviderError,
@@ -282,6 +282,56 @@ async def generate_video(request: GenerateRequest):
         return {"job_id": job_id, "provider": request.provider, "status": "processing", "prompt": prompt}
     except VideoProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/video/image/generate")
+async def generate_image_video(
+    content_json: str = Form(...),
+    prompt: str = Form(""),
+    image_url: str = Form(""),
+    duration: int = Form(5),
+    quality: str = Form("720p"),
+    image: UploadFile | None = File(None),
+):
+    try:
+        content = json.loads(content_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "The selected topic content is invalid.") from exc
+    if not isinstance(content, dict):
+        raise HTTPException(422, "The selected topic content is invalid.")
+    video_prompt = (prompt or build_video_prompt(content, duration)).strip()
+    if not video_prompt:
+        raise HTTPException(422, "The selected topic did not produce a usable video prompt.")
+    image_bytes = None
+    filename = "thumbnail.png"
+    content_type = "image/png"
+    if image is not None:
+        image_bytes = await image.read(20 * 1024 * 1024 + 1)
+        if len(image_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(422, "The uploaded thumbnail must be smaller than 20 MB.")
+        content_type = image.content_type or "image/png"
+        if content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+            raise HTTPException(422, "Upload a PNG, JPG, JPEG, or WebP thumbnail.")
+        filename = image.filename or filename
+    elif not image_url.startswith(("http://", "https://")):
+        raise HTTPException(422, "Select a topic thumbnail or upload your own thumbnail.")
+    try:
+        client = PixVerseClient()
+        image_id = await client.upload_image(
+            image_url=image_url.strip(),
+            image_bytes=image_bytes,
+            filename=filename,
+            content_type=content_type,
+        )
+        video_id = await client.generate_from_image(
+            image_id,
+            video_prompt,
+            duration=max(5, min(15, duration)),
+            quality=quality,
+        )
+    except PixVerseError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"job_id": video_id, "provider": "pixverse", "status": "processing", "prompt": video_prompt}
 
 
 @app.get("/api/video/providers")

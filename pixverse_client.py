@@ -162,3 +162,64 @@ class PixVerseClient:
         except httpx.HTTPError as exc:
             raise PixVerseError(f"Could not check the PixVerse video: {exc}") from exc
         return self._unwrap(response)
+
+    async def upload_image(
+        self,
+        *,
+        image_url: str = "",
+        image_bytes: bytes | None = None,
+        filename: str = "thumbnail.png",
+        content_type: str = "image/png",
+    ) -> int:
+        files: dict[str, tuple[Any, ...]]
+        if image_bytes is not None:
+            files = {"image": (filename, image_bytes, content_type)}
+        else:
+            files = {"image_url": (None, image_url)}
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}/image/upload",
+                    headers=self._headers(unique_request=True),
+                    files=files,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not upload the thumbnail to PixVerse: {exc}") from exc
+        result = self._unwrap(response)
+        image_id = result.get("img_id")
+        if image_id is None:
+            raise PixVerseError("PixVerse did not return an image id after uploading the thumbnail.")
+        return int(image_id)
+
+    async def generate_from_image(
+        self,
+        image_id: int,
+        prompt: str,
+        *,
+        duration: int = 5,
+        quality: str = "720p",
+        model: str = "v6",
+    ) -> int:
+        payload = {
+            "duration": duration,
+            "img_id": image_id,
+            "model": model,
+            "motion_mode": "normal",
+            "prompt": prompt,
+            "quality": quality,
+            "seed": 0,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}/video/img/generate",
+                    headers=self._headers(unique_request=True),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not start PixVerse image-to-video generation: {exc}") from exc
+        result = self._unwrap(response)
+        video_id = result.get("video_id")
+        if video_id is None:
+            raise PixVerseError("PixVerse did not return a video id.")
+        return int(video_id)
