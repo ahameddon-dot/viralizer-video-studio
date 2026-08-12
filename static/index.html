@@ -155,9 +155,10 @@
       catch(error){pdfButton.textContent='Try PDF again';dailyStatus.textContent=`Could not get the Viralizer PDF: ${error.message}`}
       finally{pdfButton.disabled=false}
     }
-    async function loadLatestDaily(){try{renderDailyReport(await fetch('/api/daily/latest').then(json))}catch(error){dailyStatus.textContent=error.message.includes('No daily')?'No daily report yet. Click Run daily discovery or wait for the scheduled run.':error.message}}
+    async function loadLatestDaily(){try{renderDailyReport(await fetch('/api/daily/latest').then(json));return true}catch(error){if(!error.message.includes('No daily'))dailyStatus.textContent=error.message;return false}}
     async function pollDaily(){try{const state=await fetch('/api/daily/status').then(json);dailySchedule.textContent=`Runs daily at ${state.schedule} while the app is running · Viralizer validation is postponed`;runDaily.disabled=state.running;if(state.running){dailyStatus.textContent=state.progress;setTimeout(pollDaily,4000);return}if(state.last_error)dailyStatus.textContent=`Daily workflow error: ${state.last_error}`;else await loadLatestDaily()}catch(error){dailyStatus.textContent=error.message;runDaily.disabled=false}}
     runDaily.onclick=async()=>{runDaily.disabled=true;dailyTopFive.replaceChildren();dailyTable.replaceChildren();dailyStatus.textContent='Starting daily discovery...';try{await fetch('/api/daily/run',{method:'POST'}).then(json);setTimeout(pollDaily,1000)}catch(error){dailyStatus.textContent=error.message;runDaily.disabled=false}};
+    async function initializeDailyDiscovery(){dailyStatus.textContent='Loading today’s trend discovery...';try{const state=await fetch('/api/daily/status').then(json);if(state.running){runDaily.disabled=true;pollDaily();return}if(await loadLatestDaily())return;dailyStatus.textContent='No report exists yet. Starting daily discovery automatically...';runDaily.disabled=true;await fetch('/api/daily/run',{method:'POST'}).then(json);setTimeout(pollDaily,1000)}catch(error){dailyStatus.textContent=`Could not load daily trends: ${error.message}`;runDaily.disabled=false}}
     function refreshProviderUI(){
       const selected=providerCatalog.find(item=>item.id===videoProvider.value);if(!selected)return;
       providerNote.textContent=selected.description+(selected.configured?' — ready':selected.enabled?' — API key required':' — not yet available');
@@ -268,6 +269,6 @@
       try{const outline=currentOutline();status.textContent='Reading the selected topic source and creating the carousel prompt...';const prepared=await fetch('/api/image/prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline})}).then(json);prompt.value=prepared.prompt;status.textContent='Creating five connected Instagram carousel images...';const data=await fetch('/api/image/openai/album',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,prompt:prepared.prompt})}).then(json);const grid=document.createElement('div');grid.className='album-grid';data.images.forEach((url,index)=>{const card=document.createElement('div');card.className='album-card';const image=document.createElement('img');image.src=url;image.alt=`Instagram carousel image ${index+1}`;const link=document.createElement('a');link.href=url;link.download=`instagram-carousel-${index+1}.png`;const download=document.createElement('button');download.textContent=`Download image ${index+1}`;link.append(download);card.append(image,link);grid.append(card)});result.append(grid);status.textContent='Your five-image Instagram album is ready.'}
       catch(error){status.textContent=error.message}finally{albumButton.disabled=false}
     };
-    pollDaily();
+    initializeDailyDiscovery();
   </script>
 </main></body></html>
