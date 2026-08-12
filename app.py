@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from pixverse_client import build_video_prompt
-from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image
+from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image, prepare_image_prompt
 from video_providers import (
     VideoProviderError,
     generate_video as generate_with_provider,
@@ -310,10 +310,15 @@ async def generate_openai_image(request: ImageGenerateRequest):
     )
 
 
+@app.post("/api/image/prompt")
+async def image_prompt(request: ImageGenerateRequest):
+    return {"prompt": await prepare_image_prompt(request.content)}
+
+
 @app.post("/api/image/openai/album")
 async def generate_openai_album(request: ImageGenerateRequest):
     try:
-        images = await generate_instagram_album(request.content, 5)
+        images = await generate_instagram_album(request.content, 5, request.prompt)
     except OpenAIImageError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {

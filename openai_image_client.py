@@ -1,7 +1,10 @@
 import asyncio
 import base64
+import html
 import os
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -10,6 +13,54 @@ from pixverse_client import build_image_prompt
 
 class OpenAIImageError(RuntimeError):
     pass
+
+
+def _selected_source_url(content: dict[str, Any]) -> str:
+    candidates = [content.get("source_url"), content.get("url"), content.get("link")]
+    candidates.extend(content.get("source_urls") or [])
+    for value in candidates:
+        url = str(value or "").strip()
+        parsed = urlparse(url)
+        if parsed.scheme in {"http", "https"} and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            return url
+    return ""
+
+
+async def _source_excerpt(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 ViralizerVideoStudio/1.0"},
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError:
+        return ""
+    content_type = response.headers.get("content-type", "")
+    if "html" not in content_type and "text" not in content_type:
+        return ""
+    page = response.text[:500_000]
+    page = re.sub(r"(?is)<(script|style|svg|noscript).*?>.*?</\1>", " ", page)
+    page = re.sub(r"(?s)<[^>]+>", " ", page)
+    page = html.unescape(page)
+    return " ".join(page.split())[:5000]
+
+
+async def prepare_image_prompt(content: dict[str, Any]) -> str:
+    prompt = build_image_prompt(content)
+    source_url = _selected_source_url(content)
+    excerpt = await _source_excerpt(source_url)
+    if excerpt:
+        prompt += (
+            f" Selected-topic source: {source_url}. Source-page context: {excerpt}. "
+            "Base all concrete visual details on this source context and the MCP outline."
+        )
+    elif source_url:
+        prompt += f" Selected-topic source URL: {source_url}. Use the MCP outline as the factual basis."
+    return prompt[:9000]
 
 
 async def _generate_image(image_prompt: str) -> bytes:
@@ -50,11 +101,13 @@ async def _generate_image(image_prompt: str) -> bytes:
 
 
 async def generate_instagram_image(content: dict[str, Any], prompt: str | None = None) -> bytes:
-    return await _generate_image((prompt or build_image_prompt(content)).strip())
+    return await _generate_image((prompt or await prepare_image_prompt(content)).strip())
 
 
-async def generate_instagram_album(content: dict[str, Any], count: int = 5) -> list[bytes]:
-    base = build_image_prompt(content)
+async def generate_instagram_album(
+    content: dict[str, Any], count: int = 5, prompt: str | None = None
+) -> list[bytes]:
+    base = prompt or await prepare_image_prompt(content)
     topic = " ".join(str(content.get("topic") or "the topic").split()[:24])
     story_beats = [
         "Cover slide: introduce the topic with the strongest single visual and an immediate curiosity gap.",

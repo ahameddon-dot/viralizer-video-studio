@@ -145,8 +145,8 @@
     }
     async function getDailyTopicReport(item,reportButton){
       reportButton.disabled=true;reportButton.textContent='Loading...';dailyStatus.textContent=`Getting the Viralizer report for ${item.topic}...`;
-      try{const outline=await fetch('/api/daily/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:item.topic})}).then(json);topic.value=outline.topic||item.topic;applyOutline(outline);reportButton.textContent='Report loaded';dailyStatus.textContent=`Viralizer report loaded for ${item.topic}.`;metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
-      catch(error){const outline=dailyTopicFallback(item);topic.value=item.topic;applyOutline(outline);reportButton.textContent='Video content ready';dailyStatus.textContent='Viralizer did not return a detailed outline, so usable video content was prepared from the discovered topic. Review it below, then click Generate video with PixVerse.';metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
+      try{const outline=await fetch('/api/daily/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:item.topic})}).then(json);topic.value=outline.topic||item.topic;applyOutline(attachTopicSource(outline,item));reportButton.textContent='Report loaded';dailyStatus.textContent=`Viralizer report loaded for ${item.topic}.`;metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
+      catch(error){const outline=attachTopicSource(dailyTopicFallback(item),item);topic.value=item.topic;applyOutline(outline);reportButton.textContent='Video content ready';dailyStatus.textContent='Viralizer did not return a detailed outline, so usable video content was prepared from the discovered topic. Review it below, then click Generate video with PixVerse.';metadataPanel.scrollIntoView({behavior:'smooth',block:'start'})}
       finally{reportButton.disabled=false}
     }
     async function getDailyTopicPdf(item,pdfButton){
@@ -179,6 +179,7 @@
       thumbnailSelect.replaceChildren();(outline.thumbnails||[]).forEach((item,index)=>{const option=document.createElement('option');option.value=item.url;option.textContent=item.label||`Thumbnail ${index+1}`;thumbnailSelect.append(option)});
       const chosen=outline.selected_thumbnail||(outline.thumbnails||[])[0]?.url||'';thumbnailSelect.value=chosen;thumbnailPreview.src=/^https?:\/\//.test(chosen)?chosen:'';thumbnailPreview.hidden=!thumbnailPreview.src;
     }
+    function attachTopicSource(outline,item={}){const urls=[...(item.source_urls||[]),item.source_url,item.url,item.link].filter(value=>/^https?:\/\//.test(value||''));if(urls.length){outline.source_urls=[...new Set([...(outline.source_urls||[]),...urls])];outline.source_url=outline.source_url||urls[0]}return outline}
     function applyOutline(outline){content.value=JSON.stringify(outline,null,2);prompt.value='';renderGeneratorContent(outline)}
     suggestedTitle.oninput=()=>updateOutline({suggested_title:suggestedTitle.value});
     hookSuggestion.oninput=()=>updateOutline({hook:hookSuggestion.value});
@@ -189,7 +190,7 @@
       document.querySelectorAll('.topic-card').forEach(x=>x.disabled=true); mcpStatus.textContent='Loading this hot topic from MCP...';
       try{
         const outline=await fetch(`/api/topics/hot/${encodeURIComponent(item.topic_id)}`).then(json);
-        topic.value=outline.topic||item.topic; applyOutline(outline);
+        topic.value=outline.topic||item.topic; applyOutline(attachTopicSource(outline,item));
         mcpStatus.textContent='Hot-topic content is ready. Review it, then generate the video.';
         content.scrollIntoView({behavior:'smooth',block:'center'});
       }catch(error){mcpStatus.textContent=error.message}finally{document.querySelectorAll('.topic-card').forEach(x=>x.disabled=false)}
@@ -247,12 +248,12 @@
     function showGeneratedImage(url,label,downloadName){result.replaceChildren();const image=document.createElement('img');image.className='generated-image';image.src=url;image.alt=label;const link=document.createElement('a');link.href=url;link.download=downloadName;const download=document.createElement('button');download.textContent='Download image';link.append(download);result.append(image,link)}
     openAIImageButton.onclick=async()=>{
       openAIImageButton.disabled=true;result.replaceChildren();
-      try{const outline=currentOutline();status.textContent='Creating a square Instagram post from the hidden MCP outline...';const response=await fetch('/api/image/openai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline})});if(!response.ok){const error=await response.json();throw new Error(error.detail||'Could not generate the image')}const url=URL.createObjectURL(await response.blob());status.textContent='Your Instagram image is ready.';showGeneratedImage(url,'Generated Instagram post','instagram-post.png')}
+      try{const outline=currentOutline();status.textContent='Reading the selected topic source and creating the image prompt...';const prepared=await fetch('/api/image/prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline})}).then(json);prompt.value=prepared.prompt;status.textContent='Generating the Instagram image from the source-based prompt...';const response=await fetch('/api/image/openai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,prompt:prepared.prompt})});if(!response.ok){const error=await response.json();throw new Error(error.detail||'Could not generate the image')}const url=URL.createObjectURL(await response.blob());status.textContent='Your Instagram image is ready.';showGeneratedImage(url,'Generated Instagram post','instagram-post.png')}
       catch(error){status.textContent=error.message}finally{openAIImageButton.disabled=false}
     };
     albumButton.onclick=async()=>{
       albumButton.disabled=true;result.replaceChildren();
-      try{const outline=currentOutline();status.textContent='Creating five connected Instagram carousel images...';const data=await fetch('/api/image/openai/album',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline})}).then(json);const grid=document.createElement('div');grid.className='album-grid';data.images.forEach((url,index)=>{const card=document.createElement('div');card.className='album-card';const image=document.createElement('img');image.src=url;image.alt=`Instagram carousel image ${index+1}`;const link=document.createElement('a');link.href=url;link.download=`instagram-carousel-${index+1}.png`;const download=document.createElement('button');download.textContent=`Download image ${index+1}`;link.append(download);card.append(image,link);grid.append(card)});result.append(grid);status.textContent='Your five-image Instagram album is ready.'}
+      try{const outline=currentOutline();status.textContent='Reading the selected topic source and creating the carousel prompt...';const prepared=await fetch('/api/image/prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline})}).then(json);prompt.value=prepared.prompt;status.textContent='Creating five connected Instagram carousel images...';const data=await fetch('/api/image/openai/album',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,prompt:prepared.prompt})}).then(json);const grid=document.createElement('div');grid.className='album-grid';data.images.forEach((url,index)=>{const card=document.createElement('div');card.className='album-card';const image=document.createElement('img');image.src=url;image.alt=`Instagram carousel image ${index+1}`;const link=document.createElement('a');link.href=url;link.download=`instagram-carousel-${index+1}.png`;const download=document.createElement('button');download.textContent=`Download image ${index+1}`;link.append(download);card.append(image,link);grid.append(card)});result.append(grid);status.textContent='Your five-image Instagram album is ready.'}
       catch(error){status.textContent=error.message}finally{albumButton.disabled=false}
     };
     pollDaily();
