@@ -128,11 +128,40 @@ def _viralizer_outline(payload: dict[str, Any], requested_topic: str) -> dict[st
 
     outline = sections.get("contentOutline", {}).get("contentOutline", {})
     alternatives = sections.get("alternativeIdeas", {}).get("alternativeIdeas", [])
-    alternative_hooks = [
-        str(item.get("text", "")).strip()
-        for item in sections.get("alternativeHooks", {}).get("alternativeHooks", [])
-        if isinstance(item, dict) and str(item.get("text", "")).strip()
-    ]
+    def collect_hooks(value: Any) -> list[str]:
+        """Accept the different hook shapes returned by Viralizer reports."""
+        found: list[str] = []
+        if isinstance(value, str):
+            cleaned = " ".join(value.split())
+            if cleaned:
+                found.append(cleaned)
+        elif isinstance(value, list):
+            for item in value:
+                found.extend(collect_hooks(item))
+        elif isinstance(value, dict):
+            preferred = ("text", "hook", "title", "value", "data")
+            matched = False
+            for key in preferred:
+                if key in value:
+                    found.extend(collect_hooks(value[key]))
+                    matched = True
+            if not matched:
+                for item in value.values():
+                    found.extend(collect_hooks(item))
+        return found
+
+    hook_sources = []
+    for key, value in sections.items():
+        if "hook" in str(key).lower() and key != "contentOutline":
+            hook_sources.extend(collect_hooks(value))
+    primary_hook = " ".join(str(outline.get("title_hook", {}).get("data", "")).split())
+    alternative_hooks = []
+    seen_hooks: set[str] = set()
+    for hook in hook_sources:
+        normalized = hook.casefold()
+        if hook and normalized != primary_hook.casefold() and normalized not in seen_hooks:
+            seen_hooks.add(normalized)
+            alternative_hooks.append(hook)
     thumbnails = []
     main_thumbnail = str(outline.get("sample_thumbnail_img", "")).strip()
     if main_thumbnail:
@@ -182,8 +211,8 @@ def _viralizer_outline(payload: dict[str, Any], requested_topic: str) -> dict[st
         "why_it_matters": " ".join(summary_parts),
         "creator_angle": creator_angle,
         "video_idea": video_description,
-        "hook": outline.get("title_hook", {}).get("data", ""),
-        "suggested_title": outline.get("title_hook", {}).get("data", ""),
+        "hook": primary_hook,
+        "suggested_title": primary_hook,
         "alternative_hooks": alternative_hooks,
         "cta": outline.get("call_to_action", {}).get("data", ""),
         "hashtags": outline.get("hashtags", {}).get("data", []),
