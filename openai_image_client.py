@@ -49,8 +49,13 @@ async def _source_excerpt(url: str) -> str:
     return " ".join(page.split())[:5000]
 
 
-async def prepare_image_prompt(content: dict[str, Any]) -> str:
+async def prepare_image_prompt(content: dict[str, Any], purpose: str = "instagram") -> str:
     prompt = build_image_prompt(content)
+    if purpose == "pixverse":
+        prompt += (
+            " Create a vertical 2:3 composition suitable as a high-quality source image or opening frame "
+            "for PixVerse video animation. Keep the main subject centered with safe space for camera movement."
+        )
     source_url = _selected_source_url(content)
     excerpt = await _source_excerpt(source_url)
     if excerpt:
@@ -63,14 +68,14 @@ async def prepare_image_prompt(content: dict[str, Any]) -> str:
     return prompt[:9000]
 
 
-async def _generate_image(image_prompt: str) -> bytes:
+async def _generate_image(image_prompt: str, size: str = "1024x1024") -> bytes:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise OpenAIImageError("ChatGPT image generation is not configured. Add OPENAI_API_KEY to the server.")
     payload = {
         "model": os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
         "prompt": image_prompt,
-        "size": "1024x1024",
+        "size": size,
         "quality": os.getenv("OPENAI_IMAGE_QUALITY", "medium"),
         "output_format": "png",
         "n": 1,
@@ -100,8 +105,12 @@ async def _generate_image(image_prompt: str) -> bytes:
         raise OpenAIImageError("ChatGPT image generation returned invalid image data.") from exc
 
 
-async def generate_instagram_image(content: dict[str, Any], prompt: str | None = None) -> bytes:
-    return await _generate_image((prompt or await prepare_image_prompt(content)).strip())
+async def generate_instagram_image(
+    content: dict[str, Any], prompt: str | None = None, purpose: str = "instagram"
+) -> bytes:
+    prepared = (prompt or await prepare_image_prompt(content, purpose)).strip()
+    size = "1024x1536" if purpose == "pixverse" else "1024x1024"
+    return await _generate_image(prepared, size)
 
 
 async def generate_instagram_album(

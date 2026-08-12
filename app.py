@@ -132,6 +132,7 @@ class GenerateRequest(BaseModel):
 class ImageGenerateRequest(BaseModel):
     content: dict[str, Any]
     prompt: str | None = None
+    purpose: str = "instagram"
 
 
 class TopicRequest(BaseModel):
@@ -300,7 +301,7 @@ async def video_status(provider: str, job_id: str):
 @app.post("/api/image/openai")
 async def generate_openai_image(request: ImageGenerateRequest):
     try:
-        image = await generate_instagram_image(request.content, request.prompt)
+        image = await generate_instagram_image(request.content, request.prompt, request.purpose)
     except OpenAIImageError as exc:
         raise HTTPException(502, str(exc)) from exc
     return Response(
@@ -312,7 +313,7 @@ async def generate_openai_image(request: ImageGenerateRequest):
 
 @app.post("/api/image/prompt")
 async def image_prompt(request: ImageGenerateRequest):
-    return {"prompt": await prepare_image_prompt(request.content)}
+    return {"prompt": await prepare_image_prompt(request.content, request.purpose)}
 
 
 @app.post("/api/image/openai/album")
