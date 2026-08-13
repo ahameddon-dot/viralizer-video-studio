@@ -162,11 +162,14 @@ async def _generate_image(image_prompt: str, size: str = "1024x1024") -> bytes:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise OpenAIImageError("ChatGPT image generation is not configured. Add OPENAI_API_KEY to the server.")
+    quality = os.getenv("OPENAI_IMAGE_QUALITY", "medium").strip().lower()
+    if quality not in {"low", "medium", "high", "auto"}:
+        quality = "medium"
     payload = {
         "model": os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
         "prompt": image_prompt,
         "size": size,
-        "quality": os.getenv("OPENAI_IMAGE_QUALITY", "medium"),
+        "quality": quality,
         "output_format": "png",
         "n": 1,
     }
