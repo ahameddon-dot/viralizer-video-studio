@@ -48,9 +48,7 @@
   <section class="card" style="margin-bottom:18px">
     <div class="toolbar"><div><label style="margin:0">Viralizer Topics</label><span class="hint">Current hot topics live from Viralizer MCP</span></div><button id="refreshTopics">Get current topics</button></div>
     <div class="status" id="topicsStatus"></div>
-    <div class="filters" id="topicFilters" hidden>
-      <button class="active" data-filter="all">All</button><button data-filter="google">Google</button><button data-filter="twitter">Twitter/X</button><button data-filter="US">United States</button><button data-filter="business">Business</button><button data-filter="entertainment">Entertainment</button>
-    </div>
+    <div class="filters" id="topicFilters" hidden></div>
     <div class="topics" id="topics"></div>
   </section>
   </section>
@@ -224,6 +222,20 @@
       });
       topicsStatus.textContent=visible.length?`${visible.length} current topics available.`:'No topics in this filter.';
     }
+    function renderTopicFilters(){
+      const categories=new Map();
+      allHotTopics.forEach(item=>(item.group_keys||[]).forEach((key,index)=>{
+        if(key&&!categories.has(key))categories.set(key,(item.groups||[])[index]||key);
+      }));
+      const sorted=[...categories.entries()].sort((a,b)=>a[1].localeCompare(b[1],undefined,{sensitivity:'base'}));
+      if(activeTopicFilter!=='all'&&!categories.has(activeTopicFilter))activeTopicFilter='all';
+      topicFilters.replaceChildren();
+      [['all','All'],...sorted].forEach(([key,label])=>{
+        const button=document.createElement('button');button.dataset.filter=key;button.textContent=label;
+        button.classList.toggle('active',key===activeTopicFilter);topicFilters.append(button);
+      });
+      topicFilters.hidden=false;
+    }
     topicFilters.onclick=event=>{
       const selected=event.target.closest('button[data-filter]');if(!selected)return;
       activeTopicFilter=selected.dataset.filter;topicFilters.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===selected));renderHotTopics();
@@ -231,7 +243,7 @@
     async function loadHotTopics(){
       refreshTopics.disabled=true; topicsStatus.textContent='Loading current topics from MCP...'; topics.replaceChildren();
       try{
-        const data=await fetch('/api/topics/hot').then(json);allHotTopics=data.topics;topicFilters.hidden=false;renderHotTopics();
+        const data=await fetch('/api/topics/hot').then(json);allHotTopics=data.topics;renderTopicFilters();renderHotTopics();
       }catch(error){topicsStatus.textContent=error.message}finally{refreshTopics.disabled=false}
     }
     refreshTopics.onclick=loadHotTopics;

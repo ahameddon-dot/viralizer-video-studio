@@ -306,14 +306,33 @@ async def get_outline_from_mcp(topic: str) -> dict[str, Any]:
 
 async def get_hot_topics_from_mcp(option_keys: str | None = None) -> list[dict[str, Any]]:
     url, headers = _mcp_config()
-    keys = option_keys or os.getenv(
-        "MCP_HOT_TOPIC_KEYS", "google,twitter,US,business,entertainment"
-    )
+    configured_keys = option_keys or os.getenv("MCP_HOT_TOPIC_KEYS", "").strip()
     try:
         async with httpx.AsyncClient(headers=headers, timeout=30.0) as http_client:
             async with streamable_http_client(url, http_client=http_client) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
+                    keys = configured_keys
+                    if not keys:
+                        options_result = await session.call_tool("hot_topics_options", {})
+                        options_payload = _extract_outline(options_result)
+                        discovered: list[str] = []
+
+                        def collect_option_keys(value: Any) -> None:
+                            if isinstance(value, dict):
+                                key = value.get("key") or value.get("option_key")
+                                if key and str(key) not in discovered:
+                                    discovered.append(str(key))
+                                for child in value.values():
+                                    collect_option_keys(child)
+                            elif isinstance(value, list):
+                                for child in value:
+                                    collect_option_keys(child)
+
+                        collect_option_keys(options_payload)
+                        keys = ",".join(discovered)
+                    if not keys:
+                        keys = "google,twitter,US,business,entertainment"
                     result = await session.call_tool(
                         "hot_topics_for_keys", {"option_keys": keys}
                     )
