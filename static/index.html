@@ -173,7 +173,7 @@
     function refreshProviderUI(){
       const selected=providerCatalog.find(item=>item.id===videoProvider.value);if(!selected)return;
       providerNote.textContent=selected.description+(selected.configured?' — ready':selected.enabled?' — API key required':' — not yet available');
-      button.textContent=`Generate ${selected.name} video`;
+      button.textContent=`Prepare ${selected.name} video prompt`;
     }
     fetch('/api/video/providers').then(r=>r.json()).then(data=>{
       providerCatalog=data.providers.filter(item=>item.id==='pixverse');videoProvider.replaceChildren();
@@ -266,6 +266,7 @@
     imageVideoButton.onclick=async()=>{imageVideoButton.disabled=true;try{const outline=currentOutline(),file=thumbnailUpload.files[0],imageUrl=thumbnailSelect.value||outline.selected_thumbnail||'';if(!file&&!imageUrl)throw new Error('Select a topic thumbnail or upload your own thumbnail first.');await prepareVideoPrompt('image')}catch(error){status.textContent=error.message}finally{imageVideoButton.disabled=false}};
     confirmVideoButton.onclick = async () => {
       if(!pendingVideoMode){status.textContent='Prepare a video prompt first.';return}if(!prompt.value.trim()){status.textContent='The video prompt cannot be empty.';return}
+      if(!window.confirm('Generate this video now using the reviewed prompt? This will use provider credits.')){status.textContent='Video generation cancelled. You can continue editing the prompt.';return}
       confirmVideoButton.disabled=true; result.innerHTML='';
       try {
         const outline=JSON.parse(content.value);
@@ -293,7 +294,7 @@
     openAIImageButton.onclick=async()=>{openAIImageButton.disabled=true;try{await prepareImagePrompt('instagram')}catch(error){status.textContent=error.message}finally{openAIImageButton.disabled=false}};
     albumButton.onclick=async()=>{albumButton.disabled=true;try{await prepareImagePrompt('album')}catch(error){status.textContent=error.message}finally{albumButton.disabled=false}};
     confirmImageButton.onclick=async()=>{
-      if(!pendingImageMode){status.textContent='Prepare an image prompt first.';return}if(!imagePrompt.value.trim()){status.textContent='The image prompt cannot be empty.';return}confirmImageButton.disabled=true;result.replaceChildren();
+      if(!pendingImageMode){status.textContent='Prepare an image prompt first.';return}if(!imagePrompt.value.trim()){status.textContent='The image prompt cannot be empty.';return}if(!window.confirm(`Generate this ${pendingImageMode==='album'?'five-image album':'image'} now using the reviewed prompt? This will use provider credits.`)){status.textContent='Image generation cancelled. You can continue editing the prompt.';return}confirmImageButton.disabled=true;result.replaceChildren();
       try{const outline=currentOutline(),provider=imageProvider.value,purpose=pendingImageMode==='source'?'pixverse':'instagram';if(pendingImageMode==='album'){status.textContent='Creating five connected artworks from your confirmed prompt...';const data=await fetch('/api/image/album',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,prompt:imagePrompt.value.trim(),provider})}).then(json);const grid=document.createElement('div');grid.className='album-grid';data.images.forEach((url,index)=>{const card=document.createElement('div');card.className='album-card';const image=document.createElement('img');image.src=url;image.alt=`Instagram carousel image ${index+1}`;const link=document.createElement('a');link.href=url;link.download=`instagram-carousel-${index+1}.png`;const download=document.createElement('button');download.textContent=`Download image ${index+1}`;link.append(download);card.append(image,link);grid.append(card)});result.append(grid);status.textContent='Your five-image Instagram album is ready.';return}status.textContent=pendingImageMode==='source'?'Creating the confirmed PixVerse source image...':'Generating the confirmed Instagram artwork...';const response=await fetch('/api/image/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,prompt:imagePrompt.value.trim(),purpose,provider})});if(!response.ok){const error=await response.json();throw new Error(error.detail||'Could not generate the image')}const url=URL.createObjectURL(await response.blob());if(pendingImageMode==='source'){status.textContent='Your PixVerse source image is ready.';showGeneratedImage(url,'Generated PixVerse source image','pixverse-source-image.png')}else{status.textContent='Your 4:5 Instagram image is ready.';showGeneratedImage(url,'Generated Instagram post','instagram-post.png')}}catch(error){status.textContent=error.message}finally{confirmImageButton.disabled=false}
     };
     showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();
