@@ -187,7 +187,23 @@ async def _generate_image(image_prompt: str, size: str = "1024x1024") -> bytes:
     except ValueError as exc:
         raise OpenAIImageError("ChatGPT image generation returned an invalid response.") from exc
     if response.is_error:
-        message = (data.get("error") or {}).get("message") or f"Request failed ({response.status_code})."
+        error = data.get("error") or {}
+        message = error.get("message") or f"Request failed ({response.status_code})."
+        details = [
+            value
+            for value in (
+                f"code={error.get('code')}" if error.get("code") else "",
+                f"request={response.headers.get('x-request-id')}"
+                if response.headers.get("x-request-id")
+                else "",
+                f"organization={response.headers.get('openai-organization')}"
+                if response.headers.get("openai-organization")
+                else "",
+            )
+            if value
+        ]
+        if details:
+            message = f"{message} ({', '.join(details)})"
         raise OpenAIImageError(str(message))
     encoded = ((data.get("data") or [{}])[0]).get("b64_json")
     if not encoded:
