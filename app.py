@@ -361,6 +361,11 @@ async def video_providers():
     return {"providers": provider_catalog()}
 
 
+@app.post("/api/video/prompt")
+async def video_prompt(request: GenerateRequest):
+    return {"prompt": build_video_prompt(request.content, request.duration)}
+
+
 @app.get("/api/video/{provider}/{job_id}")
 async def video_status(provider: str, job_id: str):
     try:
