@@ -112,6 +112,37 @@ async def prepare_image_prompt(content: dict[str, Any], purpose: str = "instagra
 
     title = clip(content.get("suggested_title") or content.get("hook") or content.get("topic"), 22)
     reference = clip(content.get("reference_description"), 35)
+    if purpose == "infographic":
+        hooks = [content.get("hook"), *(content.get("alternative_hooks") or [])]
+        if not isinstance(hooks, list):
+            hooks = [hooks]
+        hook_text = " | ".join(clip(value, 18) for value in hooks[:4] if clip(value, 18))
+        tags = content.get("hashtags") or []
+        if not isinstance(tags, list):
+            tags = [tags]
+        facts = [
+            f"TITLE: {title}",
+            f"TOPIC: {clip(content.get('topic'), 22)}",
+            f"HOOKS: {hook_text}",
+            f"VIRAL TOPIC RANK: {clip(content.get('viral_rank'), 6)}",
+            f"ESTIMATED RESONANCE: {clip(content.get('estimated_resonance') or content.get('resonance'), 6)}",
+            f"TOTAL AUDIENCE: {clip(content.get('total_audience'), 8)}",
+            f"REMAINING REACH: {clip(content.get('remaining_reach'), 8)}",
+            f"WHY IT MATTERS: {clip(content.get('why_it_matters'), 70)}",
+            f"CONTENT OUTLINE: {clip(content.get('video_idea'), 100)}",
+            f"CREATOR ANGLE: {clip(content.get('creator_angle'), 45)}",
+            f"CALL TO ACTION: {clip(content.get('cta'), 30)}",
+            f"TAGS AND KEYWORDS: {', '.join(clip(value, 6) for value in tags[:15])}",
+        ]
+        supplied = "\n".join(value for value in facts if value.split(":", 1)[-1].strip())
+        return (
+            "Create one premium vertical 4:5 editorial infographic using all relevant supplied facts below. "
+            "Build a clear information hierarchy: headline, three KPI cards, concise key points, content flow, "
+            "creator angle, CTA, and a compact keyword footer. Use accurate, correctly spelled readable text, "
+            "strong icons and data visualization, balanced spacing, and a modern professional color system. "
+            "Do not invent statistics, claims, brands, or names. Omit any field that has no value.\n\n"
+            f"SUPPLIED FACTS:\n{supplied}"
+        )
     if purpose == "pixverse":
         if str(content.get("topic")) == "Reference image" and reference:
             return f"Create a strong vertical image based on this reference: {reference}. Clean composition, realistic detail, no text."
@@ -273,7 +304,7 @@ async def generate_instagram_image(
     prepared = (prompt or await prepare_image_prompt(content, purpose)).strip()
     size = "1024x1536"
     generated = await _generate_image(prepared, size)
-    if purpose == "pixverse":
+    if purpose in {"pixverse", "infographic"}:
         return generated
     return _add_instagram_headline(generated, _headline(content))
 
