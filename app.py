@@ -6,6 +6,7 @@ import json
 import os
 import re
 import httpx
+import io
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from PIL import Image, ImageOps
 
 from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
 from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image, prepare_image_prompt
@@ -327,7 +329,12 @@ async def generate_image_video(
     image_url: str = Form(""),
     duration: int = Form(5),
     quality: str = Form("720p"),
+    allow_text: bool = Form(False),
     image: UploadFile | None = File(None),
+    person_images: list[UploadFile] | None = File(None),
+    product_images: list[UploadFile] | None = File(None),
+    ad_images: list[UploadFile] | None = File(None),
+    logo_images: list[UploadFile] | None = File(None),
 ):
     try:
         content = json.loads(content_json)
@@ -335,13 +342,51 @@ async def generate_image_video(
         raise HTTPException(422, "The selected topic content is invalid.") from exc
     if not isinstance(content, dict):
         raise HTTPException(422, "The selected topic content is invalid.")
+    role_uploads = {
+        "person": person_images or [],
+        "product": product_images or [],
+        "advertising style": ad_images or [],
+        "logo": logo_images or [],
+    }
+    role_counts = {role: len(files) for role, files in role_uploads.items() if files}
+    role_direction = "; ".join(f"{count} {role} reference{'s' if count != 1 else ''}" for role, count in role_counts.items())
     video_prompt = (prompt or build_video_prompt(content, duration)).strip()
+    if role_direction:
+        video_prompt += f" Use the uploaded reference board faithfully: {role_direction}. The board order is person references first, then product references, advertising references, and logo references. Preserve person identity, product design, advertising style, and authentic logo appearance according to each reference role."
+    video_prompt += " Override any earlier no-text instruction: readable on-screen text is permitted only where explicitly requested in the reviewed prompt." if allow_text else " Show no readable text, captions, titles, labels, random letters, or generated typography."
     if not video_prompt:
         raise HTTPException(422, "The selected topic did not produce a usable video prompt.")
     image_bytes = None
     filename = "thumbnail.png"
     content_type = "image/png"
-    if image is not None:
+    all_role_files = [(role, upload) for role, uploads in role_uploads.items() for upload in uploads]
+    if len(all_role_files) > 12:
+        raise HTTPException(422, "Upload no more than 12 reference images in total.")
+    if all_role_files:
+        opened: list[Image.Image] = []
+        for role, upload in all_role_files:
+            raw = await upload.read(20 * 1024 * 1024 + 1)
+            if len(raw) > 20 * 1024 * 1024:
+                raise HTTPException(422, f"A {role} reference is larger than 20 MB.")
+            if (upload.content_type or "") not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+                raise HTTPException(422, "Reference images must be PNG, JPG, JPEG, or WebP.")
+            try:
+                opened.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+            except Exception as exc:
+                raise HTTPException(422, f"A {role} reference could not be read as an image.") from exc
+        canvas = Image.new("RGB", (1080, 1920), (18, 18, 22))
+        columns = 2
+        rows = (len(opened) + columns - 1) // columns
+        cell_width, cell_height = 540, 1920 // max(1, rows)
+        for index, source in enumerate(opened):
+            fitted = ImageOps.fit(source, (cell_width, cell_height), method=Image.Resampling.LANCZOS)
+            canvas.paste(fitted, ((index % columns) * cell_width, (index // columns) * cell_height))
+        output = io.BytesIO()
+        canvas.save(output, format="PNG", optimize=True)
+        image_bytes = output.getvalue()
+        filename = "reference-board.png"
+        content_type = "image/png"
+    elif image is not None:
         image_bytes = await image.read(20 * 1024 * 1024 + 1)
         if len(image_bytes) > 20 * 1024 * 1024:
             raise HTTPException(422, "The uploaded thumbnail must be smaller than 20 MB.")
