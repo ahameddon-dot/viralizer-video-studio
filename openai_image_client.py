@@ -199,19 +199,41 @@ async def _generate_image(image_prompt: str, size: str = "1024x1024") -> bytes:
         "output_format": "png",
         "n": 1,
     }
-    try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/images/generations",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
-            )
-    except httpx.HTTPError as exc:
-        raise OpenAIImageError(f"Could not connect to ChatGPT image generation: {exc}") from exc
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise OpenAIImageError("ChatGPT image generation returned an invalid response.") from exc
+    subject_match = re.search(r'["“]([^"”]{3,160})["”]', image_prompt)
+    safe_subject = subject_match.group(1) if subject_match else " ".join(image_prompt.split()[:20])
+    for original, replacement in {
+        "mental health": "emotional wellbeing",
+        "therapy": "supportive wellbeing services",
+        "depression": "wellbeing challenges",
+        "anxiety": "stress support",
+        "trauma": "recovery support",
+    }.items():
+        safe_subject = re.sub(original, replacement, safe_subject, flags=re.I)
+    safe_prompt = (
+        f"Create a clean, hopeful educational infographic about: {safe_subject}. "
+        "Use abstract symbols, simple technology icons, calm blue and teal colors, and a clear modern layout. "
+        "Keep it non-clinical and non-graphic. No realistic distress, medical procedures, danger, violence, political persuasion, trademarks, or identifiable people."
+    )
+    response = None
+    data: dict[str, Any] = {}
+    for attempt_prompt in (image_prompt, safe_prompt):
+        payload["prompt"] = attempt_prompt
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/images/generations",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise OpenAIImageError(f"Could not connect to ChatGPT image generation: {exc}") from exc
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise OpenAIImageError("ChatGPT image generation returned an invalid response.") from exc
+        error_code = str((data.get("error") or {}).get("code") or "").lower()
+        if not response.is_error or "moderation" not in error_code or attempt_prompt == safe_prompt:
+            break
     if response.is_error:
         error = data.get("error") or {}
         message = error.get("message") or f"Request failed ({response.status_code})."
@@ -230,6 +252,11 @@ async def _generate_image(image_prompt: str, size: str = "1024x1024") -> bytes:
         ]
         if details:
             message = f"{message} ({', '.join(details)})"
+        if "moderation" in str(error.get("code") or "").lower():
+            request_id = response.headers.get("x-request-id") or "not provided"
+            raise OpenAIImageError(
+                f"OpenAI blocked both the original prompt and a neutral symbolic retry. Edit the title to remove sensitive wording and try again. Request ID: {request_id}."
+            )
         raise OpenAIImageError(str(message))
     encoded = ((data.get("data") or [{}])[0]).get("b64_json")
     if not encoded:
