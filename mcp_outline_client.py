@@ -46,25 +46,40 @@ def _idea_content_ready(payload: dict[str, Any]) -> bool:
 
 
 def _fallback_idea_content(outline: dict[str, Any], subject: str) -> dict[str, Any]:
-    """Convert a real Viralizer topic report into a concise Idea Smith presentation."""
+    """Preserve the visible Viralizer report while removing MCP transport metadata."""
     concept = str(outline.get("video_idea") or "").strip()
     hook = str(outline.get("hook") or "").strip()
     angle = str(outline.get("creator_angle") or "").strip()
     context = str(outline.get("why_it_matters") or "").strip()
     if len(" ".join((concept, hook, angle, context)).strip()) < 80:
         return {}
+    thumbnails = [
+        item for item in (outline.get("thumbnails") or [])
+        if isinstance(item, dict)
+        and str(item.get("url") or "").startswith(("http://", "https://"))
+        and "/vi//" not in str(item.get("url") or "")
+    ]
     idea = {
+        "image_url": str((thumbnails[0] if thumbnails else {}).get("url") or "").strip(),
+        "image_source": str((thumbnails[0] if thumbnails else {}).get("label") or "").strip(),
         "title": str(outline.get("suggested_title") or hook or subject).strip(),
         "hook": hook,
-        "concept": concept,
+        "content_outline": concept,
         "creator_angle": angle,
         "call_to_action": str(outline.get("cta") or "").strip(),
-        "hashtags": outline.get("hashtags") or [],
+        "hashtags_and_keywords": outline.get("hashtags") or [],
     }
     return {
-        "topic": str(outline.get("topic") or subject).strip(),
-        "why_it_matters": context,
-        "ideas": [{key: value for key, value in idea.items() if value not in (None, "", [], {})}],
+        "deep_dive": str(outline.get("topic") or subject).strip(),
+        "metrics": [item for item in [
+            {"label": "Viral Topic Rank", "value": f"#{outline.get('viral_rank')}"},
+            {"label": "Total Audience", "value": outline.get("total_audience")},
+            {"label": "Estimated Remaining Views", "value": outline.get("remaining_reach")},
+        ] if item.get("value") not in (None, "", "#")],
+        "overview_and_performance": context,
+        "example_content_idea": {
+            key: value for key, value in idea.items() if value not in (None, "", [], {})
+        },
     }
 
 
