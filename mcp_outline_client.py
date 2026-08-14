@@ -45,6 +45,29 @@ def _idea_content_ready(payload: dict[str, Any]) -> bool:
     return len(meaningful) >= 80
 
 
+def _fallback_idea_content(outline: dict[str, Any], subject: str) -> dict[str, Any]:
+    """Convert a real Viralizer topic report into a concise Idea Smith presentation."""
+    concept = str(outline.get("video_idea") or "").strip()
+    hook = str(outline.get("hook") or "").strip()
+    angle = str(outline.get("creator_angle") or "").strip()
+    context = str(outline.get("why_it_matters") or "").strip()
+    if len(" ".join((concept, hook, angle, context)).strip()) < 80:
+        return {}
+    idea = {
+        "title": str(outline.get("suggested_title") or hook or subject).strip(),
+        "hook": hook,
+        "concept": concept,
+        "creator_angle": angle,
+        "call_to_action": str(outline.get("cta") or "").strip(),
+        "hashtags": outline.get("hashtags") or [],
+    }
+    return {
+        "topic": str(outline.get("topic") or subject).strip(),
+        "why_it_matters": context,
+        "ideas": [{key: value for key, value in idea.items() if value not in (None, "", [], {})}],
+    }
+
+
 def _leaf_errors(exc: BaseException) -> list[BaseException]:
     nested = getattr(exc, "exceptions", None)
     if nested:
@@ -504,7 +527,27 @@ async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
         ).strip()
         raise MCPOutlineError(message or "Idea Smith reported an error.")
     if is_fallback:
-        payload = _viralizer_outline(payload, subject)
+        fallback_content: dict[str, Any] = {}
+        last_fallback_error: MCPOutlineError | None = None
+        for attempt in range(3):
+            try:
+                report = await get_full_report_from_mcp(subject)
+                fallback_content = _fallback_idea_content(
+                    _viralizer_outline(report, subject), subject
+                )
+                if fallback_content:
+                    break
+            except MCPOutlineError as exc:
+                last_fallback_error = exc
+            if attempt < 2:
+                await asyncio.sleep(2 * (attempt + 1))
+        if not fallback_content:
+            detail = f" ({last_fallback_error})" if last_fallback_error else ""
+            raise MCPOutlineError(
+                "Viralizer returned only placeholder fields and has not produced real Idea Smith "
+                f"content yet. The app retried three times{detail}"
+            )
+        payload = fallback_content
     cleaned_content = _clean_idea_content(payload)
     if not cleaned_content or not _idea_content_ready(payload):
         raise MCPOutlineError(
