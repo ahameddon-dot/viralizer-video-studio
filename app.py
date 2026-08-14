@@ -157,6 +157,12 @@ class CategoryIntelligenceRequest(BaseModel):
     reputation: str = Field(default="", max_length=80)
 
 
+class DailyDiscoveryRequest(BaseModel):
+    category: str = Field(default="ALL", max_length=80)
+    keyword: str = Field(default="", max_length=120)
+    description: str = Field(default="", max_length=500)
+
+
 @app.get("/api/betting/topics")
 async def betting_topics(query: str = ""):
     try:
@@ -282,8 +288,9 @@ async def daily_latest():
 
 
 @app.post("/api/daily/run")
-async def daily_run():
-    started = daily_trends.start()
+async def daily_run(request: DailyDiscoveryRequest | None = None):
+    options = request.model_dump() if request else {}
+    started = daily_trends.start(options)
     return {"started": started, **daily_trends.status()}
 
 

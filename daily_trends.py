@@ -60,6 +60,17 @@ def _topic_key(value: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", value.lower()).strip()
 
 
+def _youtube_topics(title: str, category: str, keyword: str = "") -> tuple[str, list[str]]:
+    words = re.findall(r"[\w'’.-]+", _clean_title(title), flags=re.UNICODE)
+    primary = " ".join(words[:10]).strip() or title
+    alternatives: list[str] = []
+    if keyword.strip():
+        alternatives.append(" ".join(f"{keyword.strip()} {category} latest update".split()[:10]))
+    alternatives.append(" ".join(f"{primary} explained".split()[:11]))
+    alternatives.append(" ".join(f"{category} {primary} analysis".split()[:11]))
+    return primary, list(dict.fromkeys(item for item in alternatives if item and item.lower() != primary.lower()))[:2]
+
+
 def _remaining_number(value: Any) -> float | None:
     match = re.search(r"([\d.]+)\s*([KMB]?)", str(value or "").upper())
     if not match:
@@ -94,10 +105,10 @@ class DailyTrendService:
         except (OSError, json.JSONDecodeError):
             return None
 
-    def start(self) -> bool:
+    def start(self, options: dict[str, str] | None = None) -> bool:
         if self.running:
             return False
-        self._task = asyncio.create_task(self.run())
+        self._task = asyncio.create_task(self.run(options or {}))
         return True
 
     async def scheduler(self) -> None:
@@ -118,12 +129,20 @@ class DailyTrendService:
             if not latest or not str(latest.get("generated_at", "")).startswith(now.date().isoformat()):
                 self.start()
 
-    async def discover(self) -> list[dict[str, Any]]:
+    async def discover(self, options: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        options = options or {}
+        selected_category = str(options.get("category") or "ALL").strip()
+        keyword = " ".join(str(options.get("keyword") or "").split()[:8])
+        description = " ".join(str(options.get("description") or "").split()[:12])
         limit = max(30, min(600, int(os.getenv("DAILY_CANDIDATE_LIMIT", "540"))))
         candidates: dict[str, dict[str, Any]] = {}
         headers = {"User-Agent": "ViralizerDailyTrends/1.0"}
         async with httpx.AsyncClient(headers=headers, timeout=25.0, follow_redirects=True) as client:
-            for category, query in CATEGORY_QUERIES.items():
+            category_queries = CATEGORY_QUERIES.items() if selected_category in ("", "ALL") else [(selected_category, CATEGORY_QUERIES.get(selected_category, selected_category))]
+            for category, query in category_queries:
+                focus = " ".join(item for item in (keyword, description) if item)
+                if focus:
+                    query = f"({query}) ({focus})"
                 url = (
                     "https://news.google.com/rss/search?q="
                     f"{quote_plus(query + ' when:1d')}&hl=en-US&gl=US&ceid=US:en"
@@ -254,24 +273,36 @@ class DailyTrendService:
     def _action(item: dict[str, Any]) -> str:
         return "PENDING VALIDATION"
 
-    async def run(self) -> None:
+    async def run(self, options: dict[str, str] | None = None) -> None:
+        options = options or {}
         self.running = True
         self.last_error = None
         try:
             self.progress = "Discovering fresh topics from public news sources"
-            candidates = await self.discover()
+            candidates = await self.discover(options)
             if not candidates:
                 raise RuntimeError("No fresh public-web candidates were discovered.")
             self.progress = f"Ranking {len(candidates)} public trend candidates"
             candidates.sort(key=self._rank_key)
             result_limit = max(1, min(20, int(os.getenv("DAILY_RESULT_LIMIT", "20"))))
             topics = candidates[:result_limit]
+            for item in candidates:
+                youtube_topic, alternates = _youtube_topics(
+                    item["topic"], item["category"], str(options.get("keyword") or "")
+                )
+                item["youtube_search_topic"] = youtube_topic
+                item["alternate_topics"] = alternates
             for index, item in enumerate(topics, 1):
                 item["rank"] = index
                 item["action"] = self._action(item)
                 item["viralizer_status"] = "PENDING"
             report = {
                 "generated_at": datetime.now().astimezone().isoformat(),
+                "discovery_brief": {
+                    "category": str(options.get("category") or "ALL"),
+                    "keyword": str(options.get("keyword") or ""),
+                    "description": str(options.get("description") or ""),
+                },
                 "candidate_count": len(candidates),
                 "validated_count": 0,
                 "pending_validation_count": len(topics),
