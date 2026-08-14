@@ -26,6 +26,7 @@ from video_providers import (
     video_status as provider_video_status,
 )
 from daily_trends import daily_trends
+from global_sources import discover_category_topics
 from mcp_outline_client import (
     MCPOutlineError,
     get_full_report_from_mcp,
@@ -363,6 +364,30 @@ async def category_intelligence(request: CategoryIntelligenceRequest):
         return await category_intelligence_with_retry(request)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/category/topics")
+async def category_topics(request: CategoryIntelligenceRequest):
+    category = " ".join(request.category.split()[:8])
+    keyword = " ".join(request.keyword.split()[:8])
+    description = " ".join(request.description.split()[:10])
+    lens = " ".join(request.lens.split()[:4])
+    reputation = " ".join(request.reputation.split()[:3])
+    parts = [keyword or category]
+    if keyword and category.lower() not in keyword.lower():
+        parts.append(category)
+    if description:
+        parts.append(description)
+    elif lens and lens.lower() != "everything":
+        parts.append(lens)
+    if reputation and reputation.lower() != "all reputation":
+        parts.append(reputation)
+    query = " ".join(" ".join(parts).split()[:18])
+    try:
+        topics = await discover_category_topics(query, 30)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Could not discover worldwide category topics: {exc}") from exc
+    return {"query": query, "count": len(topics), "topics": topics, "source": "Worldwide public news sources"}
 
 
 @app.post("/api/video/generate")
