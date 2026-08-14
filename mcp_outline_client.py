@@ -1,4 +1,5 @@
 import json
+import asyncio
 import os
 import re
 from typing import Any
@@ -10,6 +11,38 @@ from mcp.client.streamable_http import streamable_http_client
 
 class MCPOutlineError(RuntimeError):
     pass
+
+
+_IDEA_TECHNICAL_KEYS = {
+    "task_id", "taskid", "status", "state", "owner", "mode", "tool", "schema",
+    "metadata", "request_id", "requestid", "created_at", "updated_at", "progress",
+    "poll_url", "page",
+}
+
+
+def _clean_idea_content(value: Any) -> Any:
+    """Remove MCP transport/task fields while preserving finished editorial content."""
+    if isinstance(value, dict):
+        cleaned = {
+            str(key): _clean_idea_content(item)
+            for key, item in value.items()
+            if str(key).lower().replace("-", "_") not in _IDEA_TECHNICAL_KEYS
+            and not str(key).startswith("_")
+        }
+        return {key: item for key, item in cleaned.items() if item not in (None, "", [], {})}
+    if isinstance(value, list):
+        cleaned = [_clean_idea_content(item) for item in value]
+        return [item for item in cleaned if item not in (None, "", [], {})]
+    return value
+
+
+def _idea_content_ready(payload: dict[str, Any]) -> bool:
+    status = str(payload.get("status") or payload.get("state") or "").lower()
+    if any(word in status for word in ("pending", "processing", "queued", "running", "started")):
+        return False
+    cleaned = _clean_idea_content(payload)
+    meaningful = json.dumps(cleaned, ensure_ascii=False) if cleaned else ""
+    return len(meaningful) >= 80
 
 
 def _leaf_errors(exc: BaseException) -> list[BaseException]:
@@ -447,11 +480,19 @@ async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
                     task_id = payload.get("task_id") or records.get("task_id")
                     if task_id:
                         poll_tool = next((item for item in listed.tools if item.name == "poll_task_page"), None)
-                        if poll_tool:
-                            result = await session.call_tool(
-                                "poll_task_page", {"task_id": task_id, "timeout_seconds": 150}
-                            )
-                            payload = _extract_outline(result)
+                        view_tool = next((item for item in listed.tools if item.name == "view_task_page"), None)
+                        task_tool = poll_tool or view_tool
+                        if task_tool:
+                            for attempt in range(4):
+                                call_arguments = {"task_id": task_id}
+                                if task_tool.name == "poll_task_page":
+                                    call_arguments["timeout_seconds"] = 60
+                                result = await session.call_tool(task_tool.name, call_arguments)
+                                payload = _extract_outline(result)
+                                if _idea_content_ready(payload):
+                                    break
+                                if attempt < 3:
+                                    await asyncio.sleep(2)
     except MCPOutlineError:
         raise
     except Exception as exc:
@@ -464,15 +505,16 @@ async def get_idea_smith_from_mcp(topic: str = "") -> dict[str, Any]:
         raise MCPOutlineError(message or "Idea Smith reported an error.")
     if is_fallback:
         payload = _viralizer_outline(payload, subject)
+    cleaned_content = _clean_idea_content(payload)
+    if not cleaned_content or not _idea_content_ready(payload):
+        raise MCPOutlineError(
+            "Viralizer has not finished the Idea Smith content yet. Please try again shortly."
+        )
     return {
-        "tool": tool.name,
-        "mode": "viralizer_topic_ideas" if is_fallback else "idea_smith",
         "notice": (
-            "Viralizer has not exposed Idea Smith as an MCP tool yet; these ideas use "
-            "Viralizer topic analysis as the temporary fallback."
+            "Ideas prepared from Viralizer topic intelligence."
             if is_fallback
-            else ""
+            else "Idea Smith content is ready."
         ),
-        "query": topic.strip(),
-        "result": payload,
+        "content": cleaned_content,
     }
