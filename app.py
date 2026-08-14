@@ -605,7 +605,8 @@ async def generate_image_from_reference(
         content_type = image.content_type or content_type
         prompt = (
             f"{prompt.strip()} Use the actual uploaded image as the primary reference. "
-            "Preserve its main subject, identity, product details, branding, and composition."
+            "Preserve its main subject, identity, product details, and branding, but create a clearly different "
+            "scene, camera angle, background, pose, and composition. Do not copy the original layout."
         )
     elif image_url.startswith(("http://", "https://")):
         try:
@@ -620,7 +621,8 @@ async def generate_image_from_reference(
             raise HTTPException(422, "The selected thumbnail is larger than 20 MB.")
         prompt = (
             f"{prompt.strip()} Use the selected thumbnail as the primary reference. "
-            "Preserve its main subject, identity, product details, branding, and composition."
+            "Preserve its main subject, identity, product details, and branding, but create a clearly different "
+            "scene, camera angle, background, pose, and composition. Do not copy the original layout."
         )
     else:
         raise HTTPException(422, "Select or upload a reference image first.")
@@ -714,8 +716,9 @@ async def thumbnail_prompts(
         else:
             image_prompt_value = (
                 "Use the selected or uploaded image as the actual main reference. "
-                "Preserve its subject, identity, product details, branding, and composition. "
-                "Create a polished vertical image. No added text."
+                "Preserve its subject, identity, product details, and branding. Create a clearly different "
+                "scene, camera angle, background, pose, and vertical composition. Do not copy the original layout. "
+                "No added text."
             )
         short_description = " ".join(description.split()[:35])
         video_prompt_value = (
