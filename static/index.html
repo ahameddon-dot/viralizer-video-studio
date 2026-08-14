@@ -126,8 +126,8 @@
       <label for="imageProvider" style="margin-top:12px">Image provider</label>
       <select id="imageProvider"><option value="openai">OpenAI — best quality (recommended)</option><option value="cloudflare">Cloudflare Lucid — limited free generations</option></select>
       <div class="row">
-        <div><label for="duration">Duration</label><select id="duration"><option>5</option><option>8</option><option>10</option><option selected>15</option></select><p class="hint">15 seconds is recommended for explanatory videos.</p></div>
-        <div><label for="quality">Quality</label><select id="quality"><option>720p</option><option>1080p</option><option>540p</option></select></div>
+        <div><label for="duration">Duration</label><select id="duration"><option selected>5</option><option>8</option><option>10</option><option>15</option></select><p class="hint">Default: 5 seconds. Increase it only when the concept needs more time.</p></div>
+        <div><label for="quality">Quality</label><select id="quality"><option>720p</option><option>1080p</option><option selected>540p</option></select></div>
       </div>
       <div class="generator-actions"><button id="generate">Prepare video prompt</button><button id="generateImageVideo">Prepare image-to-video prompt</button><button id="confirmVideo" hidden>Confirm &amp; generate video</button><button id="generatePixverseImage">Use my source-image prompt</button><button id="generateOpenAIImage">Prepare Instagram-image prompt</button><button id="generateInstagramAlbum">Prepare album prompt</button><button id="confirmImage" hidden>Confirm &amp; generate image</button></div>
       <div class="status" id="status"></div>
