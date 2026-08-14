@@ -149,6 +149,14 @@ class IdeaSmithRequest(BaseModel):
     topic: str = Field(default="", max_length=500)
 
 
+class CategoryIntelligenceRequest(BaseModel):
+    category: str = Field(min_length=2, max_length=120)
+    keyword: str = Field(default="", max_length=120)
+    description: str = Field(default="", max_length=500)
+    lens: str = Field(default="", max_length=80)
+    reputation: str = Field(default="", max_length=80)
+
+
 @app.get("/api/betting/topics")
 async def betting_topics(query: str = ""):
     try:
@@ -201,17 +209,36 @@ async def full_report_with_fallback(topic: str):
     raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
 
 
-async def category_intelligence_with_retry(topic: str):
-    base = topic.strip()
-    candidates = list(dict.fromkeys([
-        base,
-        f"{base} latest trends",
-        f"{base} industry news",
-    ]))
+async def category_intelligence_with_retry(request: CategoryIntelligenceRequest):
+    category = " ".join(request.category.split()[:8])
+    keyword = " ".join(request.keyword.split()[:8])
+    description = " ".join(request.description.split()[:10])
+    lens = " ".join(request.lens.split()[:4])
+    reputation = " ".join(request.reputation.split()[:3])
+    base = keyword or category
+    primary_parts = [base]
+    if keyword and category.lower() not in keyword.lower():
+        primary_parts.append(category)
+    if description:
+        primary_parts.append(description)
+    elif lens and lens.lower() != "everything":
+        primary_parts.append(lens)
+    if reputation and reputation.lower() != "all reputation":
+        primary_parts.append(f"{reputation} reputation")
+    primary = " ".join(" ".join(primary_parts).split()[:14])
+    candidates = list(dict.fromkeys(filter(None, [
+        primary,
+        " ".join((f"{base} {category} latest trends" if base.lower() != category.lower() else f"{category} latest trends").split()[:12]),
+        " ".join((f"{base} {category} news" if base.lower() != category.lower() else f"{category} industry news").split()[:12]),
+    ])))[:3]
     last_error = None
     for index, candidate in enumerate(candidates):
         try:
-            return await get_category_intelligence_from_mcp(candidate)
+            outline = await get_category_intelligence_from_mcp(candidate)
+            returned_topic = re.sub(r"^deep\s+dive\s*:\s*", "", str(outline.get("topic") or candidate), flags=re.I).strip()
+            outline["youtube_search_topic"] = returned_topic or candidate
+            outline["alternate_topics"] = [item for item in candidates if item != candidate][:2]
+            return outline
         except MCPOutlineError as exc:
             last_error = exc
         if index < len(candidates) - 1:
@@ -324,9 +351,9 @@ async def idea_smith(request: IdeaSmithRequest):
 
 
 @app.post("/api/category/intelligence")
-async def category_intelligence(request: TopicRequest):
+async def category_intelligence(request: CategoryIntelligenceRequest):
     try:
-        return await category_intelligence_with_retry(request.topic)
+        return await category_intelligence_with_retry(request)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
 
