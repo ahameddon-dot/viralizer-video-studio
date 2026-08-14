@@ -32,6 +32,7 @@ from mcp_outline_client import (
     get_hot_topic_details_from_mcp,
     get_hot_topics_from_mcp,
     get_idea_smith_from_mcp,
+    get_category_intelligence_from_mcp,
     get_outline_from_mcp,
 )
 from viralizer_pdf import build_viralizer_pdf
@@ -200,6 +201,24 @@ async def full_report_with_fallback(topic: str):
     raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
 
 
+async def category_intelligence_with_retry(topic: str):
+    base = topic.strip()
+    candidates = list(dict.fromkeys([
+        base,
+        f"{base} latest trends",
+        f"{base} industry news",
+    ]))
+    last_error = None
+    for index, candidate in enumerate(candidates):
+        try:
+            return await get_category_intelligence_from_mcp(candidate)
+        except MCPOutlineError as exc:
+            last_error = exc
+        if index < len(candidates) - 1:
+            await asyncio.sleep(2)
+    raise last_error or MCPOutlineError("Viralizer returned no category intelligence.")
+
+
 async def hot_topic_details_with_retry(topic_id: str):
     last_error = None
     for attempt in range(3):
@@ -300,6 +319,14 @@ async def hot_topic_details(topic_id: str):
 async def idea_smith(request: IdeaSmithRequest):
     try:
         return await get_idea_smith_from_mcp(request.topic)
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/category/intelligence")
+async def category_intelligence(request: TopicRequest):
+    try:
+        return await category_intelligence_with_retry(request.topic)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
 

@@ -375,6 +375,24 @@ async def get_outline_from_mcp(topic: str) -> dict[str, Any]:
     return outline
 
 
+async def get_category_intelligence_from_mcp(topic: str) -> dict[str, Any]:
+    """Return valid Viralizer category analysis without requiring video fields."""
+    final_payload = await get_full_report_from_mcp(topic)
+    outline = _viralizer_outline(final_payload, topic)
+    meaningful = " ".join(
+        str(outline.get(key) or "").strip()
+        for key in (
+            "why_it_matters", "video_idea", "hook", "creator_angle",
+            "viral_rank", "total_audience", "remaining_reach",
+        )
+    ).strip()
+    if len(meaningful) < 40:
+        raise MCPOutlineError(
+            "Viralizer returned no usable category intelligence for this phrase."
+        )
+    return outline
+
+
 async def get_hot_topics_from_mcp(option_keys: str | None = None) -> list[dict[str, Any]]:
     url, headers = _mcp_config()
     configured_keys = option_keys or os.getenv("MCP_HOT_TOPIC_KEYS", "").strip()
