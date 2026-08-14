@@ -278,6 +278,54 @@ async def generate_instagram_image(
     return _add_instagram_headline(generated, _headline(content))
 
 
+async def generate_reference_image(
+    image_bytes: bytes, prompt: str, content_type: str = "image/png"
+) -> bytes:
+    """Generate an edited image while sending the actual reference pixels to OpenAI."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise OpenAIImageError("ChatGPT image generation is not configured. Add OPENAI_API_KEY to the server.")
+    quality = os.getenv("OPENAI_IMAGE_QUALITY", "medium").strip().lower()
+    if quality not in {"low", "medium", "high", "auto"}:
+        quality = "medium"
+    data = {
+        "model": os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
+        "prompt": prompt.strip(),
+        "size": "1024x1536",
+        "quality": quality,
+        "output_format": "png",
+        "n": "1",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/images/edits",
+                headers={"Authorization": f"Bearer {api_key}"},
+                data=data,
+                files={"image": ("reference.png", image_bytes, content_type)},
+            )
+    except httpx.HTTPError as exc:
+        raise OpenAIImageError(f"Could not connect to ChatGPT reference-image generation: {exc}") from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise OpenAIImageError("ChatGPT reference-image generation returned an invalid response.") from exc
+    if response.is_error:
+        error = payload.get("error") or {}
+        message = error.get("message") or f"Request failed ({response.status_code})."
+        request_id = response.headers.get("x-request-id")
+        if request_id:
+            message = f"{message} (request={request_id})"
+        raise OpenAIImageError(str(message))
+    encoded = ((payload.get("data") or [{}])[0]).get("b64_json")
+    if not encoded:
+        raise OpenAIImageError("ChatGPT reference-image generation did not return an image.")
+    try:
+        return base64.b64decode(encoded)
+    except (ValueError, TypeError) as exc:
+        raise OpenAIImageError("ChatGPT reference-image generation returned invalid image data.") from exc
+
+
 async def generate_instagram_album(
     content: dict[str, Any], count: int = 5, prompt: str | None = None
 ) -> list[bytes]:

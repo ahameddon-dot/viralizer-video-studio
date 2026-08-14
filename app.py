@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
 from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
-from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, prepare_image_prompt
+from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, generate_reference_image, prepare_image_prompt
 from cloudflare_image_client import CloudflareImageError, generate_cloudflare_album, generate_cloudflare_image
 from video_providers import (
     VideoProviderError,
@@ -520,6 +520,92 @@ async def generate_image(request: ImageGenerateRequest):
     return Response(content=image, media_type="image/png")
 
 
+@app.post("/api/image/reference/generate")
+async def generate_image_from_reference(
+    prompt: str = Form(...),
+    image_url: str = Form(""),
+    image: UploadFile | None = File(None),
+    person_images: list[UploadFile] | None = File(None),
+    product_images: list[UploadFile] | None = File(None),
+    ad_images: list[UploadFile] | None = File(None),
+    logo_images: list[UploadFile] | None = File(None),
+):
+    role_groups = (
+        ("person", person_images or []),
+        ("product", product_images or []),
+        ("ad reference", ad_images or []),
+        ("logo", logo_images or []),
+    )
+    role_files = [
+        upload
+        for _, uploads in role_groups
+        for upload in uploads
+    ]
+    if len(role_files) > 12:
+        raise HTTPException(422, "Upload no more than 12 reference images in total.")
+    reference_bytes = None
+    content_type = "image/png"
+    if role_files:
+        opened: list[Image.Image] = []
+        for upload in role_files:
+            raw = await upload.read(20 * 1024 * 1024 + 1)
+            if len(raw) > 20 * 1024 * 1024:
+                raise HTTPException(422, "Each reference image must be smaller than 20 MB.")
+            try:
+                opened.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+            except Exception as exc:
+                raise HTTPException(422, "A reference file could not be read as an image.") from exc
+        canvas = Image.new("RGB", (1024, 1024), (18, 18, 22))
+        rows = (len(opened) + 1) // 2
+        for index, source in enumerate(opened):
+            fitted = ImageOps.fit(source, (512, 1024 // max(1, rows)), method=Image.Resampling.LANCZOS)
+            canvas.paste(fitted, ((index % 2) * 512, (index // 2) * (1024 // max(1, rows))))
+        output = io.BytesIO()
+        canvas.save(output, format="PNG", optimize=True)
+        reference_bytes = output.getvalue()
+        supplied_roles = ", ".join(
+            f"{len(uploads)} {name}{'' if len(uploads) == 1 else ' images'}"
+            for name, uploads in role_groups
+            if uploads
+        )
+        prompt = (
+            f"{prompt.strip()} Use the actual uploaded references ({supplied_roles}). "
+            "Preserve the people's identity, product appearance, ad styling, and logo exactly where supplied. "
+            "Do not replace them with invented alternatives."
+        )
+    elif image is not None:
+        reference_bytes = await image.read(20 * 1024 * 1024 + 1)
+        if len(reference_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(422, "The uploaded image must be smaller than 20 MB.")
+        content_type = image.content_type or content_type
+        prompt = (
+            f"{prompt.strip()} Use the actual uploaded image as the primary reference. "
+            "Preserve its main subject, identity, product details, branding, and composition."
+        )
+    elif image_url.startswith(("http://", "https://")):
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(image_url)
+                response.raise_for_status()
+                reference_bytes = response.content
+                content_type = response.headers.get("content-type", "image/png").split(";", 1)[0]
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, "Could not download the selected thumbnail.") from exc
+        if len(reference_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(422, "The selected thumbnail is larger than 20 MB.")
+        prompt = (
+            f"{prompt.strip()} Use the selected thumbnail as the primary reference. "
+            "Preserve its main subject, identity, product details, branding, and composition."
+        )
+    else:
+        raise HTTPException(422, "Select or upload a reference image first.")
+    try:
+        generated = await generate_reference_image(reference_bytes, prompt, content_type)
+        return Response(content=generated, media_type="image/png")
+    except OpenAIImageError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.post("/api/image/prompt")
 async def image_prompt(request: ImageGenerateRequest):
     return {"prompt": await prepare_image_prompt(request.content, request.purpose)}
@@ -543,9 +629,15 @@ async def thumbnail_prompts(
         raise HTTPException(422, "The selected topic content is invalid.") from exc
     image_bytes = None
     content_type = "image/png"
+    role_groups = (
+        ("person", person_images or []),
+        ("product", product_images or []),
+        ("ad reference", ad_images or []),
+        ("logo", logo_images or []),
+    )
     role_files = [
         upload
-        for uploads in (person_images or [], product_images or [], ad_images or [], logo_images or [])
+        for _, uploads in role_groups
         for upload in uploads
     ]
     if len(role_files) > 12:
@@ -587,7 +679,19 @@ async def thumbnail_prompts(
             f"Reference-image details: {description}",
         ]))
         prompt_content["reference_description"] = description
-        image_prompt_value = await prepare_image_prompt(prompt_content, "pixverse")
+        if role_files:
+            supplied_roles = ", ".join(name for name, uploads in role_groups if uploads)
+            image_prompt_value = (
+                f"Use the uploaded {supplied_roles} images as the actual visual references. "
+                "Preserve the people, products, branding, and logo exactly where supplied. "
+                "Create one polished vertical composition. No added text."
+            )
+        else:
+            image_prompt_value = (
+                "Use the selected or uploaded image as the actual main reference. "
+                "Preserve its subject, identity, product details, branding, and composition. "
+                "Create a polished vertical image. No added text."
+            )
         short_description = " ".join(description.split()[:35])
         video_prompt_value = (
             f"Animate this image for {max(5, min(15, duration))} seconds. Preserve the subject and composition. "
