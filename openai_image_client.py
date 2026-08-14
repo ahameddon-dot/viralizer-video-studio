@@ -15,6 +15,56 @@ class OpenAIImageError(RuntimeError):
     pass
 
 
+async def analyze_reference_image(
+    image_url: str = "", image_bytes: bytes | None = None, content_type: str = "image/png"
+) -> str:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise OpenAIImageError("OpenAI visual analysis is not configured. Add OPENAI_API_KEY to the server.")
+    source = image_url.strip()
+    if image_bytes:
+        source = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    if not source:
+        raise OpenAIImageError("Select or upload a thumbnail first.")
+    payload = {
+        "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"),
+        "input": [{
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "Describe this reference image for an AI image/video generator. Identify the main subject, people, product, setting, composition, colors, lighting, visible action, and mood. Be concrete and concise. Do not guess names or facts and do not transcribe text."},
+                {"type": "input_image", "image_url": source},
+            ],
+        }],
+        "max_output_tokens": 350,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("error", {}).get("message", "")
+        except Exception:
+            detail = ""
+        raise OpenAIImageError(detail or "OpenAI could not analyze the selected thumbnail.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise OpenAIImageError("OpenAI could not analyze the selected thumbnail.") from exc
+    text = str(data.get("output_text") or "").strip()
+    if not text:
+        for output in data.get("output") or []:
+            for item in output.get("content") or []:
+                if item.get("type") == "output_text" and item.get("text"):
+                    text += f" {item['text']}"
+    if not text.strip():
+        raise OpenAIImageError("OpenAI returned no visual description for this thumbnail.")
+    return " ".join(text.split())
+
+
 def _selected_source_url(content: dict[str, Any]) -> str:
     candidates = [content.get("source_url"), content.get("url"), content.get("link")]
     candidates.extend(content.get("source_urls") or [])

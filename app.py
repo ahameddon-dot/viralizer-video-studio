@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
 from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
-from openai_image_client import OpenAIImageError, generate_instagram_album, generate_instagram_image, prepare_image_prompt
+from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, prepare_image_prompt
 from cloudflare_image_client import CloudflareImageError, generate_cloudflare_album, generate_cloudflare_image
 from video_providers import (
     VideoProviderError,
@@ -523,6 +523,49 @@ async def generate_image(request: ImageGenerateRequest):
 @app.post("/api/image/prompt")
 async def image_prompt(request: ImageGenerateRequest):
     return {"prompt": await prepare_image_prompt(request.content, request.purpose)}
+
+
+@app.post("/api/thumbnail/prompts")
+async def thumbnail_prompts(
+    content_json: str = Form("{}"),
+    image_url: str = Form(""),
+    use_topic_context: bool = Form(False),
+    duration: int = Form(5),
+    image: UploadFile | None = File(None),
+):
+    try:
+        content = json.loads(content_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "The selected topic content is invalid.") from exc
+    image_bytes = None
+    content_type = "image/png"
+    if image is not None:
+        image_bytes = await image.read(20 * 1024 * 1024 + 1)
+        if len(image_bytes) > 20 * 1024 * 1024:
+            raise HTTPException(422, "The uploaded thumbnail must be smaller than 20 MB.")
+        content_type = image.content_type or content_type
+        if content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+            raise HTTPException(422, "Upload a PNG, JPG, JPEG, or WebP thumbnail.")
+    elif not image_url.startswith(("http://", "https://")):
+        raise HTTPException(422, "Select or upload a thumbnail first.")
+    try:
+        description = await analyze_reference_image(image_url, image_bytes, content_type)
+        prompt_content = dict(content) if use_topic_context and isinstance(content, dict) else {"topic": "Reference image"}
+        prompt_content["video_idea"] = " ".join(filter(None, [
+            str(prompt_content.get("video_idea") or "").strip(),
+            f"Reference-image details: {description}",
+        ]))
+        image_prompt_value = await prepare_image_prompt(prompt_content, "pixverse")
+        video_prompt_value = (
+            f"Create a {max(5, min(15, duration))}-second image-to-video animation using the selected reference image as the exact visual starting point. "
+            f"Preserve the subject identity, product design, composition, colors, clothing, logos, and setting. Reference details: {description}. "
+            "Add natural subject motion, subtle environmental movement, realistic depth, and one smooth camera move. Do not replace the central subject or invent unrelated objects. Show no readable text, captions, random letters, or watermarks."
+        )
+        if use_topic_context and prompt_content.get("topic"):
+            video_prompt_value += f" The animation must support this selected topic: {prompt_content['topic']}."
+        return {"image_prompt": image_prompt_value, "video_prompt": video_prompt_value, "analysis": description}
+    except OpenAIImageError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.post("/api/image/openai/album")
