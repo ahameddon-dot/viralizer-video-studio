@@ -35,6 +35,7 @@ from mcp_outline_client import (
 from viralizer_pdf import build_viralizer_pdf
 from betting_topics import betting_report
 from regional_trends import regional_report
+from taxonomy import TaxonomyError, load_taxonomy, save_uploaded_taxonomy
 
 
 ROOT = Path(__file__).resolve().parent
@@ -270,6 +271,19 @@ async def hot_topics():
         return {"topics": await get_hot_topics_from_mcp()}
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.get("/api/taxonomy")
+async def taxonomy():
+    return load_taxonomy()
+
+
+@app.post("/api/taxonomy/upload")
+async def upload_taxonomy(file: UploadFile = File(...)):
+    try:
+        return save_uploaded_taxonomy(file.filename or "taxonomy.json", await file.read())
+    except TaxonomyError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/topics/hot/{topic_id}")

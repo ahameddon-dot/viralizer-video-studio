@@ -36,6 +36,22 @@
   </section>
   <div id="hotView">
   <section class="card" style="margin-bottom:18px">
+    <div class="toolbar"><div><label style="margin:0">Category Intelligence</label><span class="hint">22 super categories, master categories, subcategories, entity lenses, and reputation signals</span></div><div><input id="taxonomyUpload" type="file" accept=".json,.csv,application/json,text/csv" hidden><button id="chooseTaxonomy">Upload categories</button></div></div>
+    <div class="row">
+      <div><label for="superCategory">Super category</label><select id="superCategory"></select></div>
+      <div><label for="masterCategory">Category</label><select id="masterCategory"></select></div>
+    </div>
+    <div class="row">
+      <div><label for="subCategory">Subcategory</label><select id="subCategory"></select></div>
+      <div><label for="intelligenceLens">Search everything or an entity type</label><select id="intelligenceLens"></select></div>
+    </div>
+    <div class="row">
+      <div><label for="reputationFilter">Reputation</label><select id="reputationFilter"></select></div>
+      <button id="exploreCategory" style="align-self:end">Get category intelligence</button>
+    </div>
+    <div class="status" id="taxonomyStatus">Loading the Viralizer Category Taxonomy...</div>
+  </section>
+  <section class="card" style="margin-bottom:18px">
     <div class="toolbar"><div><label style="margin:0">Daily trend discovery</label><span class="hint" id="dailySchedule">Fresh public trends ready for later Viralizer validation</span></div><button id="runDaily">Run daily discovery</button></div>
     <div class="status" id="dailyStatus">Checking for the latest report...</div>
     <div class="daily-fetching" id="dailyFetching"><div class="daily-spinner"></div><div style="flex:1"><strong>Fetching daily trends</strong><span id="dailyFetchingText">Checking for the latest results...</span><div class="daily-fetch-progress"><i></i></div></div></div>
@@ -105,12 +121,25 @@
     const topic = document.querySelector('#topic'), getContent = document.querySelector('#getContent'), mcpStatus = document.querySelector('#mcpStatus'), viralizerLoading=document.querySelector('#viralizerLoading'), viralizerLoadingText=document.querySelector('#viralizerLoadingText');
     const topics = document.querySelector('#topics'), topicsStatus = document.querySelector('#topicsStatus'), refreshTopics = document.querySelector('#refreshTopics');
     const topicFilters = document.querySelector('#topicFilters'); let allHotTopics=[]; let activeTopicFilter='all';
+    const taxonomyUpload=document.querySelector('#taxonomyUpload'),chooseTaxonomy=document.querySelector('#chooseTaxonomy'),superCategory=document.querySelector('#superCategory'),masterCategory=document.querySelector('#masterCategory'),subCategory=document.querySelector('#subCategory'),intelligenceLens=document.querySelector('#intelligenceLens'),reputationFilter=document.querySelector('#reputationFilter'),exploreCategory=document.querySelector('#exploreCategory'),taxonomyStatus=document.querySelector('#taxonomyStatus');let taxonomyData=null;
     const metadataPanel=document.querySelector('#metadataPanel'), suggestedTitle=document.querySelector('#suggestedTitle'), hookSuggestion=document.querySelector('#hookSuggestion'), hookSelect=document.querySelector('#hookSelect'), tagsKeywords=document.querySelector('#tagsKeywords');
     const thumbnailSelect=document.querySelector('#thumbnailSelect'), thumbnailUpload=document.querySelector('#thumbnailUpload'), thumbnailPreview=document.querySelector('#thumbnailPreview'), resonanceKpi=document.querySelector('#resonanceKpi'), rankKpi=document.querySelector('#rankKpi'), audienceKpi=document.querySelector('#audienceKpi');let uploadedThumbnailUrl='';
     const runDaily=document.querySelector('#runDaily'), dailyStatus=document.querySelector('#dailyStatus'), dailyFetching=document.querySelector('#dailyFetching'), dailyFetchingText=document.querySelector('#dailyFetchingText'), dailyTopFive=document.querySelector('#dailyTopFive'), dailyTable=document.querySelector('#dailyTable'), dailySchedule=document.querySelector('#dailySchedule'),dailyCategoryFilters=document.querySelector('#dailyCategoryFilters');let latestDailyReport=null;let activeDailyCategory='ALL';let dailyFetchingTimer=null;
     const hotTab=document.querySelector('#hotTab'),viralizerTab=document.querySelector('#viralizerTab'),ideaSmithTab=document.querySelector('#ideaSmithTab'),regionalTab=document.querySelector('#regionalTab'),bettingTab=document.querySelector('#bettingTab'),hotView=document.querySelector('#hotView'),viralizerView=document.querySelector('#viralizerView'),ideaSmithView=document.querySelector('#ideaSmithView'),regionalView=document.querySelector('#regionalView'),bettingView=document.querySelector('#bettingView'),scanBetting=document.querySelector('#scanBetting'),bettingSearch=document.querySelector('#bettingSearch'),bettingStatus=document.querySelector('#bettingStatus'),bettingFetching=document.querySelector('#bettingFetching'),bettingFetchingText=document.querySelector('#bettingFetchingText'),earlySignals=document.querySelector('#earlySignals'),bettingTopics=document.querySelector('#bettingTopics'),bettingFilters=document.querySelector('#bettingFilters'),bettingSort=document.querySelector('#bettingSort'),scanRegional=document.querySelector('#scanRegional'),regionalSearch=document.querySelector('#regionalSearch'),regionalStatus=document.querySelector('#regionalStatus'),regionalFetching=document.querySelector('#regionalFetching'),regionalFetchingText=document.querySelector('#regionalFetchingText'),regionalTopics=document.querySelector('#regionalTopics'),regionalFilters=document.querySelector('#regionalFilters'),ideaSmithTopic=document.querySelector('#ideaSmithTopic'),getIdeaSmith=document.querySelector('#getIdeaSmith'),ideaSmithStatus=document.querySelector('#ideaSmithStatus'),ideaSmithOutput=document.querySelector('#ideaSmithOutput');let bettingData=[];let bettingFilter='ALL';let regionalData=[];let regionalFilter='ALL';let bettingLoading=false;let regionalLoading=false;
     const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
     let viralizerLoadingTimer=null;
+    function option(value,label=value){const item=document.createElement('option');item.value=value;item.textContent=label;return item}
+    function selectedTaxonomyGroup(){return taxonomyData?.super_categories?.find(item=>item.name===superCategory.value)}
+    function selectedTaxonomyCategory(){return selectedTaxonomyGroup()?.categories?.find(item=>item.name===masterCategory.value)}
+    function renderSubcategories(){const selected=selectedTaxonomyCategory();subCategory.replaceChildren(option('','All subcategories'),...(selected?.subcategories||[]).sort((a,b)=>a.localeCompare(b)).map(name=>option(name)))}
+    function renderMasterCategories(){const group=selectedTaxonomyGroup();masterCategory.replaceChildren(...(group?.categories||[]).sort((a,b)=>a.name.localeCompare(b.name)).map(item=>option(item.name)));renderSubcategories()}
+    function renderTaxonomy(data){taxonomyData=data;superCategory.replaceChildren(...(data.super_categories||[]).sort((a,b)=>a.name.localeCompare(b.name)).map(item=>option(item.name)));intelligenceLens.replaceChildren(option('Everything'),...(data.intelligence_lenses||[]).filter(x=>x!=='Everything').map(name=>option(name)));reputationFilter.replaceChildren(...(data.reputation||['All reputation','Positive','Negative','Mixed']).map(name=>option(name)));renderMasterCategories();const count=(data.super_categories||[]).reduce((sum,item)=>sum+(item.categories||[]).length,0);taxonomyStatus.textContent=`${data.super_categories.length} super categories and ${count} categories loaded. Reputation and entity lenses apply to every category.`}
+    async function loadTaxonomy(){try{renderTaxonomy(await fetch('/api/taxonomy').then(json))}catch(error){taxonomyStatus.textContent=error.message}}
+    superCategory.onchange=renderMasterCategories;masterCategory.onchange=renderSubcategories;
+    chooseTaxonomy.onclick=()=>taxonomyUpload.click();
+    taxonomyUpload.onchange=async()=>{const file=taxonomyUpload.files[0];if(!file)return;chooseTaxonomy.disabled=true;taxonomyStatus.textContent='Uploading and validating categories...';try{const form=new FormData();form.append('file',file,file.name);renderTaxonomy(await fetch('/api/taxonomy/upload',{method:'POST',body:form}).then(json));taxonomyStatus.textContent+=' Uploaded taxonomy is now active.'}catch(error){taxonomyStatus.textContent=error.message}finally{chooseTaxonomy.disabled=false;taxonomyUpload.value=''}};
+    exploreCategory.onclick=()=>{const category=masterCategory.value,sub=subCategory.value,lens=intelligenceLens.value,reputation=reputationFilter.value;if(!category){taxonomyStatus.textContent='Choose a category first.';return}const subject=sub||category;const parts=[subject,lens==='Everything'?'all entities':lens];if(reputation!=='All reputation')parts.push(`${reputation} reputation`);topic.value=parts.join(' | ');taxonomyStatus.textContent=`Requesting ${reputation.toLowerCase()} intelligence for ${subject} across ${lens.toLowerCase()}...`;getContent.click()};
+    loadTaxonomy();
     function hideGenerationConfirmation(){generationConfirm.hidden=true;generationConfirm.style.display='none'}
     function requestGenerationConfirmation(message,action){generationConfirmText.textContent=message;approvedGenerationAction=action;generationConfirm.hidden=false;generationConfirm.style.display='grid'}
     cancelGeneration.onclick=()=>{hideGenerationConfirmation();approvedGenerationAction=null;status.textContent='Generation cancelled. You can continue editing the prompt.'};

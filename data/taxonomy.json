@@ -1,0 +1,2477 @@
+{
+  "version": "Viralizer Category Taxonomy V1",
+  "source": "Complete list of categories.pdf",
+  "super_categories": [
+    {
+      "name": "Fashion, Apparel & Luxury",
+      "categories": [
+        {
+          "id": 1,
+          "name": "Fashion",
+          "subcategories": [
+            "Trends",
+            "runway",
+            "designers",
+            "seasonal fashion"
+          ]
+        },
+        {
+          "id": 2,
+          "name": "Apparel & Clothing",
+          "subcategories": [
+            "Men's",
+            "women's",
+            "children's",
+            "casual",
+            "formal"
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Luxury Fashion",
+          "subcategories": [
+            "Luxury houses",
+            "couture",
+            "premium apparel"
+          ]
+        },
+        {
+          "id": 4,
+          "name": "Streetwear",
+          "subcategories": [
+            "Urban fashion",
+            "drops",
+            "collaborations"
+          ]
+        },
+        {
+          "id": 5,
+          "name": "Sportswear & Athleisure",
+          "subcategories": [
+            "Activewear",
+            "yoga wear",
+            "performance clothing"
+          ]
+        },
+        {
+          "id": 6,
+          "name": "Footwear",
+          "subcategories": [
+            "Shoes",
+            "sneakers",
+            "boots",
+            "athletic shoes"
+          ]
+        },
+        {
+          "id": 7,
+          "name": "Jewelry",
+          "subcategories": [
+            "Fine",
+            "fashion",
+            "gold",
+            "silver",
+            "diamonds",
+            "gemstones"
+          ]
+        },
+        {
+          "id": 8,
+          "name": "Watches",
+          "subcategories": [
+            "Luxury",
+            "smart",
+            "collectible",
+            "fashion watches"
+          ]
+        },
+        {
+          "id": 9,
+          "name": "Accessories",
+          "subcategories": [
+            "Bags",
+            "eyewear",
+            "belts",
+            "wallets"
+          ]
+        },
+        {
+          "id": 10,
+          "name": "Bridal & Wedding Fashion",
+          "subcategories": [
+            "Bridal wear",
+            "jewelry",
+            "formalwear"
+          ]
+        },
+        {
+          "id": 11,
+          "name": "Sustainable Fashion",
+          "subcategories": [
+            "Resale",
+            "ethical fashion",
+            "circular fashion"
+          ]
+        },
+        {
+          "id": 12,
+          "name": "Fashion Deals & Shopping",
+          "subcategories": [
+            "Sales",
+            "drops",
+            "coupons",
+            "offers"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Beauty, Personal Care & Lifestyle",
+      "categories": [
+        {
+          "id": 13,
+          "name": "Beauty",
+          "subcategories": [
+            "Trends",
+            "routines",
+            "influencers"
+          ]
+        },
+        {
+          "id": 14,
+          "name": "Skincare",
+          "subcategories": [
+            "Products",
+            "routines",
+            "ingredients"
+          ]
+        },
+        {
+          "id": 15,
+          "name": "Makeup & Cosmetics",
+          "subcategories": [
+            "Makeup",
+            "cosmetics",
+            "tutorials"
+          ]
+        },
+        {
+          "id": 16,
+          "name": "Haircare",
+          "subcategories": [
+            "Hair products",
+            "salons",
+            "styling"
+          ]
+        },
+        {
+          "id": 17,
+          "name": "Fragrance",
+          "subcategories": [
+            "Perfumes",
+            "colognes",
+            "reviews"
+          ]
+        },
+        {
+          "id": 18,
+          "name": "Grooming",
+          "subcategories": [
+            "Men's grooming",
+            "shaving",
+            "personal care"
+          ]
+        },
+        {
+          "id": 19,
+          "name": "Nails",
+          "subcategories": [
+            "Nail art",
+            "salons",
+            "products"
+          ]
+        },
+        {
+          "id": 20,
+          "name": "Lifestyle",
+          "subcategories": [
+            "Daily life",
+            "routines",
+            "aspirational lifestyle"
+          ]
+        },
+        {
+          "id": 21,
+          "name": "Luxury Lifestyle",
+          "subcategories": [
+            "Luxury goods",
+            "experiences",
+            "high-net-worth lifestyle"
+          ]
+        },
+        {
+          "id": 22,
+          "name": "Self-Care",
+          "subcategories": [
+            "Wellness routines",
+            "relaxation",
+            "personal improvement"
+          ]
+        },
+        {
+          "id": 23,
+          "name": "ASMR",
+          "subcategories": [
+            "Sound",
+            "relaxation",
+            "food ASMR",
+            "visual ASMR"
+          ]
+        },
+        {
+          "id": 24,
+          "name": "Relationships & Dating",
+          "subcategories": [
+            "Dating",
+            "marriage",
+            "relationships"
+          ]
+        },
+        {
+          "id": 25,
+          "name": "Gen Z Culture",
+          "subcategories": [
+            "Slang",
+            "aesthetics",
+            "behaviors",
+            "youth trends"
+          ]
+        },
+        {
+          "id": 26,
+          "name": "Edgy & Alternative Culture",
+          "subcategories": [
+            "Counterculture",
+            "unconventional trends",
+            "subcultures"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Home, Household & Consumer Products",
+      "categories": [
+        {
+          "id": 27,
+          "name": "Home & Living",
+          "subcategories": [
+            "Household lifestyle",
+            "organization"
+          ]
+        },
+        {
+          "id": 28,
+          "name": "Household Products",
+          "subcategories": [
+            "Cleaning",
+            "storage",
+            "household essentials"
+          ]
+        },
+        {
+          "id": 29,
+          "name": "Furniture",
+          "subcategories": [
+            "Furniture",
+            "mattresses",
+            "office furniture"
+          ]
+        },
+        {
+          "id": 30,
+          "name": "Home Appliances",
+          "subcategories": [
+            "Kitchen",
+            "laundry",
+            "vacuum",
+            "appliances"
+          ]
+        },
+        {
+          "id": 31,
+          "name": "Kitchen & Cooking Products",
+          "subcategories": [
+            "Cookware",
+            "utensils",
+            "appliances"
+          ]
+        },
+        {
+          "id": 32,
+          "name": "Home Décor",
+          "subcategories": [
+            "Décor",
+            "lighting",
+            "accessories"
+          ]
+        },
+        {
+          "id": 33,
+          "name": "Interior Design",
+          "subcategories": [
+            "Design trends",
+            "designers"
+          ]
+        },
+        {
+          "id": 34,
+          "name": "DIY & Home Improvement",
+          "subcategories": [
+            "Tools",
+            "renovations",
+            "projects"
+          ]
+        },
+        {
+          "id": 35,
+          "name": "Gardening",
+          "subcategories": [
+            "Plants",
+            "landscaping",
+            "gardening products"
+          ]
+        },
+        {
+          "id": 36,
+          "name": "Smart Home",
+          "subcategories": [
+            "Security",
+            "automation",
+            "connected devices"
+          ]
+        },
+        {
+          "id": 37,
+          "name": "Consumer Deals & Coupons",
+          "subcategories": [
+            "Discounts",
+            "promotions",
+            "shopping deals"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Food, Beverage & Hospitality",
+      "categories": [
+        {
+          "id": 38,
+          "name": "Food",
+          "subcategories": [
+            "Food trends",
+            "cuisines"
+          ]
+        },
+        {
+          "id": 39,
+          "name": "Cooking & Recipes",
+          "subcategories": [
+            "Recipes",
+            "chefs",
+            "cooking"
+          ]
+        },
+        {
+          "id": 40,
+          "name": "Restaurants",
+          "subcategories": [
+            "Chains",
+            "independent restaurants",
+            "reviews"
+          ]
+        },
+        {
+          "id": 41,
+          "name": "Fast Food & QSR",
+          "subcategories": [
+            "QSR brands",
+            "launches",
+            "promotions"
+          ]
+        },
+        {
+          "id": 42,
+          "name": "Grocery & Packaged Food",
+          "subcategories": [
+            "CPG",
+            "supermarkets",
+            "packaged foods"
+          ]
+        },
+        {
+          "id": 43,
+          "name": "Beverages",
+          "subcategories": [
+            "Soft drinks",
+            "juices",
+            "functional drinks"
+          ]
+        },
+        {
+          "id": 44,
+          "name": "Coffee & Tea",
+          "subcategories": [
+            "Cafés",
+            "brands",
+            "products"
+          ]
+        },
+        {
+          "id": 45,
+          "name": "Baking & Desserts",
+          "subcategories": [
+            "Baking",
+            "sweets",
+            "desserts"
+          ]
+        },
+        {
+          "id": 46,
+          "name": "Food Delivery",
+          "subcategories": [
+            "Delivery platforms",
+            "restaurants"
+          ]
+        },
+        {
+          "id": 47,
+          "name": "Hospitality",
+          "subcategories": [
+            "Hotels",
+            "restaurants",
+            "guest experiences"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health, Medicine & Longevity",
+      "categories": [
+        {
+          "id": 48,
+          "name": "Health & Wellness",
+          "subcategories": [
+            "General health",
+            "wellness"
+          ]
+        },
+        {
+          "id": 49,
+          "name": "Medicine",
+          "subcategories": [
+            "Medical research",
+            "treatments",
+            "medical news"
+          ]
+        },
+        {
+          "id": 50,
+          "name": "Hospitals & Health Systems",
+          "subcategories": [
+            "Hospitals",
+            "clinics",
+            "healthcare providers"
+          ]
+        },
+        {
+          "id": 51,
+          "name": "Doctors & Physicians",
+          "subcategories": [
+            "Doctors",
+            "specialties",
+            "medical influencers"
+          ]
+        },
+        {
+          "id": 52,
+          "name": "Pharma",
+          "subcategories": [
+            "Drug companies",
+            "medicines",
+            "launches"
+          ]
+        },
+        {
+          "id": 53,
+          "name": "Biotechnology",
+          "subcategories": [
+            "Biotech companies",
+            "research"
+          ]
+        },
+        {
+          "id": 54,
+          "name": "HealthTech",
+          "subcategories": [
+            "Digital health",
+            "health AI",
+            "devices"
+          ]
+        },
+        {
+          "id": 55,
+          "name": "Medical Devices",
+          "subcategories": [
+            "Diagnostics",
+            "wearables",
+            "equipment"
+          ]
+        },
+        {
+          "id": 56,
+          "name": "Mental Health",
+          "subcategories": [
+            "Anxiety",
+            "depression",
+            "therapy",
+            "wellbeing"
+          ]
+        },
+        {
+          "id": 57,
+          "name": "Fitness",
+          "subcategories": [
+            "Exercise",
+            "gyms",
+            "workouts"
+          ]
+        },
+        {
+          "id": 58,
+          "name": "Nutrition",
+          "subcategories": [
+            "Food science",
+            "diets",
+            "supplements"
+          ]
+        },
+        {
+          "id": 59,
+          "name": "Longevity",
+          "subcategories": [
+            "Aging science",
+            "longevity research",
+            "products"
+          ]
+        },
+        {
+          "id": 60,
+          "name": "Healthy Aging",
+          "subcategories": [
+            "Senior wellness",
+            "active aging"
+          ]
+        },
+        {
+          "id": 61,
+          "name": "Yoga & Meditation",
+          "subcategories": [
+            "Yoga",
+            "meditation",
+            "mindfulness"
+          ]
+        },
+        {
+          "id": 62,
+          "name": "Sleep",
+          "subcategories": [
+            "Sleep technology",
+            "habits",
+            "research"
+          ]
+        },
+        {
+          "id": 63,
+          "name": "Women's Health",
+          "subcategories": [
+            "Women's wellness and healthcare"
+          ]
+        },
+        {
+          "id": 64,
+          "name": "Men's Health",
+          "subcategories": [
+            "Men's wellness and healthcare"
+          ]
+        },
+        {
+          "id": 65,
+          "name": "Dental & Oral Care",
+          "subcategories": [
+            "Dentistry",
+            "oral care",
+            "products"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Technology, AI & DeepTech",
+      "categories": [
+        {
+          "id": 66,
+          "name": "Technology",
+          "subcategories": [
+            "General technology"
+          ]
+        },
+        {
+          "id": 67,
+          "name": "Artificial Intelligence",
+          "subcategories": [
+            "GenAI",
+            "models",
+            "agents"
+          ]
+        },
+        {
+          "id": 68,
+          "name": "Generative AI",
+          "subcategories": [
+            "Text",
+            "image",
+            "video",
+            "music"
+          ]
+        },
+        {
+          "id": 69,
+          "name": "AI Video & Creative AI",
+          "subcategories": [
+            "Video generation",
+            "avatars",
+            "creative tools"
+          ]
+        },
+        {
+          "id": 70,
+          "name": "DeepTech",
+          "subcategories": [
+            "Advanced computing",
+            "materials",
+            "scientific technology"
+          ]
+        },
+        {
+          "id": 71,
+          "name": "Robotics",
+          "subcategories": [
+            "Industrial",
+            "humanoid",
+            "consumer robots"
+          ]
+        },
+        {
+          "id": 72,
+          "name": "Quantum Computing",
+          "subcategories": [
+            "Quantum technology and companies"
+          ]
+        },
+        {
+          "id": 73,
+          "name": "Semiconductors",
+          "subcategories": [
+            "Chips",
+            "GPUs",
+            "fabs"
+          ]
+        },
+        {
+          "id": 74,
+          "name": "Cybersecurity",
+          "subcategories": [
+            "Enterprise and consumer security"
+          ]
+        },
+        {
+          "id": 75,
+          "name": "Cloud Computing",
+          "subcategories": [
+            "Cloud platforms and infrastructure"
+          ]
+        },
+        {
+          "id": 76,
+          "name": "Data & Analytics",
+          "subcategories": [
+            "Big data",
+            "analytics",
+            "BI"
+          ]
+        },
+        {
+          "id": 77,
+          "name": "Developer & Coding",
+          "subcategories": [
+            "Developers",
+            "APIs",
+            "programming"
+          ]
+        },
+        {
+          "id": 78,
+          "name": "Consumer Electronics",
+          "subcategories": [
+            "Devices and electronics"
+          ]
+        },
+        {
+          "id": 79,
+          "name": "Smartphones",
+          "subcategories": [
+            "Devices",
+            "launches",
+            "mobile technology"
+          ]
+        },
+        {
+          "id": 80,
+          "name": "Telecom",
+          "subcategories": [
+            "Networks",
+            "5G/6G",
+            "carriers"
+          ]
+        },
+        {
+          "id": 81,
+          "name": "Innovation & Inventions",
+          "subcategories": [
+            "Patents",
+            "inventions",
+            "emerging technology"
+          ]
+        },
+        {
+          "id": 82,
+          "name": "DefenseTech",
+          "subcategories": [
+            "Defense AI",
+            "drones",
+            "autonomous systems"
+          ]
+        },
+        {
+          "id": 83,
+          "name": "SpaceTech",
+          "subcategories": [
+            "Rockets",
+            "satellites",
+            "commercial space"
+          ]
+        },
+        {
+          "id": 84,
+          "name": "ClimateTech",
+          "subcategories": [
+            "Climate technology",
+            "carbon",
+            "clean technology"
+          ]
+        },
+        {
+          "id": 85,
+          "name": "CleanTech",
+          "subcategories": [
+            "Energy efficiency",
+            "environmental technologies"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Apps, Software & Enterprise Products",
+      "categories": [
+        {
+          "id": 86,
+          "name": "Apps",
+          "subcategories": [
+            "Consumer and business apps"
+          ]
+        },
+        {
+          "id": 87,
+          "name": "Trending / Top Apps",
+          "subcategories": [
+            "Fast-growing",
+            "downloaded",
+            "viral apps"
+          ]
+        },
+        {
+          "id": 88,
+          "name": "Social Media Apps",
+          "subcategories": [
+            "Social networks",
+            "creator platforms"
+          ]
+        },
+        {
+          "id": 89,
+          "name": "Productivity Apps",
+          "subcategories": [
+            "Productivity",
+            "notes",
+            "collaboration"
+          ]
+        },
+        {
+          "id": 90,
+          "name": "Mobile Apps",
+          "subcategories": [
+            "iOS",
+            "Android"
+          ]
+        },
+        {
+          "id": 91,
+          "name": "Enterprise Software",
+          "subcategories": [
+            "Enterprise platforms and applications"
+          ]
+        },
+        {
+          "id": 92,
+          "name": "SaaS",
+          "subcategories": [
+            "B2B and B2C SaaS"
+          ]
+        },
+        {
+          "id": 93,
+          "name": "CRM & Sales Technology",
+          "subcategories": [
+            "CRM",
+            "sales automation"
+          ]
+        },
+        {
+          "id": 94,
+          "name": "Marketing Technology",
+          "subcategories": [
+            "MarTech",
+            "social tools",
+            "advertising tools"
+          ]
+        },
+        {
+          "id": 95,
+          "name": "HR Technology",
+          "subcategories": [
+            "HRIS",
+            "recruiting",
+            "employee platforms"
+          ]
+        },
+        {
+          "id": 96,
+          "name": "Enterprise AI",
+          "subcategories": [
+            "AI applications for enterprises"
+          ]
+        },
+        {
+          "id": 97,
+          "name": "IT Services",
+          "subcategories": [
+            "Consulting",
+            "managed services"
+          ]
+        },
+        {
+          "id": 98,
+          "name": "Professional Services",
+          "subcategories": [
+            "Consulting",
+            "accounting",
+            "advisory"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Gaming",
+      "categories": [
+        {
+          "id": 99,
+          "name": "Gaming",
+          "subcategories": [
+            "Overall gaming"
+          ]
+        },
+        {
+          "id": 100,
+          "name": "PC Gaming",
+          "subcategories": [
+            "PC games",
+            "Steam ecosystem"
+          ]
+        },
+        {
+          "id": 101,
+          "name": "Mobile Gaming",
+          "subcategories": [
+            "iOS",
+            "Android games"
+          ]
+        },
+        {
+          "id": 102,
+          "name": "Console Gaming",
+          "subcategories": [
+            "PlayStation",
+            "Xbox",
+            "Nintendo"
+          ]
+        },
+        {
+          "id": 103,
+          "name": "Gaming Platforms",
+          "subcategories": [
+            "Steam",
+            "Xbox",
+            "PlayStation ecosystems"
+          ]
+        },
+        {
+          "id": 104,
+          "name": "Esports",
+          "subcategories": [
+            "Teams",
+            "tournaments",
+            "professional gamers"
+          ]
+        },
+        {
+          "id": 105,
+          "name": "Gaming Creators & Streamers",
+          "subcategories": [
+            "Streamers",
+            "YouTubers",
+            "personalities"
+          ]
+        },
+        {
+          "id": 106,
+          "name": "Game Releases",
+          "subcategories": [
+            "New games",
+            "updates",
+            "DLC"
+          ]
+        },
+        {
+          "id": 107,
+          "name": "Gaming Hardware",
+          "subcategories": [
+            "GPUs",
+            "consoles",
+            "controllers"
+          ]
+        },
+        {
+          "id": 108,
+          "name": "VR/AR Gaming",
+          "subcategories": [
+            "VR",
+            "AR",
+            "immersive gaming"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Finance, Banking & Investment",
+      "categories": [
+        {
+          "id": 109,
+          "name": "Finance",
+          "subcategories": [
+            "General finance"
+          ]
+        },
+        {
+          "id": 110,
+          "name": "Banking",
+          "subcategories": [
+            "Retail",
+            "commercial",
+            "investment banking"
+          ]
+        },
+        {
+          "id": 111,
+          "name": "FinTech",
+          "subcategories": [
+            "Digital banking",
+            "finance apps"
+          ]
+        },
+        {
+          "id": 112,
+          "name": "Payments",
+          "subcategories": [
+            "Cards",
+            "wallets",
+            "payment platforms"
+          ]
+        },
+        {
+          "id": 113,
+          "name": "Credit & Lending",
+          "subcategories": [
+            "Loans",
+            "credit cards",
+            "mortgages"
+          ]
+        },
+        {
+          "id": 114,
+          "name": "Personal Finance",
+          "subcategories": [
+            "Saving",
+            "budgeting",
+            "financial planning"
+          ]
+        },
+        {
+          "id": 115,
+          "name": "Stock Markets",
+          "subcategories": [
+            "Stocks",
+            "indices",
+            "earnings"
+          ]
+        },
+        {
+          "id": 116,
+          "name": "Investing",
+          "subcategories": [
+            "Equities",
+            "ETFs",
+            "bonds"
+          ]
+        },
+        {
+          "id": 117,
+          "name": "Wealth Management",
+          "subcategories": [
+            "Advisors",
+            "HNW wealth"
+          ]
+        },
+        {
+          "id": 118,
+          "name": "Asset Management",
+          "subcategories": [
+            "Funds",
+            "institutional investment"
+          ]
+        },
+        {
+          "id": 119,
+          "name": "Private Equity",
+          "subcategories": [
+            "PE firms",
+            "deals",
+            "portfolio companies"
+          ]
+        },
+        {
+          "id": 120,
+          "name": "Venture Capital",
+          "subcategories": [
+            "VCs",
+            "funding rounds"
+          ]
+        },
+        {
+          "id": 121,
+          "name": "Hedge Funds",
+          "subcategories": [
+            "Funds",
+            "managers",
+            "strategies"
+          ]
+        },
+        {
+          "id": 122,
+          "name": "Investment Banking",
+          "subcategories": [
+            "M&A",
+            "IPOs",
+            "deals"
+          ]
+        },
+        {
+          "id": 123,
+          "name": "Cryptocurrency",
+          "subcategories": [
+            "Crypto assets",
+            "exchanges"
+          ]
+        },
+        {
+          "id": 124,
+          "name": "Insurance",
+          "subcategories": [
+            "Auto",
+            "life",
+            "home",
+            "commercial"
+          ]
+        },
+        {
+          "id": 125,
+          "name": "Taxes",
+          "subcategories": [
+            "Personal",
+            "corporate",
+            "tax policy"
+          ]
+        },
+        {
+          "id": 126,
+          "name": "Accounting",
+          "subcategories": [
+            "Accounting",
+            "CPA",
+            "audit"
+          ]
+        },
+        {
+          "id": 127,
+          "name": "Economics",
+          "subcategories": [
+            "Inflation",
+            "GDP",
+            "rates",
+            "employment"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Business, Entrepreneurship & SMB",
+      "categories": [
+        {
+          "id": 128,
+          "name": "Business",
+          "subcategories": [
+            "Business news and trends"
+          ]
+        },
+        {
+          "id": 129,
+          "name": "Entrepreneurship",
+          "subcategories": [
+            "Founders",
+            "business building"
+          ]
+        },
+        {
+          "id": 130,
+          "name": "Startups",
+          "subcategories": [
+            "Startups",
+            "founders",
+            "accelerators"
+          ]
+        },
+        {
+          "id": 131,
+          "name": "Small Business",
+          "subcategories": [
+            "SMBs",
+            "local businesses",
+            "owners"
+          ]
+        },
+        {
+          "id": 132,
+          "name": "E-commerce",
+          "subcategories": [
+            "Online retail",
+            "DTC"
+          ]
+        },
+        {
+          "id": 133,
+          "name": "Social Commerce",
+          "subcategories": [
+            "TikTok/Instagram-style commerce"
+          ]
+        },
+        {
+          "id": 134,
+          "name": "Marketing & Advertising",
+          "subcategories": [
+            "Advertising",
+            "marketing"
+          ]
+        },
+        {
+          "id": 135,
+          "name": "Sales",
+          "subcategories": [
+            "B2B/B2C sales"
+          ]
+        },
+        {
+          "id": 136,
+          "name": "Leadership",
+          "subcategories": [
+            "CEOs",
+            "executives",
+            "leadership"
+          ]
+        },
+        {
+          "id": 137,
+          "name": "Management",
+          "subcategories": [
+            "Management",
+            "operations"
+          ]
+        },
+        {
+          "id": 138,
+          "name": "Franchising",
+          "subcategories": [
+            "Franchise brands and owners"
+          ]
+        },
+        {
+          "id": 139,
+          "name": "Creator Economy",
+          "subcategories": [
+            "Creators",
+            "influencers",
+            "monetization"
+          ]
+        },
+        {
+          "id": 140,
+          "name": "Consulting",
+          "subcategories": [
+            "Strategy",
+            "technology",
+            "management consulting"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Careers, Skills & Professional Development",
+      "categories": [
+        {
+          "id": 141,
+          "name": "Jobs & Careers",
+          "subcategories": [
+            "Jobs",
+            "hiring",
+            "careers"
+          ]
+        },
+        {
+          "id": 142,
+          "name": "Job Training",
+          "subcategories": [
+            "Training",
+            "vocational programs"
+          ]
+        },
+        {
+          "id": 143,
+          "name": "Professional Certifications",
+          "subcategories": [
+            "AWS",
+            "CFA",
+            "CPA",
+            "PMP",
+            "etc."
+          ]
+        },
+        {
+          "id": 144,
+          "name": "Soft Skills",
+          "subcategories": [
+            "Communication",
+            "presentation",
+            "negotiation"
+          ]
+        },
+        {
+          "id": 145,
+          "name": "Leadership Skills",
+          "subcategories": [
+            "Management and executive skills"
+          ]
+        },
+        {
+          "id": 146,
+          "name": "Tutorials & How-To",
+          "subcategories": [
+            "How-to content"
+          ]
+        },
+        {
+          "id": 147,
+          "name": "Coding Education",
+          "subcategories": [
+            "Programming training"
+          ]
+        },
+        {
+          "id": 148,
+          "name": "Career Switching",
+          "subcategories": [
+            "Reskilling",
+            "career transitions"
+          ]
+        },
+        {
+          "id": 149,
+          "name": "Future of Work",
+          "subcategories": [
+            "AI jobs",
+            "remote work"
+          ]
+        },
+        {
+          "id": 150,
+          "name": "Workplace",
+          "subcategories": [
+            "Culture",
+            "employment issues"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Education & Knowledge",
+      "categories": [
+        {
+          "id": 151,
+          "name": "Education",
+          "subcategories": [
+            "General education"
+          ]
+        },
+        {
+          "id": 152,
+          "name": "K-12",
+          "subcategories": [
+            "Schools",
+            "teachers",
+            "students"
+          ]
+        },
+        {
+          "id": 153,
+          "name": "Higher Education",
+          "subcategories": [
+            "Colleges",
+            "universities"
+          ]
+        },
+        {
+          "id": 154,
+          "name": "Competitive Tests",
+          "subcategories": [
+            "SAT",
+            "GRE",
+            "GMAT",
+            "UPSC",
+            "JEE",
+            "etc."
+          ]
+        },
+        {
+          "id": 155,
+          "name": "Online Education",
+          "subcategories": [
+            "Courses",
+            "MOOCs"
+          ]
+        },
+        {
+          "id": 156,
+          "name": "EdTech",
+          "subcategories": [
+            "Education technology"
+          ]
+        },
+        {
+          "id": 157,
+          "name": "Science",
+          "subcategories": [
+            "Physics",
+            "chemistry",
+            "biology"
+          ]
+        },
+        {
+          "id": 158,
+          "name": "Mathematics",
+          "subcategories": [
+            "Math education and research"
+          ]
+        },
+        {
+          "id": 159,
+          "name": "History",
+          "subcategories": [
+            "World",
+            "national",
+            "cultural history"
+          ]
+        },
+        {
+          "id": 160,
+          "name": "Languages",
+          "subcategories": [
+            "Language learning"
+          ]
+        },
+        {
+          "id": 161,
+          "name": "Research",
+          "subcategories": [
+            "Academic and scientific research"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Professional Communities",
+      "categories": [
+        {
+          "id": 162,
+          "name": "Doctors & Healthcare Professionals",
+          "subcategories": [
+            "Physicians",
+            "nurses",
+            "specialists"
+          ]
+        },
+        {
+          "id": 163,
+          "name": "Engineers",
+          "subcategories": [
+            "Civil",
+            "mechanical",
+            "electrical",
+            "software"
+          ]
+        },
+        {
+          "id": 164,
+          "name": "Scientists & Researchers",
+          "subcategories": [
+            "Scientists",
+            "academics"
+          ]
+        },
+        {
+          "id": 165,
+          "name": "Lawyers & Legal Professionals",
+          "subcategories": [
+            "Lawyers",
+            "judges",
+            "legal experts"
+          ]
+        },
+        {
+          "id": 166,
+          "name": "Finance Professionals",
+          "subcategories": [
+            "Bankers",
+            "analysts",
+            "accountants"
+          ]
+        },
+        {
+          "id": 167,
+          "name": "Marketing Professionals",
+          "subcategories": [
+            "CMOs",
+            "marketers",
+            "agencies"
+          ]
+        },
+        {
+          "id": 168,
+          "name": "Technology Professionals",
+          "subcategories": [
+            "CIOs",
+            "CTOs",
+            "developers"
+          ]
+        },
+        {
+          "id": 169,
+          "name": "Teachers & Educators",
+          "subcategories": [
+            "Teachers",
+            "professors"
+          ]
+        },
+        {
+          "id": 170,
+          "name": "Entrepreneurs & Founders",
+          "subcategories": [
+            "Founders",
+            "business owners"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Industrial & B2B Industries",
+      "categories": [
+        {
+          "id": 171,
+          "name": "Manufacturing",
+          "subcategories": [
+            "Factories",
+            "Industry 4.0"
+          ]
+        },
+        {
+          "id": 172,
+          "name": "Mining",
+          "subcategories": [
+            "Metals",
+            "minerals",
+            "mining companies"
+          ]
+        },
+        {
+          "id": 173,
+          "name": "Oil & Gas",
+          "subcategories": [
+            "Exploration",
+            "production",
+            "energy companies"
+          ]
+        },
+        {
+          "id": 174,
+          "name": "Energy & Utilities",
+          "subcategories": [
+            "Power",
+            "utilities"
+          ]
+        },
+        {
+          "id": 175,
+          "name": "Renewable Energy",
+          "subcategories": [
+            "Solar",
+            "wind",
+            "storage"
+          ]
+        },
+        {
+          "id": 176,
+          "name": "Construction",
+          "subcategories": [
+            "Contractors",
+            "equipment"
+          ]
+        },
+        {
+          "id": 177,
+          "name": "Infrastructure",
+          "subcategories": [
+            "Roads",
+            "bridges",
+            "megaprojects"
+          ]
+        },
+        {
+          "id": 178,
+          "name": "Agriculture",
+          "subcategories": [
+            "Farming",
+            "crops",
+            "livestock"
+          ]
+        },
+        {
+          "id": 179,
+          "name": "AgTech",
+          "subcategories": [
+            "Agricultural technology"
+          ]
+        },
+        {
+          "id": 180,
+          "name": "Chemicals",
+          "subcategories": [
+            "Industrial and specialty chemicals"
+          ]
+        },
+        {
+          "id": 181,
+          "name": "Logistics",
+          "subcategories": [
+            "Freight",
+            "delivery"
+          ]
+        },
+        {
+          "id": 182,
+          "name": "Supply Chain",
+          "subcategories": [
+            "Procurement",
+            "supply chains"
+          ]
+        },
+        {
+          "id": 183,
+          "name": "Shipping & Maritime",
+          "subcategories": [
+            "Ships",
+            "ports",
+            "maritime"
+          ]
+        },
+        {
+          "id": 184,
+          "name": "Aerospace",
+          "subcategories": [
+            "Aircraft",
+            "aerospace companies"
+          ]
+        },
+        {
+          "id": 185,
+          "name": "Defense Industry",
+          "subcategories": [
+            "Defense companies and technology"
+          ]
+        },
+        {
+          "id": 186,
+          "name": "Industrial Equipment",
+          "subcategories": [
+            "Machinery",
+            "tools",
+            "automation"
+          ]
+        },
+        {
+          "id": 187,
+          "name": "Materials",
+          "subcategories": [
+            "Steel",
+            "aluminum",
+            "advanced materials"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Automotive & Mobility",
+      "categories": [
+        {
+          "id": 188,
+          "name": "Automotive",
+          "subcategories": [
+            "Cars",
+            "manufacturers"
+          ]
+        },
+        {
+          "id": 189,
+          "name": "Electric Vehicles",
+          "subcategories": [
+            "EV brands",
+            "batteries"
+          ]
+        },
+        {
+          "id": 190,
+          "name": "Luxury Cars",
+          "subcategories": [
+            "Premium automotive"
+          ]
+        },
+        {
+          "id": 191,
+          "name": "Motorcycles",
+          "subcategories": [
+            "Bikes",
+            "brands"
+          ]
+        },
+        {
+          "id": 192,
+          "name": "Autonomous Vehicles",
+          "subcategories": [
+            "Self-driving technology"
+          ]
+        },
+        {
+          "id": 193,
+          "name": "Mobility & Transportation",
+          "subcategories": [
+            "Ride sharing",
+            "mobility"
+          ]
+        },
+        {
+          "id": 194,
+          "name": "Aviation & Airlines",
+          "subcategories": [
+            "Airlines",
+            "aircraft"
+          ]
+        },
+        {
+          "id": 195,
+          "name": "Automotive Aftermarket",
+          "subcategories": [
+            "Parts",
+            "accessories",
+            "maintenance"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Entertainment, Media & Creator Content",
+      "categories": [
+        {
+          "id": 196,
+          "name": "Entertainment",
+          "subcategories": [
+            "General entertainment"
+          ]
+        },
+        {
+          "id": 197,
+          "name": "Movies",
+          "subcategories": [
+            "Films",
+            "actors",
+            "releases"
+          ]
+        },
+        {
+          "id": 198,
+          "name": "TV & Streaming",
+          "subcategories": [
+            "Shows",
+            "streaming platforms"
+          ]
+        },
+        {
+          "id": 199,
+          "name": "Music",
+          "subcategories": [
+            "Artists",
+            "songs"
+          ]
+        },
+        {
+          "id": 200,
+          "name": "Celebrity & Pop Culture",
+          "subcategories": [
+            "Celebrities",
+            "fandom"
+          ]
+        },
+        {
+          "id": 201,
+          "name": "Comedy",
+          "subcategories": [
+            "Comedy",
+            "humor"
+          ]
+        },
+        {
+          "id": 202,
+          "name": "Podcasts",
+          "subcategories": [
+            "Shows",
+            "hosts",
+            "episodes"
+          ]
+        },
+        {
+          "id": 203,
+          "name": "Cartoons & Animation",
+          "subcategories": [
+            "Animation",
+            "characters"
+          ]
+        },
+        {
+          "id": 204,
+          "name": "Anime & Manga",
+          "subcategories": [
+            "Anime",
+            "manga"
+          ]
+        },
+        {
+          "id": 205,
+          "name": "Memes",
+          "subcategories": [
+            "Meme formats",
+            "internet culture"
+          ]
+        },
+        {
+          "id": 206,
+          "name": "Viral Challenges",
+          "subcategories": [
+            "Challenges",
+            "participation"
+          ]
+        },
+        {
+          "id": 207,
+          "name": "ASMR",
+          "subcategories": [
+            "Also cross-linked to Lifestyle"
+          ]
+        },
+        {
+          "id": 208,
+          "name": "News Media",
+          "subcategories": [
+            "Publishers",
+            "journalists",
+            "media companies"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Arts, Crafts & Creative",
+      "categories": [
+        {
+          "id": 209,
+          "name": "Arts Fine art,",
+          "subcategories": [
+            "contemporary"
+          ]
+        },
+        {
+          "id": 210,
+          "name": "Crafts Handmade,",
+          "subcategories": [
+            "sewing",
+            "woodworking"
+          ]
+        },
+        {
+          "id": 211,
+          "name": "Photography Cameras,",
+          "subcategories": [
+            "photography"
+          ]
+        },
+        {
+          "id": 212,
+          "name": "Design Graphic,",
+          "subcategories": [
+            "industrial",
+            "UX"
+          ]
+        },
+        {
+          "id": 213,
+          "name": "Dance Dance",
+          "subcategories": [
+            "styles",
+            "creators"
+          ]
+        },
+        {
+          "id": 214,
+          "name": "Literature & Books Authors,",
+          "subcategories": [
+            "books"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sports",
+      "categories": [
+        {
+          "id": 216,
+          "name": "Professional Sports",
+          "subcategories": []
+        },
+        {
+          "id": 217,
+          "name": "University/College Sports",
+          "subcategories": []
+        },
+        {
+          "id": 218,
+          "name": "Soccer/Football",
+          "subcategories": []
+        },
+        {
+          "id": 219,
+          "name": "American Football",
+          "subcategories": []
+        },
+        {
+          "id": 220,
+          "name": "Basketball",
+          "subcategories": []
+        },
+        {
+          "id": 221,
+          "name": "Cricket",
+          "subcategories": []
+        },
+        {
+          "id": 222,
+          "name": "Baseball",
+          "subcategories": []
+        },
+        {
+          "id": 223,
+          "name": "Tennis",
+          "subcategories": []
+        },
+        {
+          "id": 224,
+          "name": "Golf",
+          "subcategories": []
+        },
+        {
+          "id": 225,
+          "name": "Motorsports/F1",
+          "subcategories": []
+        },
+        {
+          "id": 226,
+          "name": "Hockey",
+          "subcategories": []
+        },
+        {
+          "id": 227,
+          "name": "Combat Sports/MMA/Boxing",
+          "subcategories": []
+        },
+        {
+          "id": 228,
+          "name": "Running",
+          "subcategories": []
+        },
+        {
+          "id": 229,
+          "name": "Cycling",
+          "subcategories": []
+        },
+        {
+          "id": 230,
+          "name": "Pickleball/Padel",
+          "subcategories": []
+        },
+        {
+          "id": 231,
+          "name": "Olympics",
+          "subcategories": []
+        },
+        {
+          "id": 232,
+          "name": "Esports",
+          "subcategories": []
+        }
+      ]
+    },
+    {
+      "name": "Travel, Tourism & Events",
+      "categories": [
+        {
+          "id": 233,
+          "name": "Travel",
+          "subcategories": []
+        },
+        {
+          "id": 234,
+          "name": "Tourism",
+          "subcategories": []
+        },
+        {
+          "id": 235,
+          "name": "Hotels & Resorts",
+          "subcategories": []
+        },
+        {
+          "id": 236,
+          "name": "Airlines",
+          "subcategories": []
+        },
+        {
+          "id": 237,
+          "name": "Cruises",
+          "subcategories": []
+        },
+        {
+          "id": 238,
+          "name": "Adventure Travel",
+          "subcategories": []
+        },
+        {
+          "id": 239,
+          "name": "Business Travel",
+          "subcategories": []
+        },
+        {
+          "id": 240,
+          "name": "Destinations",
+          "subcategories": []
+        },
+        {
+          "id": 241,
+          "name": "Theme Parks",
+          "subcategories": []
+        },
+        {
+          "id": 242,
+          "name": "Local Attractions",
+          "subcategories": []
+        },
+        {
+          "id": 243,
+          "name": "Events",
+          "subcategories": []
+        },
+        {
+          "id": 244,
+          "name": "Conferences",
+          "subcategories": []
+        },
+        {
+          "id": 245,
+          "name": "Trade Shows",
+          "subcategories": []
+        },
+        {
+          "id": 246,
+          "name": "Concerts",
+          "subcategories": []
+        },
+        {
+          "id": 247,
+          "name": "Festivals",
+          "subcategories": []
+        },
+        {
+          "id": 248,
+          "name": "Weddings",
+          "subcategories": []
+        },
+        {
+          "id": 249,
+          "name": "Local Events",
+          "subcategories": []
+        },
+        {
+          "id": 250,
+          "name": "Holidays",
+          "subcategories": []
+        },
+        {
+          "id": 251,
+          "name": "Seasonal Events",
+          "subcategories": []
+        }
+      ]
+    },
+    {
+      "name": "Government, Politics, Legal & Social Impact",
+      "categories": [
+        {
+          "id": 252,
+          "name": "Government",
+          "subcategories": []
+        },
+        {
+          "id": 253,
+          "name": "Politics",
+          "subcategories": []
+        },
+        {
+          "id": 254,
+          "name": "Elections",
+          "subcategories": []
+        },
+        {
+          "id": 255,
+          "name": "Public Policy",
+          "subcategories": []
+        },
+        {
+          "id": 256,
+          "name": "Legislation",
+          "subcategories": []
+        },
+        {
+          "id": 257,
+          "name": "Regulation",
+          "subcategories": []
+        },
+        {
+          "id": 258,
+          "name": "Legal",
+          "subcategories": []
+        },
+        {
+          "id": 259,
+          "name": "Courts",
+          "subcategories": []
+        },
+        {
+          "id": 260,
+          "name": "Geopolitics",
+          "subcategories": []
+        },
+        {
+          "id": 261,
+          "name": "International Relations",
+          "subcategories": []
+        },
+        {
+          "id": 262,
+          "name": "Nonprofits",
+          "subcategories": []
+        },
+        {
+          "id": 263,
+          "name": "NGOs",
+          "subcategories": []
+        },
+        {
+          "id": 264,
+          "name": "Philanthropy",
+          "subcategories": []
+        },
+        {
+          "id": 265,
+          "name": "CSR",
+          "subcategories": []
+        },
+        {
+          "id": 266,
+          "name": "Social Impact",
+          "subcategories": []
+        },
+        {
+          "id": 267,
+          "name": "Sustainability",
+          "subcategories": []
+        },
+        {
+          "id": 268,
+          "name": "Climate & Environment",
+          "subcategories": []
+        },
+        {
+          "id": 269,
+          "name": "Humanitarian Topics",
+          "subcategories": []
+        }
+      ]
+    },
+    {
+      "name": "Religion, Spirituality, Culture & Demographic Interests",
+      "categories": [
+        {
+          "id": 270,
+          "name": "Religion & Faith",
+          "subcategories": []
+        },
+        {
+          "id": 271,
+          "name": "Christianity",
+          "subcategories": []
+        },
+        {
+          "id": 272,
+          "name": "Islam",
+          "subcategories": []
+        },
+        {
+          "id": 273,
+          "name": "Hinduism",
+          "subcategories": []
+        },
+        {
+          "id": 274,
+          "name": "Buddhism",
+          "subcategories": []
+        },
+        {
+          "id": 275,
+          "name": "Judaism",
+          "subcategories": []
+        },
+        {
+          "id": 276,
+          "name": "Spirituality",
+          "subcategories": []
+        },
+        {
+          "id": 277,
+          "name": "Meditation",
+          "subcategories": []
+        },
+        {
+          "id": 278,
+          "name": "Philosophy",
+          "subcategories": []
+        },
+        {
+          "id": 279,
+          "name": "Ethics",
+          "subcategories": []
+        },
+        {
+          "id": 280,
+          "name": "Cultural Topics",
+          "subcategories": []
+        },
+        {
+          "id": 281,
+          "name": "Traditions",
+          "subcategories": []
+        },
+        {
+          "id": 282,
+          "name": "Gen Z Culture",
+          "subcategories": []
+        },
+        {
+          "id": 283,
+          "name": "Youth Culture",
+          "subcategories": []
+        },
+        {
+          "id": 284,
+          "name": "Seniors & Retirement",
+          "subcategories": []
+        },
+        {
+          "id": 285,
+          "name": "Parenting",
+          "subcategories": []
+        },
+        {
+          "id": 286,
+          "name": "Family",
+          "subcategories": []
+        },
+        {
+          "id": 287,
+          "name": "Babies & Kids",
+          "subcategories": []
+        },
+        {
+          "id": 288,
+          "name": "Retirement Lifestyle",
+          "subcategories": []
+        }
+      ]
+    },
+    {
+      "name": "Real-Time & High-Velocity Categories",
+      "categories": [
+        {
+          "id": 289,
+          "name": "Breaking News",
+          "subcategories": []
+        },
+        {
+          "id": 290,
+          "name": "Trending Now",
+          "subcategories": []
+        },
+        {
+          "id": 291,
+          "name": "Weather",
+          "subcategories": []
+        },
+        {
+          "id": 292,
+          "name": "Natural Events",
+          "subcategories": []
+        },
+        {
+          "id": 293,
+          "name": "Holidays",
+          "subcategories": []
+        },
+        {
+          "id": 294,
+          "name": "Viral Challenges",
+          "subcategories": []
+        },
+        {
+          "id": 295,
+          "name": "Memes",
+          "subcategories": []
+        },
+        {
+          "id": 296,
+          "name": "Product Launches",
+          "subcategories": []
+        },
+        {
+          "id": 297,
+          "name": "New Apps",
+          "subcategories": []
+        },
+        {
+          "id": 298,
+          "name": "Top Apps",
+          "subcategories": []
+        },
+        {
+          "id": 299,
+          "name": "Stock Movers",
+          "subcategories": []
+        },
+        {
+          "id": 300,
+          "name": "Earnings",
+          "subcategories": []
+        },
+        {
+          "id": 301,
+          "name": "IPOs",
+          "subcategories": []
+        },
+        {
+          "id": 302,
+          "name": "Funding Rounds",
+          "subcategories": []
+        },
+        {
+          "id": 303,
+          "name": "M&A",
+          "subcategories": []
+        },
+        {
+          "id": 304,
+          "name": "Sports Events",
+          "subcategories": []
+        },
+        {
+          "id": 305,
+          "name": "Celebrity Events",
+          "subcategories": []
+        },
+        {
+          "id": 306,
+          "name": "Awards",
+          "subcategories": []
+        },
+        {
+          "id": 307,
+          "name": "Movie Releases",
+          "subcategories": []
+        },
+        {
+          "id": 308,
+          "name": "Music Releases",
+          "subcategories": []
+        },
+        {
+          "id": 309,
+          "name": "Product Recalls",
+          "subcategories": []
+        },
+        {
+          "id": 310,
+          "name": "Coupons & Offers",
+          "subcategories": []
+        },
+        {
+          "id": 311,
+          "name": "Sales",
+          "subcategories": []
+        },
+        {
+          "id": 312,
+          "name": "Shopping Events",
+          "subcategories": []
+        },
+        {
+          "id": 313,
+          "name": "Controversies",
+          "subcategories": []
+        },
+        {
+          "id": 314,
+          "name": "Reputation Events",
+          "subcategories": []
+        }
+      ]
+    }
+  ],
+  "intelligence_lenses": [
+    "Topics",
+    "Brands",
+    "Companies",
+    "Products",
+    "People/Celebrities",
+    "Creators",
+    "Executives",
+    "Professionals",
+    "Organizations",
+    "Governments",
+    "Sports Teams",
+    "Universities",
+    "Apps",
+    "Movies",
+    "Songs",
+    "Events",
+    "Controversy",
+    "Debate",
+    "Protest",
+    "Politics",
+    "Gossip"
+  ],
+  "reputation": [
+    "All reputation",
+    "Good reputation",
+    "Bad reputation",
+    "Positive",
+    "Negative",
+    "Mixed",
+    "Praise",
+    "Criticism",
+    "Brand Advocacy",
+    "Backlash",
+    "Product Satisfaction",
+    "Product Complaints",
+    "Controversy",
+    "Reputation Rising",
+    "Reputation Falling",
+    "Crisis Risk"
+  ]
+}
