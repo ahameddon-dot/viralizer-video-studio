@@ -114,14 +114,15 @@
       <label for="prompt">Video prompt</label>
       <textarea id="prompt" placeholder="Leave empty to build a detailed video prompt automatically from the hidden MCP content."></textarea>
       <label for="imagePrompt" style="margin-top:12px">Image prompt</label>
-      <textarea id="imagePrompt" placeholder="Generated separately for one static image. It never contains camera movement, transitions, or video scenes."></textarea>
+      <textarea id="imagePrompt" placeholder="For your own source image, type exactly what you want here. Topic-based Instagram tools can prepare this prompt automatically."></textarea>
+      <p class="hint">Your own source-image prompt is never taken from the sample topic.</p>
       <label for="imageProvider" style="margin-top:12px">Image provider</label>
       <select id="imageProvider"><option value="openai">OpenAI — best quality (recommended)</option><option value="cloudflare">Cloudflare Lucid — limited free generations</option></select>
       <div class="row">
         <div><label for="duration">Duration</label><select id="duration"><option>5</option><option>8</option><option>10</option><option selected>15</option></select><p class="hint">15 seconds is recommended for explanatory videos.</p></div>
         <div><label for="quality">Quality</label><select id="quality"><option>720p</option><option>1080p</option><option>540p</option></select></div>
       </div>
-      <div class="generator-actions"><button id="generate">Prepare video prompt</button><button id="generateImageVideo">Prepare image-to-video prompt</button><button id="confirmVideo" hidden>Confirm &amp; generate video</button><button id="generatePixverseImage">Prepare source-image prompt</button><button id="generateOpenAIImage">Prepare Instagram-image prompt</button><button id="generateInstagramAlbum">Prepare album prompt</button><button id="confirmImage" hidden>Confirm &amp; generate image</button></div>
+      <div class="generator-actions"><button id="generate">Prepare video prompt</button><button id="generateImageVideo">Prepare image-to-video prompt</button><button id="confirmVideo" hidden>Confirm &amp; generate video</button><button id="generatePixverseImage">Use my source-image prompt</button><button id="generateOpenAIImage">Prepare Instagram-image prompt</button><button id="generateInstagramAlbum">Prepare album prompt</button><button id="confirmImage" hidden>Confirm &amp; generate image</button></div>
       <div class="status" id="status"></div>
       <div id="result"></div>
     </section>
@@ -351,7 +352,7 @@
     async function prepareImagePrompt(mode,purpose='instagram'){
       const outline=currentOutline();status.textContent='Preparing the image prompt for your review...';const prepared=await fetch('/api/image/prompt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:outline,purpose})}).then(json);imagePrompt.value=prepared.prompt;pendingImageMode=mode;confirmImageButton.hidden=false;imagePrompt.focus();status.textContent='Review and edit the image prompt, then click Confirm & generate image. Nothing has been generated yet.';
     }
-    pixverseImageButton.onclick=async()=>{pixverseImageButton.disabled=true;try{await prepareImagePrompt('source','pixverse')}catch(error){status.textContent=error.message}finally{pixverseImageButton.disabled=false}};
+    pixverseImageButton.onclick=()=>{if(!imagePrompt.value.trim()){pendingImageMode='';confirmImageButton.hidden=true;imagePrompt.focus();status.textContent='Enter your own source-image prompt above. The sample topic will not be used.';return}pendingImageMode='source';confirmImageButton.hidden=false;imagePrompt.focus();status.textContent='Your source-image prompt is ready for review. Click Confirm & generate image when you are satisfied.'};
     openAIImageButton.onclick=async()=>{openAIImageButton.disabled=true;try{await prepareImagePrompt('instagram')}catch(error){status.textContent=error.message}finally{openAIImageButton.disabled=false}};
     albumButton.onclick=async()=>{albumButton.disabled=true;try{await prepareImagePrompt('album')}catch(error){status.textContent=error.message}finally{albumButton.disabled=false}};
     confirmImageButton.onclick=async()=>{
