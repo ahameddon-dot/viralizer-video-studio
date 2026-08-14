@@ -31,11 +31,11 @@ async def analyze_reference_image(
         "input": [{
             "role": "user",
             "content": [
-                {"type": "input_text", "text": "Describe this reference image for an AI image/video generator. Identify the main subject, people, product, setting, composition, colors, lighting, visible action, and mood. Be concrete and concise. Do not guess names or facts and do not transcribe text."},
+                {"type": "input_text", "text": "Describe this image in no more than 35 words: main subject, setting, composition, colors, and visible action. Do not guess names or transcribe text."},
                 {"type": "input_image", "image_url": source},
             ],
         }],
-        "max_output_tokens": 350,
+        "max_output_tokens": 120,
     }
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
@@ -110,44 +110,20 @@ async def prepare_image_prompt(content: dict[str, Any], purpose: str = "instagra
     def clip(value: Any, limit: int) -> str:
         return " ".join(str(value or "").strip().split()[:limit])
 
-    topic = clip(content.get("topic"), 28)
-    message = clip(content.get("suggested_title") or content.get("hook"), 24)
-    angle = clip(content.get("creator_angle"), 35)
-    why = clip(content.get("why_it_matters"), 55)
-    idea = clip(content.get("video_idea"), 75)
-    question_story = "?" in str(content.get("topic") or "") or "?" in str(content.get("suggested_title") or "")
-    tension_direction = (
-        "Show a clear visual contrast between two sides of the story: the affected audience on one side and the organization, leaders, or industry being challenged on the other. Use two or three expressive people in a tight reaction-driven editorial composition, not an anonymous lifestyle scene."
-        if question_story else
-        "Show the central subject performing or experiencing the specific action and consequence described by the story, with expressive human emotion where people are involved."
-    )
-    prompt = " ".join(filter(None, [
-        "Create one static, attention-grabbing editorial social image. Do not create a storyboard, montage, reel, or generic stock photo.",
-        f"Subject: {topic}." if topic else "",
-        f"Story message: {message}." if message else "",
-        f"Essential context: {idea}." if idea else "",
-        f"Editorial focus: {angle}." if angle else "",
-        f"Audience relevance: {why}." if why else "",
-        tension_direction,
-        "Choose specific people, expressions, clothing, objects, and setting that make this exact subject recognizable immediately. Use a tight medium shot, prominent faces, direct visual tension, bold contrasting colors, clean background, premium realistic editorial photography, and strong mobile-thumbnail hierarchy.",
-        "Compose vertically in a 4:5 Instagram layout. Reserve clean space at the top for a headline that the application adds later.",
-        "Render no words, letters, numbers, captions, fake logos, watermarks, interface elements, or random symbols. One coherent scene only. Do not invent named people, statistics, or events.",
-    ]))
+    title = clip(content.get("suggested_title") or content.get("hook") or content.get("topic"), 22)
+    reference = clip(content.get("reference_description"), 35)
     if purpose == "pixverse":
-        prompt = prompt.replace(
-            "Compose vertically in a 4:5 Instagram layout. Reserve clean space at the top for a headline that the application adds later.",
-            "Compose vertically in a 2:3 PixVerse source-image layout. Keep faces and the main action centered with safe space around them for later animation."
-        )
-    source_url = _selected_source_url(content)
-    excerpt = await _source_excerpt(source_url)
-    if excerpt:
-        prompt += (
-            f" Selected-topic source: {source_url}. Source-page context: {excerpt}. "
-            "Base all concrete visual details on this source context and the MCP outline."
-        )
-    elif source_url:
-        prompt += f" Selected-topic source URL: {source_url}. Use the MCP outline as the factual basis."
-    return prompt[:9000]
+        if str(content.get("topic")) == "Reference image" and reference:
+            return f"Create a strong vertical image based on this reference: {reference}. Clean composition, realistic detail, no text."
+        return " ".join(filter(None, [
+            f'Create a strong vertical source image for "{title}."',
+            reference,
+            "One clear subject, clean composition, realistic detail, no text.",
+        ]))
+    return " ".join(filter(None, [
+        f'Create a premium social-media infographic for "{title}."',
+        "Make the idea instantly clear with one strong hero visual and a few concise, readable callouts.",
+    ]))
 
 
 def _headline(content: dict[str, Any], fallback: str = "") -> str:

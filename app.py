@@ -413,8 +413,8 @@ async def generate_image_video(
     role_direction = "; ".join(f"{count} {role} reference{'s' if count != 1 else ''}" for role, count in role_counts.items())
     video_prompt = (prompt or build_video_prompt(content, duration)).strip()
     if role_direction:
-        video_prompt += f" Use the uploaded reference board faithfully: {role_direction}. The board order is person references first, then product references, advertising references, and logo references. Preserve person identity, product design, advertising style, and authentic logo appearance according to each reference role."
-    video_prompt += " Override any earlier no-text instruction: readable on-screen text is permitted only where explicitly requested in the reviewed prompt." if allow_text else " Show no readable text, captions, titles, labels, random letters, or generated typography."
+        video_prompt += f" References: {role_direction}. Preserve their exact identity and design."
+    video_prompt += " Text is allowed only if requested." if allow_text else " No text."
     if not video_prompt:
         raise HTTPException(422, "The selected topic did not produce a usable video prompt.")
     image_bytes = None
@@ -555,11 +555,12 @@ async def thumbnail_prompts(
             str(prompt_content.get("video_idea") or "").strip(),
             f"Reference-image details: {description}",
         ]))
+        prompt_content["reference_description"] = description
         image_prompt_value = await prepare_image_prompt(prompt_content, "pixverse")
+        short_description = " ".join(description.split()[:35])
         video_prompt_value = (
-            f"Create a {max(5, min(15, duration))}-second image-to-video animation using the selected reference image as the exact visual starting point. "
-            f"Preserve the subject identity, product design, composition, colors, clothing, logos, and setting. Reference details: {description}. "
-            "Add natural subject motion, subtle environmental movement, realistic depth, and one smooth camera move. Do not replace the central subject or invent unrelated objects. Show no readable text, captions, random letters, or watermarks."
+            f"Animate this image for {max(5, min(15, duration))} seconds. Preserve the subject and composition. "
+            f"{short_description} Natural motion, subtle background movement, smooth camera push-in, no text."
         )
         if use_topic_context and prompt_content.get("topic"):
             video_prompt_value += f" The animation must support this selected topic: {prompt_content['topic']}."

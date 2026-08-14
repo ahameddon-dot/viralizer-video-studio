@@ -14,54 +14,16 @@ class PixVerseError(RuntimeError):
 
 
 def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
-    """Turn the outline returned by the topic MCP into one PixVerse prompt."""
+    """Create a short, model-friendly PixVerse prompt."""
     def clip(value: Any, word_limit: int) -> str:
         return " ".join(str(value or "").strip().split()[:word_limit])
-
-    topic = clip(content.get("topic"), 18)
-    suggested_title = clip(content.get("suggested_title"), 18)
-    raw_idea = str(content.get("video_idea", "")).strip()
-    idea = clip(raw_idea, 42)
-    hook = clip(content.get("hook"), 18)
-    angle = clip(content.get("creator_angle"), 16)
-    why = clip(content.get("why_it_matters"), 24)
-    keywords = clip(", ".join(content.get("hashtags", [])), 12)
-
-    outline_points: list[str] = []
-    for line in raw_idea.splitlines():
-        cleaned = re.sub(r"^\s*(?:\d+(?:\.\d+)*[.)]?|[-*•])\s*", "", line).strip()
-        if cleaned and cleaned.lower() != idea.lower() and len(cleaned.split()) >= 2:
-            outline_points.append(clip(cleaned, 9))
-    key_points = "; ".join(outline_points[:4])
-
-    topic_lower = topic.lower()
-    visual_anchors = ""
-    brand_direction = "Use accurate subject identity; an explicitly named brand may use its authentic emblem, never fake lettering."
-    if "nvidia" in topic_lower:
-        visual_anchors = (
-            "Use the authentic NVIDIA green eye emblem and black-green identity, then show GPU chips, "
-            "AI accelerators, engineers, server racks, and a large AI data center."
-        )
-
-    parts = [
-        f"Create a coherent {duration}-second vertical explanatory video, not a random montage or generic reel.",
-        f"Topic: {topic}." if topic else "",
-        f"Editorial title direction: {suggested_title}." if suggested_title else "",
-        f"Content to explain: {idea}." if idea else "",
-        f"Key explanation points: {key_points}." if key_points else "",
-        f"Relevant concepts: {keywords}." if keywords else "",
-        f"Visual storyboard: Begin with a literal attention-grabbing image for this hook: {hook}." if hook else "",
-        f"Then establish the context: {why}." if why else "",
-        f"Next clearly demonstrate the cause, process, and real-world consequence from this angle: {angle}." if angle else "",
-        "End with a decisive visual outcome that makes the topic's importance immediately understandable.",
-        visual_anchors,
-        brand_direction,
-        "Every shot must directly explain the supplied content through specific actions, objects, locations, and cause-and-effect transitions.",
-        "Use realistic continuity and stable subjects. Except for an authentic requested emblem, show no readable words, captions, subtitles, fake labels, random symbols, or watermarks.",
-    ]
-    prompt = " ".join(part for part in parts if part)
-    words = prompt.split()
-    return " ".join(words[:200])
+    title = clip(content.get("suggested_title") or content.get("hook") or content.get("topic"), 18)
+    angle = clip(content.get("creator_angle"), 10)
+    return " ".join(filter(None, [
+        f'Visualize "{title}."' if title else "Create a clear topical video.",
+        f"Focus: {angle}." if angle and angle.lower() not in title.lower() else "",
+        f"One coherent vertical scene, {duration} seconds, natural motion, subtle background movement, smooth camera push-in, realistic lighting, no text.",
+    ]))
 
 
 def build_image_prompt(content: dict[str, Any]) -> str:
