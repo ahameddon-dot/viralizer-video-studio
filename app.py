@@ -532,6 +532,10 @@ async def thumbnail_prompts(
     use_topic_context: bool = Form(False),
     duration: int = Form(5),
     image: UploadFile | None = File(None),
+    person_images: list[UploadFile] | None = File(None),
+    product_images: list[UploadFile] | None = File(None),
+    ad_images: list[UploadFile] | None = File(None),
+    logo_images: list[UploadFile] | None = File(None),
 ):
     try:
         content = json.loads(content_json)
@@ -539,7 +543,34 @@ async def thumbnail_prompts(
         raise HTTPException(422, "The selected topic content is invalid.") from exc
     image_bytes = None
     content_type = "image/png"
-    if image is not None:
+    role_files = [
+        upload
+        for uploads in (person_images or [], product_images or [], ad_images or [], logo_images or [])
+        for upload in uploads
+    ]
+    if len(role_files) > 12:
+        raise HTTPException(422, "Upload no more than 12 reference images in total.")
+    if role_files:
+        opened: list[Image.Image] = []
+        for upload in role_files:
+            raw = await upload.read(20 * 1024 * 1024 + 1)
+            if len(raw) > 20 * 1024 * 1024:
+                raise HTTPException(422, "Each reference image must be smaller than 20 MB.")
+            try:
+                opened.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+            except Exception as exc:
+                raise HTTPException(422, "A reference file could not be read as an image.") from exc
+        canvas = Image.new("RGB", (1024, 1024), (18, 18, 22))
+        columns = 2
+        rows = (len(opened) + 1) // 2
+        cell_width, cell_height = 512, 1024 // max(1, rows)
+        for index, source in enumerate(opened):
+            fitted = ImageOps.fit(source, (cell_width, cell_height), method=Image.Resampling.LANCZOS)
+            canvas.paste(fitted, ((index % columns) * cell_width, (index // columns) * cell_height))
+        output = io.BytesIO()
+        canvas.save(output, format="PNG", optimize=True)
+        image_bytes = output.getvalue()
+    elif image is not None:
         image_bytes = await image.read(20 * 1024 * 1024 + 1)
         if len(image_bytes) > 20 * 1024 * 1024:
             raise HTTPException(422, "The uploaded thumbnail must be smaller than 20 MB.")
