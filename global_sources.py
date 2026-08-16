@@ -118,10 +118,44 @@ async def discover_global_sources() -> list[dict[str, Any]]:
     return [item for group in groups for item in group]
 
 
-async def discover_category_topics(query: str, limit: int = 30) -> list[dict[str, Any]]:
+def build_category_discovery_queries(
+    category: str, keyword: str = "", description: str = "", lens: str = "", reputation: str = ""
+) -> list[str]:
+    """Expand category and reputation selections into useful public-news searches."""
+    selected = " ".join((keyword or category).split()[:8])
+    if category.strip().lower() in {"app", "apps", "applications"} and not keyword.strip():
+        selected = '(app OR "mobile app" OR software)'
+    elif " " in selected and not any(mark in selected for mark in ('"', '(', ')')):
+        selected = f'"{selected}"'
+    context = " ".join(description.split()[:10])
+    if not context and lens and lens.lower() != "everything":
+        context = " ".join(lens.split()[:4])
+    context_suffix = f' "{context}"' if context else ""
+    reputation_key = reputation.strip().lower()
+    if reputation_key in {"bad reputation", "negative", "criticism", "backlash", "product complaints", "controversy", "reputation falling", "crisis risk"}:
+        signals = (
+            '(complaints OR backlash OR controversy OR criticism OR "bad reviews")',
+            '(lawsuit OR investigation OR fine OR ban OR regulation)',
+            '("data breach" OR privacy OR "security flaw" OR scam OR fraud OR outage)',
+        )
+    elif reputation_key in {"good reputation", "positive", "praise", "brand advocacy", "product satisfaction", "reputation rising"}:
+        signals = (
+            '(praise OR award OR achievement OR "positive reviews")',
+            '(growth OR innovation OR launch OR partnership)',
+            '(customer satisfaction OR comeback OR milestone)',
+        )
+    elif reputation_key == "mixed":
+        signals = ('(praise OR criticism OR debate OR controversy)',)
+    else:
+        signals = ('(news OR launch OR review OR trend)',)
+    return [f"{selected} {signal}{context_suffix}".strip() for signal in signals]
+
+
+async def discover_category_topics(query: str | list[str], limit: int = 30) -> list[dict[str, Any]]:
     """Discover current worldwide public-web topics without contacting Viralizer."""
-    query = " ".join(str(query).split()[:18]).strip()
-    if not query:
+    queries = [query] if isinstance(query, str) else query
+    queries = [" ".join(str(value).split()[:45]).strip() for value in queries if str(value).strip()]
+    if not queries:
         return []
     headers = {"User-Agent": "ViralizerCategoryDiscovery/1.0 (+public trend research tool)"}
     google_editions = (
@@ -133,9 +167,9 @@ async def discover_category_topics(query: str, limit: int = 30) -> list[dict[str
     )
 
     async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as client:
-        async def google_feed(country: str, language: str, edition: str) -> list[dict[str, Any]]:
+        async def google_feed(search_query: str, country: str, language: str, edition: str) -> list[dict[str, Any]]:
             try:
-                url = f"https://news.google.com/rss/search?q={quote_plus(query + ' when:2d')}&hl={language}&gl={country}&ceid={edition}"
+                url = f"https://news.google.com/rss/search?q={quote_plus(search_query + ' when:30d')}&hl={language}&gl={country}&ceid={edition}"
                 response = await client.get(url)
                 response.raise_for_status()
                 root = ElementTree.fromstring(response.content)
@@ -148,27 +182,30 @@ async def discover_category_topics(query: str, limit: int = 30) -> list[dict[str
                         published = parsedate_to_datetime(item.findtext("pubDate", ""))
                     except (TypeError, ValueError):
                         published = datetime.now(timezone.utc)
-                    found.append(record(title, query, f"Google News {country}", item.findtext("link", ""), published, 1))
+                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1))
                 return found
             except Exception:
                 return []
 
-        async def gdelt_feed() -> list[dict[str, Any]]:
+        async def gdelt_feed(search_query: str) -> list[dict[str, Any]]:
             try:
                 response = await client.get(
                     "https://api.gdeltproject.org/api/v2/doc/doc",
-                    params={"query": query, "mode": "ArtList", "maxrecords": 75, "format": "json", "sort": "HybridRel", "timespan": "2d"},
+                    params={"query": search_query, "mode": "ArtList", "maxrecords": 75, "format": "json", "sort": "HybridRel", "timespan": "30d"},
                 )
                 response.raise_for_status()
                 return [
-                    record(item.get("title", ""), query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1)
+                    record(item.get("title", ""), search_query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1)
                     for item in response.json().get("articles", [])
                     if item.get("title")
                 ]
             except Exception:
                 return []
 
-        groups = await asyncio.gather(*(google_feed(*edition) for edition in google_editions), gdelt_feed())
+        groups = await asyncio.gather(
+            *(google_feed(search_query, *edition) for search_query in queries for edition in google_editions),
+            *(gdelt_feed(search_query) for search_query in queries),
+        )
 
     merged: dict[str, dict[str, Any]] = {}
     for item in (entry for group in groups for entry in group):
