@@ -221,7 +221,11 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                 existing["published_at"] = item["published_at"]
         else:
             merged[key] = item
-    ordered = sorted(merged.values(), key=lambda item: (item["mentions"], item["published_at"]), reverse=True)
+    ordered = sorted(
+        merged.values(),
+        key=lambda item: (item.get("published_at", ""), item.get("mentions", 0)),
+        reverse=True,
+    )
     for item in ordered:
         item["youtube_search_topic"], item["alternate_topics"] = _youtube_search_terms(item["topic"])
     return ordered[:max(1, min(50, limit))]
