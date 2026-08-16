@@ -40,6 +40,61 @@ SOURCE_QUERIES = {
 }
 
 
+_ENTITY_NOISE = {
+    "a", "an", "the", "new", "latest", "breaking", "report", "reports", "reported",
+    "attorney", "general", "judge", "court", "federal", "government", "users", "user",
+    "security", "critical", "dangerous", "major", "million", "billion", "says", "said",
+    "secures", "faces", "facing", "misleading", "enabling", "fake", "scam", "over", "after",
+    "from", "with", "for", "and", "or",
+}
+
+
+def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
+    """Create an entity-led YouTube query of no more than five words."""
+    clean = " ".join(str(title).split())
+    lower = clean.lower()
+    issue = "latest update"
+    for needles, label in (
+        (("data breach", "data leak", "exposed", "leaking user data"), "data leak"),
+        (("vulnerabil", "security flaw", "security bug", "hijack"), "security flaw"),
+        (("locked out", "locks out", "review freeze", "account ban"), "account lockout"),
+        (("fake", "scam", "fraud", "stolen"), "scam controversy"),
+        (("lawsuit", "sued", "sues", "class action"), "lawsuit"),
+        (("fine", "penalt", "regulatory action", "investigation"), "regulatory action"),
+        (("outage", "offline", "went down", "service disruption"), "outage"),
+        (("backlash", "controvers", "criticism"), "controversy"),
+        (("complaint", "bad review", "subscription charge", "pricing"), "complaints"),
+    ):
+        if any(needle in lower for needle in needles):
+            issue = label
+            break
+
+    quoted = re.findall(r'"([^"“”]{2,45})"|“([^“”]{2,45})”|(?<!\w)\'([^\']{2,45})\'', clean)
+    quoted = [next((part for part in match if part), "") for match in quoted]
+    candidates: list[str] = [value for value in quoted if len(value.split()) <= 3]
+    proper_runs = re.findall(r"\b(?:[A-Z][A-Za-z0-9.+&-]*)(?:\s+(?:[A-Z][A-Za-z0-9.+&-]*|to)){0,3}\b", clean)
+    candidates.extend(proper_runs)
+    app_candidates = [value for value in candidates if any(word.lower() in {"app", "wallet", "chat", "pay", "zoom", "whatsapp"} for word in value.split())]
+    ordered = quoted + app_candidates + candidates
+    entity = ""
+    for value in ordered:
+        words = [word for word in value.split() if word.lower() not in _ENTITY_NOISE]
+        candidate = " ".join(words[:3]).strip(" -:,.')(")
+        if candidate and not candidate.isdigit() and len(candidate) > 1:
+            entity = candidate
+            break
+    if not entity:
+        words = [word.strip(" -:,.')(") for word in clean.split() if word.lower().strip(" -:,.')(") not in _ENTITY_NOISE]
+        entity = " ".join(filter(None, words[:3])) or "App"
+
+    max_entity_words = max(1, 5 - len(issue.split()))
+    entity = " ".join(entity.split()[:max_entity_words])
+    primary = " ".join(f"{entity} {issue}".split()[:5])
+    alternate_issue = "explained" if issue != "latest update" else "news update"
+    alternate = " ".join(f"{entity} {alternate_issue}".split()[:5])
+    return primary, [alternate] if alternate.lower() != primary.lower() else []
+
+
 async def discover_global_sources() -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(8)
     headers = {"User-Agent": "ViralizerTrendDiscovery/1.0 (+local trend research tool)"}
@@ -130,6 +185,8 @@ async def discover_category_topics(query: str, limit: int = 30) -> list[dict[str
         else:
             merged[key] = item
     ordered = sorted(merged.values(), key=lambda item: (item["mentions"], item["published_at"]), reverse=True)
+    for item in ordered:
+        item["youtube_search_topic"], item["alternate_topics"] = _youtube_search_terms(item["topic"])
     return ordered[:max(1, min(50, limit))]
 
 
