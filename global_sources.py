@@ -1,4 +1,5 @@
 import asyncio
+import html
 import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -182,7 +183,9 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                         published = parsedate_to_datetime(item.findtext("pubDate", ""))
                     except (TypeError, ValueError):
                         published = datetime.now(timezone.utc)
-                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1))
+                    description = html.unescape(re.sub(r"<[^>]+>", " ", item.findtext("description", "") or ""))
+                    description = " ".join(description.split())
+                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1, description))
                 return found
             except Exception:
                 return []
@@ -219,6 +222,8 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
             existing["source_platforms"] = list(dict.fromkeys(existing["source_platforms"] + item["source_platforms"]))
             if item["published_at"] > existing["published_at"]:
                 existing["published_at"] = item["published_at"]
+            if len(item.get("summary", "")) > len(existing.get("summary", "")):
+                existing["summary"] = item["summary"]
         else:
             merged[key] = item
     ordered = sorted(
@@ -241,5 +246,17 @@ def parse_date(value: Any) -> datetime:
     return datetime.now(timezone.utc)
 
 
-def record(title: str, category: str, source: str, url: str, published: datetime, engagement: int) -> dict[str, Any]:
-    return {"topic": " ".join(str(title).split()), "category": category, "published_at": published.isoformat(), "source_urls": [url] if url else [], "mentions": 1, "source_platforms": [source], "source_engagement": {source: engagement}}
+def record(
+    title: str, category: str, source: str, url: str, published: datetime, engagement: int,
+    summary: str = "",
+) -> dict[str, Any]:
+    return {
+        "topic": " ".join(str(title).split()),
+        "category": category,
+        "published_at": published.isoformat(),
+        "summary": " ".join(str(summary).split())[:1000],
+        "source_urls": [url] if url else [],
+        "mentions": 1,
+        "source_platforms": [source],
+        "source_engagement": {source: engagement},
+    }
