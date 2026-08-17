@@ -1,9 +1,18 @@
 services:
   - type: web
-    name: viralizer-video-studio
+    name: viralizer-video-studio-beta
     runtime: docker
+    branch: develop
     healthCheckPath: /health
     envVars:
+      - key: APP_ENVIRONMENT
+        value: private-beta
+      - key: APP_VERSION
+        value: v1.1.0-beta.1
+      - key: APP_PASSWORD
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: MCP_SERVER_URL
         value: https://mcp.viralizer.ai/mcp
       - key: MCP_TOOL_NAME
@@ -16,8 +25,6 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
       - key: OPENAI_IMAGE_MODEL
         value: gpt-image-2
       - key: CLOUDFLARE_ACCOUNT_ID
@@ -26,17 +33,11 @@ services:
         sync: false
       - key: CLOUDFLARE_IMAGE_MODEL
         value: "@cf/leonardo/lucid-origin"
-      - key: RUNWAYML_API_SECRET
-        sync: false
-      - key: HEYGEN_API_KEY
-        sync: false
       - key: APP_DATA_DIR
         value: /var/data
       - key: DAILY_TRENDS_ENABLED
-        value: "true"
-      - key: DAILY_TRENDS_TIME
-        value: "07:00"
+        value: "false"
     disk:
-      name: viralizer-data
+      name: viralizer-beta-data
       mountPath: /var/data
       sizeGB: 1

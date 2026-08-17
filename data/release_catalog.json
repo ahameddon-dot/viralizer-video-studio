@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "production_version": "v1.0.0",
+  "beta_version": "v1.1.0-beta.1",
+  "releases": [
+    {
+      "version": "v0.1.0",
+      "commit": "84cf59f",
+      "date": "2026-08-07",
+      "status": "archived",
+      "environment": "historical checkpoint",
+      "summary": "Introduced concise image and video prompts.",
+      "changes": [{
+        "id": "CHG-0001", "type": "prompt change", "area": "AI generation", "risk": "medium",
+        "title": "Crisp generation prompts", "before": "Prompts contained long descriptions and multiple scene instructions that image and video providers struggled to follow.",
+        "after": "Prompts focus on one subject, one visual idea and concise provider-ready instructions.",
+        "reason": "Improve provider comprehension and reduce irrelevant output.", "user_impact": "Users receive shorter editable prompts and more focused generations.",
+        "files": ["openai_image_client.py", "pixverse_client.py"], "endpoints": ["POST /api/image/prompt", "POST /api/video/prompt"],
+        "environment_variables": [], "data_impact": "No stored-data format change.", "tests": ["Python syntax", "Prompt length review"],
+        "rollback_effect": "Restores the older long-form prompts. Existing generated media remains available."
+      }]
+    },
+    {
+      "version": "v0.2.0", "commit": "96b45e8", "date": "2026-08-10", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Added separate reference-asset preparation actions.",
+      "changes": [{
+        "id": "CHG-0002", "type": "feature", "area": "Reference assets", "risk": "medium", "title": "Person, product, ad and logo asset actions",
+        "before": "Uploaded reference assets did not have clear image and video preparation actions.", "after": "Users can upload multiple role-specific assets and prepare either an image prompt or an image-to-video prompt.",
+        "reason": "Support product advertising and branded image-to-video workflows.", "user_impact": "Four upload columns and two preparation buttons become available.",
+        "files": ["static/index.html", "app.py"], "endpoints": ["POST /api/thumbnail/prompts"], "environment_variables": [],
+        "data_impact": "Uploads remain temporary and are not added to persistent storage.", "tests": ["Browser JavaScript", "Upload-count validation"],
+        "rollback_effect": "Removes role-specific preparation buttons but does not delete previously generated files."
+      }]
+    },
+    {
+      "version": "v0.3.0", "commit": "2f14ee3", "date": "2026-08-14", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Separated worldwide category discovery from Viralizer reporting.",
+      "changes": [{
+        "id": "CHG-0003", "type": "architecture", "area": "Category Intelligence", "risk": "high", "title": "Two-stage category intelligence",
+        "before": "Selecting a category contacted Viralizer immediately and displayed one report.", "after": "The application first discovers public worldwide topics. Viralizer is contacted only after a user selects a topic.",
+        "reason": "Show a broad choice of current stories while conserving Viralizer analysis calls.", "user_impact": "Users see topic cards first and choose which story receives a Viralizer report.",
+        "files": ["global_sources.py", "app.py", "static/index.html"], "endpoints": ["POST /api/category/topics", "POST /api/category/intelligence"],
+        "environment_variables": [], "data_impact": "No migration. Category discoveries are returned in memory.", "tests": ["Python syntax", "Browser JavaScript"],
+        "rollback_effect": "Returns to immediate Viralizer analysis and removes worldwide topic cards."
+      }]
+    },
+    {
+      "version": "v0.4.0", "commit": "14f67e8", "date": "2026-08-14", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Sent actual uploaded pixels to reference-image generation.",
+      "changes": [{
+        "id": "CHG-0004", "type": "bug fix", "area": "Image generation", "risk": "high", "title": "Actual reference images used by ChatGPT Image",
+        "before": "Uploads were converted into a text description and image generation did not receive their actual pixels.", "after": "Uploaded thumbnail and role assets are transmitted to the OpenAI image-edit endpoint as a real visual reference.",
+        "reason": "Preserve the selected person, product and branding.", "user_impact": "Generated images visibly relate to uploaded source material.",
+        "files": ["openai_image_client.py", "app.py", "static/index.html"], "endpoints": ["POST /api/image/reference/generate"],
+        "environment_variables": ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL"], "data_impact": "Reference files are processed temporarily and are not permanently stored.",
+        "tests": ["Python syntax", "Multipart request validation", "Browser JavaScript"], "rollback_effect": "Reference generation returns to text-only prompts. Existing images are preserved."
+      }]
+    },
+    {
+      "version": "v0.5.0", "commit": "183beba", "date": "2026-08-15", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Created new scenes instead of copying thumbnail composition.",
+      "changes": [{
+        "id": "CHG-0005", "type": "prompt change", "area": "Reference images", "risk": "medium", "title": "Distinct reference-based composition",
+        "before": "The generated image closely copied the uploaded thumbnail layout.", "after": "The subject and branding are preserved while scene, camera angle, background, pose and composition are changed.",
+        "reason": "Create an original image rather than a near-duplicate thumbnail.", "user_impact": "Outputs remain recognisable but appear visually different.",
+        "files": ["app.py"], "endpoints": ["POST /api/image/reference/generate"], "environment_variables": [], "data_impact": "No data change.",
+        "tests": ["Python syntax", "Prompt review"], "rollback_effect": "Reference output may again closely follow the original layout."
+      }]
+    },
+    {
+      "version": "v0.6.0", "commit": "6235b8d", "date": "2026-08-15", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Added full-content infographic image generation.",
+      "changes": [{
+        "id": "CHG-0006", "type": "feature", "area": "Image generation", "risk": "medium", "title": "Infographics image button",
+        "before": "Users could generate social images but could not convert all report fields into one infographic.", "after": "A button below Tags and Keywords builds an editable infographic prompt from titles, hooks, KPIs, outline, creator angle, CTA and tags.",
+        "reason": "Turn topic intelligence into a downloadable information graphic.", "user_impact": "Adds an Infographics image action and confirmation workflow.",
+        "files": ["openai_image_client.py", "static/index.html"], "endpoints": ["POST /api/image/prompt", "POST /api/image/generate"],
+        "environment_variables": ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL"], "data_impact": "Generated images are returned to the browser; report format is unchanged.",
+        "tests": ["Python syntax", "Browser JavaScript", "Infographic field mapping"], "rollback_effect": "Removes infographic preparation and generation without affecting other image tools."
+      }]
+    },
+    {
+      "version": "v0.7.0", "commit": "1b9904d", "date": "2026-08-16", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Added precise five-word YouTube topic terms.",
+      "changes": [{
+        "id": "CHG-0007", "type": "search change", "area": "Category Intelligence", "risk": "medium", "title": "Entity-led YouTube search terms",
+        "before": "Long news headlines were displayed and sent to Viralizer.", "after": "Each story receives a company, product, brand, celebrity or country-led term of five words or fewer, with an alternate when useful.",
+        "reason": "Make YouTube and Viralizer searches precise and meaningful.", "user_impact": "Cards show a short search term while retaining the full news headline for context.",
+        "files": ["global_sources.py", "static/index.html"], "endpoints": ["POST /api/category/topics", "POST /api/category/intelligence"],
+        "environment_variables": [], "data_impact": "Adds response fields only; no persistent migration.", "tests": ["Five-word limit", "Entity extraction examples", "Browser JavaScript"],
+        "rollback_effect": "Restores full-headline report searches and removes short YouTube terms."
+      }]
+    },
+    {
+      "version": "v0.8.0", "commit": "00c7871", "date": "2026-08-16", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Expanded reputation discovery into multiple signal searches.",
+      "changes": [{
+        "id": "CHG-0008", "type": "search change", "area": "Reputation Intelligence", "risk": "high", "title": "Detailed good and bad reputation queries",
+        "before": "Apps with Bad reputation used the literal query 'Apps Bad reputation' and could return one weak result.", "after": "Bad reputation runs complaint, legal/regulatory and security/fraud searches. Positive reputation uses praise, growth and satisfaction searches.",
+        "reason": "Find a broad set of meaningful reputation stories.", "user_impact": "Up to 30 deduplicated results are displayed instead of one literal-match result.",
+        "files": ["global_sources.py", "app.py"], "endpoints": ["POST /api/category/topics"], "environment_variables": [],
+        "data_impact": "No stored-data migration.", "tests": ["Live public-news counts: 74, 100 and 100 raw results", "Python syntax"],
+        "rollback_effect": "Restores the narrow literal reputation query and two-day search window."
+      }]
+    },
+    {
+      "version": "v0.9.0", "commit": "b20789c", "date": "2026-08-16", "status": "archived", "environment": "historical checkpoint",
+      "summary": "Sorted category topics by freshness.",
+      "changes": [{
+        "id": "CHG-0009", "type": "ranking change", "area": "Category Intelligence", "risk": "low", "title": "Newest topics first",
+        "before": "Source-signal count was the primary sort key, allowing an older story to appear first.", "after": "Publication date is the primary sort key and signal count breaks equal-date ties.",
+        "reason": "Prioritise fresh content opportunities.", "user_impact": "Newest topics appear at the top and cards show relative freshness.",
+        "files": ["global_sources.py", "static/index.html"], "endpoints": ["POST /api/category/topics"], "environment_variables": [],
+        "data_impact": "No data change.", "tests": ["Python syntax", "Browser JavaScript", "Descending-date review"],
+        "rollback_effect": "Restores signal-first sorting and removes freshness emphasis."
+      }]
+    },
+    {
+      "version": "v1.0.0", "commit": "1d530df", "date": "2026-08-16", "status": "published", "environment": "production", "summary": "Current stable production baseline with dated extended-news details.",
+      "changes": [{
+        "id": "CHG-0010", "type": "feature", "area": "Category Intelligence", "risk": "low", "title": "Dated extended news view",
+        "before": "Topic cards displayed limited source information and no expandable news details.", "after": "Cards prominently display publication date and provide an extended view with full headline, feed summary, exact time, search term and original links.",
+        "reason": "Let users inspect the evidence before requesting a Viralizer report.", "user_impact": "Adds an expandable Extended view and Open full news links.",
+        "files": ["global_sources.py", "static/index.html"], "endpoints": ["POST /api/category/topics"], "environment_variables": [],
+        "data_impact": "Adds a summary field to in-memory topic responses. No migration required.", "tests": ["Python syntax", "Browser JavaScript", "Link safety attributes"],
+        "rollback_effect": "Removes expanded news details and prominent exact dates while preserving discovery and report generation."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.1", "commit": "develop", "date": "2026-08-17", "status": "testing", "environment": "private beta", "summary": "Private release governance dashboard under development.",
+      "changes": [{
+        "id": "CHG-0011", "type": "administration", "area": "Release governance", "risk": "low", "title": "Detailed private release dashboard",
+        "before": "Change details and rollback targets existed only in conversation and Git history.", "after": "A private dashboard displays environments, versions, before/after details, affected files and endpoints, tests and rollback previews.",
+        "reason": "Give administrators a reliable record of exactly what changed and what a rollback would remove.", "user_impact": "No regular-user interface change. The dashboard requires a separate administrator password.",
+        "files": ["release_dashboard.py", "data/release_catalog.json", "static/admin.html", "app.py", "render.yaml", "CHANGELOG.md", "DEPLOYMENT_HISTORY.md"],
+        "endpoints": ["GET /admin", "GET /api/admin/releases", "GET /api/admin/compare", "POST /api/admin/rollback-preview"],
+        "environment_variables": ["ADMIN_PASSWORD", "APP_ENVIRONMENT", "APP_VERSION"], "data_impact": "Adds a versioned release catalog. No user content or report migration.",
+        "tests": ["Administrator authentication", "Catalog validation", "Version comparison", "Rollback preview", "Browser JavaScript"],
+        "rollback_effect": "Removes only the private dashboard and release-catalog endpoints. Production studio features remain unchanged."
+      }]
+    }
+  ]
+}

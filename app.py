@@ -40,6 +40,13 @@ from viralizer_pdf import build_viralizer_pdf
 from betting_topics import betting_report
 from regional_trends import regional_report
 from taxonomy import TaxonomyError, load_taxonomy, save_uploaded_taxonomy
+from release_dashboard import (
+    ReleaseDashboardError,
+    compare_versions,
+    environment_snapshot,
+    load_catalog,
+    rollback_preview,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -47,6 +54,7 @@ load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
 
 AUTH_COOKIE = "viralizer_access"
+ADMIN_COOKIE = "viralizer_admin_access"
 
 
 def configured_password() -> str:
@@ -63,6 +71,26 @@ def is_authenticated(request: Request) -> bool:
         return True
     supplied = request.cookies.get(AUTH_COOKIE, "")
     return hmac.compare_digest(supplied, access_token(password))
+
+
+def configured_admin_password() -> str:
+    return os.getenv("ADMIN_PASSWORD", "").strip()
+
+
+def admin_access_token(password: str) -> str:
+    return hmac.new(password.encode("utf-8"), b"viralizer-release-dashboard", hashlib.sha256).hexdigest()
+
+
+def is_admin_authenticated(request: Request) -> bool:
+    password = configured_admin_password()
+    if not password:
+        return False
+    return hmac.compare_digest(request.cookies.get(ADMIN_COOKIE, ""), admin_access_token(password))
+
+
+def require_admin(request: Request) -> None:
+    if not is_admin_authenticated(request):
+        raise HTTPException(401, "Administrator authentication required.")
 
 
 @app.middleware("http")
@@ -115,6 +143,80 @@ async def logout():
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(AUTH_COOKIE)
     return response
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request, error: str = ""):
+    if is_admin_authenticated(request):
+        return RedirectResponse("/admin", status_code=303)
+    if not configured_admin_password():
+        return HTMLResponse(
+            "<h1>Release dashboard is not configured</h1><p>Add ADMIN_PASSWORD to this Render service, then redeploy.</p>",
+            status_code=503,
+        )
+    message = '<p class="error">Incorrect administrator password.</p>' if error else ""
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Release Dashboard · Sign in</title><style>
+body{{min-height:100vh;margin:0;display:grid;place-items:center;background:#090611;color:#fff;font-family:Inter,Arial,sans-serif}}main{{width:min(430px,calc(100% - 36px));padding:34px;border:1px solid #644490;border-radius:20px;background:#151022}}h1{{margin-top:0}}p{{color:#bdb2d2}}label{{display:block;font-weight:800;margin:22px 0 8px}}input,button{{width:100%;padding:14px;border-radius:11px;font:inherit}}input{{border:1px solid #56496a;background:#0d0915;color:#fff}}button{{margin-top:14px;border:0;background:#8b5cf6;color:#fff;font-weight:800}}.error{{color:#ff9aaf}}
+</style></head><body><main><h1>Private release dashboard</h1><p>This area controls release records and rollback previews. Use the separate administrator password.</p>{message}<form method="post" action="/admin/login"><label for="password">Administrator password</label><input id="password" name="password" type="password" required autofocus><button>Open dashboard</button></form></main></body></html>""")
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request, password: str = Form(...)):
+    expected = configured_admin_password()
+    if not expected or not hmac.compare_digest(password, expected):
+        return RedirectResponse("/admin/login?error=1", status_code=303)
+    response = RedirectResponse("/admin", status_code=303)
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    response.set_cookie(
+        ADMIN_COOKIE, admin_access_token(expected), max_age=3600, httponly=True,
+        secure=forwarded_proto == "https", samesite="strict",
+    )
+    return response
+
+
+@app.post("/admin/logout")
+async def admin_logout():
+    response = RedirectResponse("/admin/login", status_code=303)
+    response.delete_cookie(ADMIN_COOKIE)
+    return response
+
+
+@app.get("/admin")
+async def admin_dashboard(request: Request):
+    if not is_admin_authenticated(request):
+        return RedirectResponse("/admin/login", status_code=303)
+    return FileResponse(ROOT / "static" / "admin.html")
+
+
+@app.get("/api/admin/releases")
+async def admin_releases(request: Request):
+    require_admin(request)
+    try:
+        return {"environment": environment_snapshot(), **load_catalog()}
+    except ReleaseDashboardError as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@app.get("/api/admin/compare")
+async def admin_compare(request: Request, from_version: str, to_version: str):
+    require_admin(request)
+    try:
+        return compare_versions(from_version, to_version)
+    except ReleaseDashboardError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+class RollbackPreviewRequest(BaseModel):
+    target_version: str = Field(min_length=2, max_length=40)
+
+
+@app.post("/api/admin/rollback-preview")
+async def admin_rollback_preview(request: Request, payload: RollbackPreviewRequest):
+    require_admin(request)
+    try:
+        return rollback_preview(payload.target_version)
+    except ReleaseDashboardError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.on_event("startup")
