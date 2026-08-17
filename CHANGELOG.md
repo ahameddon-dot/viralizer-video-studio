@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.2 — 2026-08-17 — Private testing
+
+- Changed beta to Render's free service plan.
+- Removed the beta persistent disk requirement.
+- Beta reports use temporary storage and can disappear after a service restart.
+- Production storage and production users are unaffected.
+
 ## v1.1.0-beta.1 — 2026-08-17 — Private testing
 
 ### Added

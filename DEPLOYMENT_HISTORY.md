@@ -3,7 +3,8 @@
 | Version | Environment | Branch | Commit | Date | Status |
 |---|---|---|---|---|---|
 | v1.0.0 | Production | `main` | `1d530df` | 2026-08-16 | Published baseline |
-| v1.1.0-beta.1 | Private beta | `develop` | Assigned when committed | 2026-08-17 | Testing |
+| v1.1.0-beta.1 | Private beta | `develop` | `d386f35` | 2026-08-17 | Superseded before deployment |
+| v1.1.0-beta.2 | Private beta | `develop` | Assigned when committed | 2026-08-17 | Testing — free ephemeral storage |
 
 ## Deployment rules
 

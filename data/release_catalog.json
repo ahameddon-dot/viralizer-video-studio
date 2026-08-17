@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.1",
+  "beta_version": "v1.1.0-beta.2",
   "releases": [
     {
       "version": "v0.1.0",
@@ -137,6 +137,18 @@
         "environment_variables": ["ADMIN_PASSWORD", "APP_ENVIRONMENT", "APP_VERSION"], "data_impact": "Adds a versioned release catalog. No user content or report migration.",
         "tests": ["Administrator authentication", "Catalog validation", "Version comparison", "Rollback preview", "Browser JavaScript"],
         "rollback_effect": "Removes only the private dashboard and release-catalog endpoints. Production studio features remain unchanged."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.2", "commit": "develop", "date": "2026-08-17", "status": "testing", "environment": "private beta", "summary": "Free Render beta configuration without persistent storage.",
+      "changes": [{
+        "id": "CHG-0012", "type": "infrastructure", "area": "Private beta", "risk": "low", "title": "Free ephemeral beta service",
+        "before": "The beta Blueprint requested a persistent Render disk, which required payment information.", "after": "The beta uses Render's free service plan and temporary storage under /tmp. Production storage is unchanged.",
+        "reason": "Allow private feature testing without creating a paid beta service.", "user_impact": "Beta reports and uploads can disappear after a restart. Production users and production data are unaffected.",
+        "files": ["render-beta.yaml", "data/release_catalog.json", "DEPLOYMENT_HISTORY.md"], "endpoints": [],
+        "environment_variables": ["APP_DATA_DIR", "APP_VERSION"], "data_impact": "Beta-only data is ephemeral. Never use the beta service as the only copy of important reports.",
+        "tests": ["Render Blueprint planning", "Payment requirement removed"],
+        "rollback_effect": "Restores the paid persistent-disk requirement for beta. Production remains unchanged."
       }]
     }
   ]

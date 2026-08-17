@@ -2,13 +2,14 @@ services:
   - type: web
     name: viralizer-video-studio-beta
     runtime: docker
+    plan: free
     branch: develop
     healthCheckPath: /health
     envVars:
       - key: APP_ENVIRONMENT
         value: private-beta
       - key: APP_VERSION
-        value: v1.1.0-beta.1
+        value: v1.1.0-beta.2
       - key: APP_PASSWORD
         sync: false
       - key: ADMIN_PASSWORD
@@ -34,10 +35,6 @@ services:
       - key: CLOUDFLARE_IMAGE_MODEL
         value: "@cf/leonardo/lucid-origin"
       - key: APP_DATA_DIR
-        value: /var/data
+        value: /tmp/viralizer-beta-data
       - key: DAILY_TRENDS_ENABLED
         value: "false"
-    disk:
-      name: viralizer-beta-data
-      mountPath: /var/data
-      sizeGB: 1
