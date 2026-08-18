@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.3 — 2026-08-19 — Private testing
+
+- Added “All categories” to Category Intelligence.
+- Selecting it searches every category belonging to the chosen super category.
+- Category names are batched into efficient worldwide searches, with loading progress and combined freshness-ranked results.
+- Selecting one category or subcategory continues to use the existing focused search.
+
 ## v1.1.0-beta.2 — 2026-08-17 — Private testing
 
 - Changed beta to Render's free service plan.

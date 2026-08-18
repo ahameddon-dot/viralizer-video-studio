@@ -254,6 +254,7 @@ class IdeaSmithRequest(BaseModel):
 
 class CategoryIntelligenceRequest(BaseModel):
     category: str = Field(min_length=2, max_length=120)
+    categories: list[str] = Field(default_factory=list, max_length=50)
     keyword: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=500)
     lens: str = Field(default="", max_length=80)
@@ -471,16 +472,26 @@ async def category_intelligence(request: CategoryIntelligenceRequest):
 @app.post("/api/category/topics")
 async def category_topics(request: CategoryIntelligenceRequest):
     category = " ".join(request.category.split()[:8])
+    categories = [" ".join(value.split()[:8]) for value in request.categories if value.strip()][:50]
     keyword = " ".join(request.keyword.split()[:8])
     description = " ".join(request.description.split()[:10])
     lens = " ".join(request.lens.split()[:4])
     reputation = " ".join(request.reputation.split()[:3])
-    queries = build_category_discovery_queries(category, keyword, description, lens, reputation)
+    if categories:
+        # Search every category in the selected super category, grouped to keep
+        # worldwide discovery responsive and within provider query limits.
+        queries = []
+        for start in range(0, len(categories), 4):
+            batch = categories[start:start + 4]
+            grouped_category = "(" + " OR ".join(f'\"{name}\"' for name in batch) + ")"
+            queries.extend(build_category_discovery_queries(grouped_category, keyword, description, lens, reputation))
+    else:
+        queries = build_category_discovery_queries(category, keyword, description, lens, reputation)
     try:
         topics = await discover_category_topics(queries, 30)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide category topics: {exc}") from exc
-    return {"queries": queries, "count": len(topics), "topics": topics, "source": "Worldwide public news sources"}
+    return {"queries": queries, "count": len(topics), "topics": topics, "source": "Worldwide public news sources", "categories_searched": categories or [category]}
 
 
 @app.post("/api/video/generate")

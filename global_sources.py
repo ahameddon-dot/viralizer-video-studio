@@ -123,7 +123,10 @@ def build_category_discovery_queries(
     category: str, keyword: str = "", description: str = "", lens: str = "", reputation: str = ""
 ) -> list[str]:
     """Expand category and reputation selections into useful public-news searches."""
-    selected = " ".join((keyword or category).split()[:8])
+    raw_selected = keyword or category
+    # Grouped super-category searches contain quoted OR terms. Preserve the
+    # complete batch so every category reaches the public-news providers.
+    selected = " ".join(raw_selected.split()[:40] if " OR " in raw_selected else raw_selected.split()[:8])
     if category.strip().lower() in {"app", "apps", "applications"} and not keyword.strip():
         selected = '(app OR "mobile app" OR software)'
     elif " " in selected and not any(mark in selected for mark in ('"', '(', ')')):

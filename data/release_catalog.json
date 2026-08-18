@@ -150,6 +150,18 @@
         "tests": ["Render Blueprint planning", "Payment requirement removed"],
         "rollback_effect": "Restores the paid persistent-disk requirement for beta. Production remains unchanged."
       }]
+    },
+    {
+      "version": "v1.1.0-beta.3", "commit": "develop", "date": "2026-08-19", "status": "testing", "environment": "private beta", "summary": "Search every category inside a selected super category.",
+      "changes": [{
+        "id": "CHG-0013", "type": "search enhancement", "area": "Category Intelligence", "risk": "medium", "title": "All categories super-category discovery",
+        "before": "The Category dropdown required one specific category, so users had to repeat discovery separately for every category under a super category.", "after": "The Category dropdown starts with All categories and searches every category belonging to the selected super category, then combines and freshness-ranks the worldwide results.",
+        "reason": "Provide complete super-category coverage in one user action.", "user_impact": "Users can discover topics across an entire super category while retaining the existing focused category and subcategory choices.",
+        "files": ["app.py", "global_sources.py", "static/index.html", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Adds an optional categories array to the request and categories_searched to the response. No stored-data migration.",
+        "tests": ["Python syntax", "Browser JavaScript", "Release catalog validation", "Grouped-query coverage"],
+        "rollback_effect": "Removes the All categories option and restores one-category-at-a-time discovery. Existing reports and production remain unchanged."
+      }]
     }
   ]
 }
