@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.6 — 2026-08-21 — Private testing
+
+- Added Category, Entity and Entity type labels to worldwide topic cards.
+- All-category results are matched to the most relevant selected category.
+- Focused category and subcategory results keep their exact selected label.
+- Extended view explains whether the category came from a keyword match or general fallback.
+
 ## v1.1.0-beta.5 — 2026-08-21 — Private testing
 
 - Added Good news, Bad news, Mixed / debate and Neutral labels to worldwide category topic cards.

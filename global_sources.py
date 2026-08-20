@@ -78,6 +78,48 @@ def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
     return "Neutral", ["No strong positive or negative wording detected"]
 
 
+def _entity_label(title: str, youtube_topic: str = "") -> str:
+    """Extract the concise entity portion already used by the YouTube topic."""
+    concise = " ".join((youtube_topic or title).split()[:5]).strip()
+    endings = (
+        " data leak", " security flaw", " account lockout", " scam controversy",
+        " lawsuit", " regulatory action", " outage", " controversy", " complaints",
+        " latest update", " explained", " news update",
+    )
+    lowered = concise.lower()
+    for ending in endings:
+        if lowered.endswith(ending):
+            concise = concise[:-len(ending)].strip()
+            break
+    return concise or "General subject"
+
+
+def annotate_topic_taxonomy(
+    topics: list[dict[str, Any]], categories: list[str], super_category: str = "", entity_type: str = ""
+) -> list[dict[str, Any]]:
+    """Attach explainable category and entity labels to discovered topics."""
+    ignored = {"and", "or", "the", "of", "in", "for", "to", "products", "services", "general", "other"}
+    category_tokens = {
+        category: {word for word in re.findall(r"[a-z0-9]+", category.lower()) if len(word) > 1 and word not in ignored}
+        for category in categories
+    }
+    for item in topics:
+        text = f"{item.get('topic', '')} {item.get('summary', '')}".lower()
+        text_tokens = set(re.findall(r"[a-z0-9]+", text))
+        scored = sorted(
+            ((len(tokens & text_tokens), category) for category, tokens in category_tokens.items()),
+            key=lambda pair: (pair[0], len(pair[1])), reverse=True,
+        )
+        best_score, best_category = scored[0] if scored else (0, "")
+        if len(categories) == 1:
+            best_category, best_score = categories[0], max(1, best_score)
+        item["category_label"] = best_category if best_score else f"{super_category} — General"
+        item["category_match"] = "keyword match" if best_score else "super-category fallback"
+        item["entity_label"] = _entity_label(item.get("topic", ""), item.get("youtube_search_topic", ""))
+        item["entity_type_label"] = entity_type if entity_type and entity_type.lower() != "everything" else "General entity"
+    return topics
+
+
 def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
     """Create an entity-led YouTube query of no more than five words."""
     clean = " ".join(str(title).split())

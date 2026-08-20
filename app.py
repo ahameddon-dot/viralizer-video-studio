@@ -26,7 +26,7 @@ from video_providers import (
     video_status as provider_video_status,
 )
 from daily_trends import daily_trends
-from global_sources import build_category_discovery_queries, discover_category_topics
+from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics
 from mcp_outline_client import (
     MCPOutlineError,
     get_full_report_from_mcp,
@@ -524,6 +524,7 @@ async def category_topics(request: CategoryIntelligenceRequest):
         topics = await discover_category_topics(queries, 30)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide category topics: {exc}") from exc
+    topics = annotate_topic_taxonomy(topics, categories or [category], category, lens)
     return {"queries": queries, "count": len(topics), "topics": topics, "source": "Worldwide public news sources", "categories_searched": categories or [category]}
 
 

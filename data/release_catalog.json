@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.5",
+  "beta_version": "v1.1.0-beta.6",
   "releases": [
     {
       "version": "v0.1.0",
@@ -186,6 +186,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Adds reputation_label and reputation_signals to in-memory topic responses. No migration.",
         "tests": ["Positive signal examples", "Negative signal examples", "Mixed signal examples", "Neutral fallback", "Python syntax", "Browser JavaScript"],
         "rollback_effect": "Removes the labels and explanation fields while preserving all topic results and source links."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.6", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Category, entity and entity-type labels on worldwide results.",
+      "changes": [{
+        "id": "CHG-0016", "type": "classification", "area": "Category Intelligence", "risk": "medium", "title": "Topic origin and entity labels",
+        "before": "Broad results showed reputation but did not state which selected category or central entity each story belonged to.", "after": "Each card shows Category, Entity and Type labels. All-category searches score the headline and summary against every selected category, while focused searches retain the exact selected category.",
+        "reason": "Let users identify the source category and main subject without opening every result.", "user_impact": "Adds three compact labels and an explainable category-assignment note in Extended view.",
+        "files": ["global_sources.py", "app.py", "static/index.html", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Adds category_label, category_match, entity_label and entity_type_label response fields. No migration.",
+        "tests": ["Focused category retention", "All-category keyword matching", "Super-category fallback", "Entity extraction", "Python syntax", "Browser JavaScript"],
+        "rollback_effect": "Removes category and entity labels while preserving reputation labels, topics and source links."
       }]
     }
   ]
