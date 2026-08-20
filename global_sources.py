@@ -95,6 +95,43 @@ def _entity_label(title: str, youtube_topic: str = "") -> str:
     return concise or "General subject"
 
 
+def _detected_entity_type(title: str, summary: str, category: str, selected_type: str) -> tuple[str, str]:
+    if selected_type and selected_type.lower() != "everything":
+        return selected_type, "selected entity-type filter"
+    text = f"{title} {summary}".lower()
+    category_text = category.lower()
+    rules = (
+        ("Movie / TV show", ("movie", "film", "trailer", "box office", "tv show", "series", "episode", "netflix", "cinema")),
+        ("App / Software", (" app ", "application", "software", "saas", "platform update", "mobile app")),
+        ("Government", ("government", "ministry", "minister", "parliament", "congress", "senate", "president", "governor", "mayor", "regulator")),
+        ("Country / Region", ("country", "nation", "border", "capital city", "foreign policy")),
+        ("Person / Celebrity", ("celebrity", "actor", "actress", "singer", "rapper", "influencer", "creator", "athlete", "player", "coach")),
+        ("Product", ("product", "device", "smartphone", "laptop", "vehicle", "car model", "launches new", "unveils new", "recall")),
+        ("Event", ("event", "conference", "festival", "tournament", "championship", "summit", "expo", "election", "match")),
+        ("Organization", ("organization", "association", "university", "school", "hospital", "nonprofit", "charity", "foundation")),
+        ("Company / Brand", ("company", "brand", "ceo", "startup", "business", "earnings", "stock", "shares", "acquisition", "merger", "ipo")),
+    )
+    padded = f" {text} "
+    for label, signals in rules:
+        matched = next((signal.strip() for signal in signals if signal in padded), "")
+        if matched:
+            return label, f"detected from '{matched}'"
+    category_rules = (
+        ("App / Software", ("app", "software", "saas")),
+        ("Movie / TV show", ("movie", "television", "streaming", "entertainment")),
+        ("Person / Celebrity", ("celebrity", "creator", "influencer")),
+        ("Government", ("government", "politics", "legal")),
+        ("Product", ("product", "automotive", "device", "electronics")),
+        ("Company / Brand", ("business", "brand", "startup", "finance", "industry")),
+        ("Event", ("event", "sports", "travel")),
+    )
+    for label, signals in category_rules:
+        matched = next((signal for signal in signals if signal in category_text), "")
+        if matched:
+            return label, f"inferred from category '{category}'"
+    return "General topic", "no confident entity-type signal"
+
+
 def annotate_topic_taxonomy(
     topics: list[dict[str, Any]], categories: list[str], super_category: str = "", entity_type: str = ""
 ) -> list[dict[str, Any]]:
@@ -135,7 +172,9 @@ def annotate_topic_taxonomy(
         item["category_label"] = best_category if best_score else f"{super_category} — General"
         item["category_match"] = "keyword match" if best_score else "super-category fallback"
         item["entity_label"] = _entity_label(item.get("topic", ""), item.get("youtube_search_topic", ""))
-        item["entity_type_label"] = entity_type or "Everything"
+        item["entity_type_label"], item["entity_type_match"] = _detected_entity_type(
+            item.get("topic", ""), item.get("summary", ""), item["category_label"], entity_type
+        )
         annotated.append(item)
     return annotated
 

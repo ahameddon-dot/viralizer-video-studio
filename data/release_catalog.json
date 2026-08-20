@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.7",
+  "beta_version": "v1.1.0-beta.8",
   "releases": [
     {
       "version": "v0.1.0",
@@ -210,6 +210,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "No migration. Some previously displayed irrelevant homonym results are filtered from broad searches.",
         "tests": ["Exact DMV tornado regression", "issued versus sued boundary", "Rolex watch context", "Everything dropdown label", "Python syntax"],
         "rollback_effect": "Restores loose substring matching and may reintroduce irrelevant homonym results."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.8", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Automatic entity-type detection when searching Everything.",
+      "changes": [{
+        "id": "CHG-0018", "type": "classification", "area": "Category Intelligence", "risk": "medium", "title": "Narrow Everything results to actual entity types",
+        "before": "Cards displayed Type: Everything, which described the broad search filter but not the individual result.", "after": "When Everything is selected, each result is classified as Company / Brand, Product, Person / Celebrity, App / Software, Government, Country / Region, Organization, Event, Movie / TV show or General topic. A specific dropdown selection remains authoritative.",
+        "reason": "Make the Type label useful for evaluating individual topics.", "user_impact": "Broad searches retain full coverage while every card receives a narrower entity-type label.",
+        "files": ["global_sources.py", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Adds entity_type_match to in-memory responses and changes the value of entity_type_label for Everything searches. No migration.",
+        "tests": ["Company signal", "Product signal", "Person signal", "App signal", "Government signal", "Selected-filter precedence", "General fallback", "Python syntax"],
+        "rollback_effect": "Cards searched with Everything again display Type: Everything."
       }]
     }
   ]

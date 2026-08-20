@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.8 — 2026-08-21 — Private testing
+
+- Replaced Type: Everything with an automatically detected result type.
+- Added Company / Brand, Product, Person / Celebrity, App / Software, Government, Country / Region, Organization, Event, Movie / TV show and General topic labels.
+- A specific entity-type dropdown selection remains authoritative.
+
 ## v1.1.0-beta.7 — 2026-08-21 — Private testing
 
 - Fixed weather “watches” being classified as Fashion > Watches.
