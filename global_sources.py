@@ -183,7 +183,11 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
     """Create an entity-led YouTube query of no more than five words."""
     clean = " ".join(str(title).split())
     lower = clean.lower()
-    issue = "latest update"
+    issue = ""
+    def has_issue(needle: str) -> bool:
+        if needle in {"vulnerabil", "penalt", "controvers"}:
+            return needle in lower
+        return bool(re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", lower))
     for needles, label in (
         (("data breach", "data leak", "exposed", "leaking user data"), "data leak"),
         (("vulnerabil", "security flaw", "security bug", "hijack"), "security flaw"),
@@ -195,7 +199,7 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
         (("backlash", "controvers", "criticism"), "controversy"),
         (("complaint", "bad review", "subscription charge", "pricing"), "complaints"),
     ):
-        if any(needle in lower for needle in needles):
+        if any(has_issue(needle) for needle in needles):
             issue = label
             break
 
@@ -217,12 +221,26 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
         words = [word.strip(" -:,.')(") for word in clean.split() if word.lower().strip(" -:,.')(") not in _ENTITY_NOISE]
         entity = " ".join(filter(None, words[:3])) or "App"
 
+    detected_issue = bool(issue)
+    if not issue:
+        entity_words = {word.lower().strip(" -:,.')(") for word in entity.split()}
+        filler = _ENTITY_NOISE | {"is", "are", "was", "were", "has", "have", "had", "will", "its", "this", "that", "as", "at", "on", "by", "new", "latest", "update", "news", "powerful"}
+        meaningful = []
+        for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+&-]*", clean):
+            normalized = word.lower().strip(" -:,.')(")
+            if normalized in filler or normalized in entity_words or len(normalized) < 2:
+                continue
+            if normalized not in {item.lower() for item in meaningful}:
+                meaningful.append(word.strip(" -:,.')("))
+            if len(meaningful) >= 3:
+                break
+        issue = " ".join(meaningful)
+
     max_entity_words = max(1, 5 - len(issue.split()))
     entity = " ".join(entity.split()[:max_entity_words])
-    primary = " ".join(f"{entity} {issue}".split()[:5])
-    alternate_issue = "explained" if issue != "latest update" else "news update"
-    alternate = " ".join(f"{entity} {alternate_issue}".split()[:5])
-    return primary, [alternate] if alternate.lower() != primary.lower() else []
+    primary = " ".join(f"{entity} {issue}".split()[:5]).strip()
+    alternate = " ".join(f"{entity} explained".split()[:5]) if detected_issue else ""
+    return primary, [alternate] if alternate and alternate.lower() != primary.lower() else []
 
 
 async def discover_global_sources() -> list[dict[str, Any]]:

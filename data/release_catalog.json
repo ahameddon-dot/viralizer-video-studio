@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.8",
+  "beta_version": "v1.1.0-beta.9",
   "releases": [
     {
       "version": "v0.1.0",
@@ -222,6 +222,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Adds entity_type_match to in-memory responses and changes the value of entity_type_label for Everything searches. No migration.",
         "tests": ["Company signal", "Product signal", "Person signal", "App signal", "Government signal", "Selected-filter precedence", "General fallback", "Python syntax"],
         "rollback_effect": "Cards searched with Everything again display Type: Everything."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.9", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Meaningful five-word search topics without generic latest-update suffixes.",
+      "changes": [{
+        "id": "CHG-0019", "type": "search quality", "area": "Category Intelligence", "risk": "medium", "title": "Remove repetitive latest update wording",
+        "before": "When no known controversy or issue was detected, every concise search term ended with latest update and received a generic explained alternate.", "after": "Fallback search terms combine the detected entity with meaningful words from the actual headline, remain at five words or fewer, and do not create a generic alternate. Known issues still receive precise labels such as lawsuit, outage or data leak.",
+        "reason": "Make every YouTube and Viralizer search term specific to its source story.", "user_impact": "Results no longer repeat latest update; search phrases convey the actual event or subject.",
+        "files": ["global_sources.py", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Changes generated search strings only. Full headlines and source links remain unchanged.",
+        "tests": ["No latest-update fallback", "Five-word maximum", "Issued is not sued", "Known issue preservation", "Meaningful headline keywords", "Python syntax"],
+        "rollback_effect": "Restores repetitive latest update and explained wording."
       }]
     }
   ]

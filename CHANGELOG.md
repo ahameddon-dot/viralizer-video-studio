@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.9 — 2026-08-21 — Private testing
+
+- Removed the repetitive “latest update” fallback from concise topic searches.
+- Search terms now combine the detected entity with meaningful headline keywords.
+- Search terms remain five words or fewer.
+- Generic “explained” alternates are no longer added when the headline is already specific.
+
 ## v1.1.0-beta.8 — 2026-08-21 — Private testing
 
 - Replaced Type: Everything with an automatically detected result type.
