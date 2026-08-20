@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.9",
+  "beta_version": "v1.1.0-beta.10",
   "releases": [
     {
       "version": "v0.1.0",
@@ -234,6 +234,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Changes generated search strings only. Full headlines and source links remain unchanged.",
         "tests": ["No latest-update fallback", "Five-word maximum", "Issued is not sued", "Known issue preservation", "Meaningful headline keywords", "Python syntax"],
         "rollback_effect": "Restores repetitive latest update and explained wording."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.10", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Topic-aware search phrases for question-style editorial headlines.",
+      "changes": [{
+        "id": "CHG-0020", "type": "search quality", "area": "Category Intelligence", "risk": "medium", "title": "Understand How and Why headlines",
+        "before": "Question-style headlines could treat opening grammar such as How Code as an entity and produce incomplete searches like How Code in Age of.", "after": "Question words and grammatical filler are removed, Artificial Intelligence is normalized to AI, and the strongest topic concepts form the search phrase. The supplied example becomes Code AI Write-Only Disposable.",
+        "reason": "Generate a meaningful YouTube search rather than copying an incomplete headline fragment.", "user_impact": "Editorial How, Why, What, When, Where and Who headlines now produce concise topic-aware searches.",
+        "files": ["global_sources.py", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Generated search strings change; full headlines, summaries and sources remain intact.",
+        "tests": ["Exact write-only AI code example", "Question-word removal", "AI normalization", "Five-word maximum", "No generic alternate", "Existing entity examples"],
+        "rollback_effect": "Question-style headlines may again produce incomplete copied fragments."
       }]
     }
   ]

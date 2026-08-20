@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.10 — 2026-08-21 — Private testing
+
+- Fixed incomplete search phrases generated from How, Why and similar editorial headlines.
+- Removed grammatical filler including in, of, age and becomes.
+- Normalized Artificial Intelligence to AI in concise searches.
+- The supplied example now becomes “Code AI Write-Only Disposable.”
+
 ## v1.1.0-beta.9 — 2026-08-21 — Private testing
 
 - Removed the repetitive “latest update” fallback from concise topic searches.

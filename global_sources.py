@@ -46,7 +46,9 @@ _ENTITY_NOISE = {
     "attorney", "general", "judge", "court", "federal", "government", "users", "user",
     "security", "critical", "dangerous", "major", "million", "billion", "says", "said",
     "secures", "faces", "facing", "misleading", "enabling", "fake", "scam", "over", "after",
-    "from", "with", "for", "and", "or",
+    "from", "with", "for", "and", "or", "in", "of", "to", "as", "at", "on", "by",
+    "how", "why", "what", "when", "where", "who",
+    "age", "become", "becomes", "becoming",
 }
 
 _POSITIVE_REPUTATION_SIGNALS = (
@@ -226,7 +228,8 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
         entity_words = {word.lower().strip(" -:,.')(") for word in entity.split()}
         filler = _ENTITY_NOISE | {"is", "are", "was", "were", "has", "have", "had", "will", "its", "this", "that", "as", "at", "on", "by", "new", "latest", "update", "news", "powerful"}
         meaningful = []
-        for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+&-]*", clean):
+        keyword_source = re.sub(r"\bartificial intelligence\b", "AI", clean, flags=re.IGNORECASE)
+        for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9.+&-]*", keyword_source):
             normalized = word.lower().strip(" -:,.')(")
             if normalized in filler or normalized in entity_words or len(normalized) < 2:
                 continue
