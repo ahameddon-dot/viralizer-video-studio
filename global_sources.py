@@ -48,7 +48,7 @@ _ENTITY_NOISE = {
     "secures", "faces", "facing", "misleading", "enabling", "fake", "scam", "over", "after",
     "from", "with", "for", "and", "or", "in", "of", "to", "as", "at", "on", "by",
     "how", "why", "what", "when", "where", "who",
-    "age", "become", "becomes", "becoming",
+    "age", "become", "becomes", "becoming", "interrupt", "interrupts", "interrupted",
 }
 
 _POSITIVE_REPUTATION_SIGNALS = (
@@ -184,6 +184,10 @@ def annotate_topic_taxonomy(
 def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
     """Create an entity-led YouTube query of no more than five words."""
     clean = " ".join(str(title).split())
+    clean = re.sub(
+        r"^(?:opinion|editorial|analysis|commentary|review|explainer|deep\s+dive)\s*(?:\||:|[-–—])\s*",
+        "", clean, flags=re.IGNORECASE,
+    ).strip()
     lower = clean.lower()
     issue = ""
     def has_issue(needle: str) -> bool:
@@ -198,7 +202,9 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
         (("lawsuit", "sued", "sues", "class action"), "lawsuit"),
         (("fine", "penalt", "regulatory action", "investigation"), "regulatory action"),
         (("outage", "offline", "went down", "service disruption"), "outage"),
-        (("backlash", "controvers", "criticism"), "controversy"),
+        (("backlash",), "backlash"),
+        (("criticism",), "criticism"),
+        (("controvers",), "controversy"),
         (("complaint", "bad review", "subscription charge", "pricing"), "complaints"),
     ):
         if any(has_issue(needle) for needle in needles):
@@ -223,7 +229,6 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
         words = [word.strip(" -:,.')(") for word in clean.split() if word.lower().strip(" -:,.')(") not in _ENTITY_NOISE]
         entity = " ".join(filter(None, words[:3])) or "App"
 
-    detected_issue = bool(issue)
     if not issue:
         entity_words = {word.lower().strip(" -:,.')(") for word in entity.split()}
         filler = _ENTITY_NOISE | {"is", "are", "was", "were", "has", "have", "had", "will", "its", "this", "that", "as", "at", "on", "by", "new", "latest", "update", "news", "powerful"}
@@ -242,8 +247,7 @@ def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
     max_entity_words = max(1, 5 - len(issue.split()))
     entity = " ".join(entity.split()[:max_entity_words])
     primary = " ".join(f"{entity} {issue}".split()[:5]).strip()
-    alternate = " ".join(f"{entity} explained".split()[:5]) if detected_issue else ""
-    return primary, [alternate] if alternate and alternate.lower() != primary.lower() else []
+    return primary, []
 
 
 async def discover_global_sources() -> list[dict[str, Any]]:

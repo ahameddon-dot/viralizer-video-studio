@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.11 — 2026-08-21 — Private testing
+
+- Removed Opinion, Editorial, Analysis, Commentary, Review, Explainer and Deep Dive prefixes from search terms.
+- Preserved specific event words such as backlash and criticism.
+- Removed generic “explained” alternates from issue searches.
+- The supplied example becomes “Cancer vaccine technology backlash.”
+
 ## v1.1.0-beta.10 — 2026-08-21 — Private testing
 
 - Fixed incomplete search phrases generated from How, Why and similar editorial headlines.

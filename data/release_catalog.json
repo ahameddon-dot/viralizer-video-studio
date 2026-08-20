@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.10",
+  "beta_version": "v1.1.0-beta.11",
   "releases": [
     {
       "version": "v0.1.0",
@@ -246,6 +246,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Generated search strings change; full headlines, summaries and sources remain intact.",
         "tests": ["Exact write-only AI code example", "Question-word removal", "AI normalization", "Five-word maximum", "No generic alternate", "Existing entity examples"],
         "rollback_effect": "Question-style headlines may again produce incomplete copied fragments."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.11", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Searchable topic phrases for opinion and editorial headlines.",
+      "changes": [{
+        "id": "CHG-0021", "type": "search quality", "area": "Category Intelligence", "risk": "medium", "title": "Remove editorial labels from search terms",
+        "before": "Opinion could be treated as the central entity and backlash could be replaced by generic controversy, producing searches such as Opinion controversy.", "after": "Opinion, Editorial, Analysis, Commentary, Review, Explainer and Deep Dive prefixes are stripped. Specific event wording such as backlash and criticism is preserved. The supplied headline becomes Cancer vaccine technology backlash.",
+        "reason": "Create searchable phrases that preserve the actual subject and event.", "user_impact": "Opinion and analysis headlines now produce meaningful topic searches instead of content-format labels.",
+        "files": ["global_sources.py", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Generated search terms change only; source headlines and reports remain unchanged.",
+        "tests": ["Exact cancer-vaccine example", "Editorial-prefix removal", "Backlash preservation", "Criticism preservation", "Five-word maximum", "No generic alternate"],
+        "rollback_effect": "Editorial format words may again replace the real topic in searches."
       }]
     }
   ]
