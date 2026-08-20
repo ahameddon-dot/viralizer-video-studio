@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.5 — 2026-08-21 — Private testing
+
+- Added Good news, Bad news, Mixed / debate and Neutral labels to worldwide category topic cards.
+- Added color coding for faster scanning.
+- Extended view explains which headline or summary signals produced the automated label.
+- Labels do not hide, remove or rerank results.
+
 ## v1.1.0-beta.4 — 2026-08-21 — Private testing
 
 - Added a simple **Update production** button to publish the approved beta.

@@ -49,6 +49,34 @@ _ENTITY_NOISE = {
     "from", "with", "for", "and", "or",
 }
 
+_POSITIVE_REPUTATION_SIGNALS = (
+    "award", "wins", "winner", "growth", "growing", "record profit", "profit rises",
+    "partnership", "launches", "innovation", "milestone", "comeback", "praise",
+    "positive review", "expands", "funding", "breakthrough", "approved", "success",
+)
+_NEGATIVE_REPUTATION_SIGNALS = (
+    "lawsuit", "sued", "investigation", "fine", "penalty", "ban", "backlash",
+    "controversy", "scandal", "fraud", "scam", "data breach", "security flaw",
+    "outage", "complaint", "recall", "layoff", "decline", "loss", "crisis",
+    "fired", "resigns", "protest", "boycott", "warning", "accused",
+)
+_MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and cons", "questions", "uncertain")
+
+
+def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
+    """Return an explainable editorial signal label, not a factual verdict."""
+    text = f"{title} {summary}".lower()
+    positive = [signal for signal in _POSITIVE_REPUTATION_SIGNALS if signal in text]
+    negative = [signal for signal in _NEGATIVE_REPUTATION_SIGNALS if signal in text]
+    mixed = [signal for signal in _MIXED_REPUTATION_SIGNALS if signal in text]
+    if mixed or (positive and negative):
+        return "Mixed / debate", list(dict.fromkeys((mixed + positive + negative)[:4]))
+    if negative:
+        return "Bad news", negative[:4]
+    if positive:
+        return "Good news", positive[:4]
+    return "Neutral", ["No strong positive or negative wording detected"]
+
 
 def _youtube_search_terms(title: str) -> tuple[str, list[str]]:
     """Create an entity-led YouTube query of no more than five words."""
@@ -236,6 +264,7 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
     )
     for item in ordered:
         item["youtube_search_topic"], item["alternate_topics"] = _youtube_search_terms(item["topic"])
+        item["reputation_label"], item["reputation_signals"] = _reputation_label(item["topic"], item.get("summary", ""))
     return ordered[:max(1, min(50, limit))]
 
 

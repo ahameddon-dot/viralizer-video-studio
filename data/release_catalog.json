@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.4",
+  "beta_version": "v1.1.0-beta.5",
   "releases": [
     {
       "version": "v0.1.0",
@@ -174,6 +174,18 @@
         "data_impact": "No report or media migration. The actions change the GitHub main branch commit, which triggers Render production deployment.",
         "tests": ["Python syntax", "Browser JavaScript", "Locked-without-token behavior", "Confirmation phrase validation", "Release catalog validation"],
         "rollback_effect": "Returns the dashboard to preview-only controls. Existing Git tags and release evidence remain available."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.5", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Explainable good, bad, mixed and neutral labels for worldwide topics.",
+      "changes": [{
+        "id": "CHG-0015", "type": "classification", "area": "Category Intelligence", "risk": "medium", "title": "Reputation labels on topic cards",
+        "before": "All-category discovery combined many stories without indicating which appeared positive, negative, disputed or neutral.", "after": "Every worldwide topic card shows a color-coded Good news, Bad news, Mixed / debate or Neutral label. Extended view lists the headline and summary signals used for the label.",
+        "reason": "Help users scan broad all-category results and quickly find reputation opportunities.", "user_impact": "Adds a visible editorial label without hiding or reranking any discovered story.",
+        "files": ["global_sources.py", "static/index.html", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "Adds reputation_label and reputation_signals to in-memory topic responses. No migration.",
+        "tests": ["Positive signal examples", "Negative signal examples", "Mixed signal examples", "Neutral fallback", "Python syntax", "Browser JavaScript"],
+        "rollback_effect": "Removes the labels and explanation fields while preserving all topic results and source links."
       }]
     }
   ]
