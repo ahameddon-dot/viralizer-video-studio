@@ -66,9 +66,10 @@ _MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and con
 def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
     """Return an explainable editorial signal label, not a factual verdict."""
     text = f"{title} {summary}".lower()
-    positive = [signal for signal in _POSITIVE_REPUTATION_SIGNALS if signal in text]
-    negative = [signal for signal in _NEGATIVE_REPUTATION_SIGNALS if signal in text]
-    mixed = [signal for signal in _MIXED_REPUTATION_SIGNALS if signal in text]
+    contains = lambda signal: bool(re.search(rf"(?<!\w){re.escape(signal)}(?!\w)", text))
+    positive = [signal for signal in _POSITIVE_REPUTATION_SIGNALS if contains(signal)]
+    negative = [signal for signal in _NEGATIVE_REPUTATION_SIGNALS if contains(signal)]
+    mixed = [signal for signal in _MIXED_REPUTATION_SIGNALS if contains(signal)]
     if mixed or (positive and negative):
         return "Mixed / debate", list(dict.fromkeys((mixed + positive + negative)[:4]))
     if negative:
@@ -103,21 +104,40 @@ def annotate_topic_taxonomy(
         category: {word for word in re.findall(r"[a-z0-9]+", category.lower()) if len(word) > 1 and word not in ignored}
         for category in categories
     }
+    ambiguous_context = {
+        "watches": {"fashion", "luxury", "style", "wearable", "smartwatch", "rolex", "timepiece", "jewelry", "accessory", "collection"},
+    }
+    annotated = []
     for item in topics:
         text = f"{item.get('topic', '')} {item.get('summary', '')}".lower()
         text_tokens = set(re.findall(r"[a-z0-9]+", text))
-        scored = sorted(
-            ((len(tokens & text_tokens), category) for category, tokens in category_tokens.items()),
-            key=lambda pair: (pair[0], len(pair[1])), reverse=True,
-        )
+        scores = []
+        for category, tokens in category_tokens.items():
+            category_key = category.lower().strip()
+            score = len(tokens & text_tokens)
+            if category_key in text:
+                score += 10
+            if category_key in ambiguous_context:
+                category_aliases = {category_key, category_key.removesuffix("es")}
+                if not (ambiguous_context[category_key] & text_tokens):
+                    score = 0
+                elif category_aliases & text_tokens:
+                    score += 20
+            scores.append((score, category))
+        scored = sorted(scores, key=lambda pair: (pair[0], len(pair[1])), reverse=True)
         best_score, best_category = scored[0] if scored else (0, "")
         if len(categories) == 1:
             best_category, best_score = categories[0], max(1, best_score)
+        elif not best_score:
+            # Broad searches can produce homonyms such as weather "watches" for
+            # Fashion > Watches. Exclude results with no category evidence.
+            continue
         item["category_label"] = best_category if best_score else f"{super_category} — General"
         item["category_match"] = "keyword match" if best_score else "super-category fallback"
         item["entity_label"] = _entity_label(item.get("topic", ""), item.get("youtube_search_topic", ""))
-        item["entity_type_label"] = entity_type if entity_type and entity_type.lower() != "everything" else "General entity"
-    return topics
+        item["entity_type_label"] = entity_type or "Everything"
+        annotated.append(item)
+    return annotated
 
 
 def _youtube_search_terms(title: str) -> tuple[str, list[str]]:

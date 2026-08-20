@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.7 — 2026-08-21 — Private testing
+
+- Fixed weather “watches” being classified as Fashion > Watches.
+- Fixed “issued” incorrectly triggering the negative word “sued.”
+- Broad searches now remove results without evidence for any selected category.
+- Entity Type now displays the selected dropdown value, including Everything.
+
 ## v1.1.0-beta.6 — 2026-08-21 — Private testing
 
 - Added Category, Entity and Entity type labels to worldwide topic cards.

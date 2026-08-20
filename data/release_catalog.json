@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.6",
+  "beta_version": "v1.1.0-beta.7",
   "releases": [
     {
       "version": "v0.1.0",
@@ -198,6 +198,18 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Adds category_label, category_match, entity_label and entity_type_label response fields. No migration.",
         "tests": ["Focused category retention", "All-category keyword matching", "Super-category fallback", "Entity extraction", "Python syntax", "Browser JavaScript"],
         "rollback_effect": "Removes category and entity labels while preserving reputation labels, topics and source links."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.7", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Fixed homonym category matches and reputation substring errors.",
+      "changes": [{
+        "id": "CHG-0017", "type": "bug fix", "area": "Category Intelligence", "risk": "medium", "title": "Context-aware labels and dropdown entity type",
+        "before": "Weather watches could be labeled Fashion > Watches, the word issued could trigger the negative signal sued, and Everything was displayed as General entity.", "after": "Reputation signals require whole words, ambiguous categories require supporting context, unrelated all-category results are excluded, and Type displays the actual entity dropdown value.",
+        "reason": "Prevent misleading category and reputation labels in broad discovery.", "user_impact": "Weather alerts no longer appear as fashion watches; entity type matches the user's selection.",
+        "files": ["global_sources.py", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"], "endpoints": ["POST /api/category/topics"],
+        "environment_variables": ["APP_VERSION"], "data_impact": "No migration. Some previously displayed irrelevant homonym results are filtered from broad searches.",
+        "tests": ["Exact DMV tornado regression", "issued versus sued boundary", "Rolex watch context", "Everything dropdown label", "Python syntax"],
+        "rollback_effect": "Restores loose substring matching and may reintroduce irrelevant homonym results."
       }]
     }
   ]
