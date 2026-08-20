@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.4 — 2026-08-21 — Private testing
+
+- Added a simple **Update production** button to publish the approved beta.
+- Added a **Rollback production** button beside the detailed impact preview.
+- Both actions require administrator authentication and an exact typed confirmation.
+- Controls remain locked until `GITHUB_DEPLOY_TOKEN` is configured in the private beta service.
+
 ## v1.1.0-beta.3 — 2026-08-19 — Private testing
 
 - Added “All categories” to Category Intelligence.

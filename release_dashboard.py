@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from release_actions import action_status
+
 
 ROOT = Path(__file__).resolve().parent
 CATALOG = ROOT / "data" / "release_catalog.json"
@@ -35,12 +37,7 @@ def environment_snapshot() -> dict[str, Any]:
         "current_version": os.getenv("APP_VERSION", releases[-1].get("version", "unversioned")),
         "production_version": catalog.get("production_version", "unknown"),
         "beta_version": catalog.get("beta_version", "not deployed"),
-        "release_controls": {
-            "mode": "preview_only",
-            "publishing_enabled": False,
-            "rollback_enabled": False,
-            "reason": "Production controls stay locked until the beta Render service and deployment automation are configured.",
-        },
+        "release_controls": {"mode": "live" if action_status()["configured"] else "locked", **action_status()},
     }
 
 

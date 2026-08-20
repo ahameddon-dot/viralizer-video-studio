@@ -47,6 +47,7 @@ from release_dashboard import (
     load_catalog,
     rollback_preview,
 )
+from release_actions import ReleaseActionError, publish_beta, rollback_production
 
 
 ROOT = Path(__file__).resolve().parent
@@ -210,6 +211,11 @@ class RollbackPreviewRequest(BaseModel):
     target_version: str = Field(min_length=2, max_length=40)
 
 
+class ReleaseActionRequest(BaseModel):
+    version: str = Field(min_length=2, max_length=40)
+    confirmation: str = Field(min_length=2, max_length=80)
+
+
 @app.post("/api/admin/rollback-preview")
 async def admin_rollback_preview(request: Request, payload: RollbackPreviewRequest):
     require_admin(request)
@@ -217,6 +223,33 @@ async def admin_rollback_preview(request: Request, payload: RollbackPreviewReque
         return rollback_preview(payload.target_version)
     except ReleaseDashboardError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/admin/publish")
+async def admin_publish(request: Request, payload: ReleaseActionRequest):
+    require_admin(request)
+    catalog = load_catalog()
+    if payload.version != catalog.get("beta_version"):
+        raise HTTPException(409, "The selected version is not the current approved beta.")
+    if payload.confirmation != f"PUBLISH {payload.version}":
+        raise HTTPException(422, "Publish confirmation did not match.")
+    try:
+        return await publish_beta(payload.version)
+    except ReleaseActionError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/api/admin/rollback")
+async def admin_rollback(request: Request, payload: ReleaseActionRequest):
+    require_admin(request)
+    load_catalog()  # Fail closed if the release evidence is unavailable.
+    rollback_preview(payload.version)  # Validate that this is a known catalog version.
+    if payload.confirmation != f"ROLLBACK {payload.version}":
+        raise HTTPException(422, "Rollback confirmation did not match.")
+    try:
+        return await rollback_production(payload.version)
+    except ReleaseActionError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @app.on_event("startup")

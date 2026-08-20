@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "production_version": "v1.0.0",
-  "beta_version": "v1.1.0-beta.2",
+  "beta_version": "v1.1.0-beta.4",
   "releases": [
     {
       "version": "v0.1.0",
@@ -161,6 +161,19 @@
         "environment_variables": ["APP_VERSION"], "data_impact": "Adds an optional categories array to the request and categories_searched to the response. No stored-data migration.",
         "tests": ["Python syntax", "Browser JavaScript", "Release catalog validation", "Grouped-query coverage"],
         "rollback_effect": "Removes the All categories option and restores one-category-at-a-time discovery. Existing reports and production remain unchanged."
+      }]
+    },
+    {
+      "version": "v1.1.0-beta.4", "commit": "develop", "date": "2026-08-21", "status": "testing", "environment": "private beta", "summary": "Simple confirmed production update and rollback controls.",
+      "changes": [{
+        "id": "CHG-0014", "type": "administration", "area": "Release governance", "risk": "high", "title": "Update and rollback buttons",
+        "before": "Administrators could preview changes and rollback impact but had to ask for manual Git operations to publish or restore production.", "after": "The private dashboard provides Update production and Rollback production buttons. Each displays the exact version and requires a typed confirmation before updating the GitHub main branch.",
+        "reason": "Make approved releases and emergency restoration simple while retaining explicit safeguards.", "user_impact": "Only authenticated administrators see the controls. Regular studio users see no interface change.",
+        "files": ["release_actions.py", "release_dashboard.py", "app.py", "static/admin.html", "render-beta.yaml", "data/release_catalog.json", "CHANGELOG.md"],
+        "endpoints": ["POST /api/admin/publish", "POST /api/admin/rollback"], "environment_variables": ["GITHUB_REPOSITORY", "GITHUB_DEPLOY_TOKEN", "APP_VERSION"],
+        "data_impact": "No report or media migration. The actions change the GitHub main branch commit, which triggers Render production deployment.",
+        "tests": ["Python syntax", "Browser JavaScript", "Locked-without-token behavior", "Confirmation phrase validation", "Release catalog validation"],
+        "rollback_effect": "Returns the dashboard to preview-only controls. Existing Git tags and release evidence remain available."
       }]
     }
   ]
