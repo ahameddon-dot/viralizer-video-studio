@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.19 — 2026-08-22 — Private testing
+
+- Added automatic background refetch when a Viralizer report arrives without usable topic images.
+- Added a visible Refetch full report button with attempt and completion status.
+- Retries incomplete media up to three times and merges richer Viralizer data into the current report.
+- Reuses topic-list images when Viralizer details omit duplicate thumbnail media.
+- Fixed the broken thumbnail-preview icon shown when the returned image URL is empty or invalid.
+
 ## v1.1.0-beta.18 — 2026-08-22 — Private testing
 
 - Restored the full Video generator content panel for Viralizer-report workflows.
