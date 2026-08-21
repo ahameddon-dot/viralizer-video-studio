@@ -1,5 +1,14 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.12 — 2026-08-21 — Private testing
+
+- Separated MCP-driven creation from the Manual Creation Studio.
+- Added a clear Viralizer report banner when content comes from MCP.
+- Added Video, Image, Instagram, Carousel and Infographic format selectors.
+- Each format now displays only its relevant prompt, provider and generation controls.
+- Preserved prompt review and explicit confirmation before provider credits are used.
+- Kept raw MCP JSON hidden while retaining the report as background creation context.
+
 ## v1.1.0-beta.11 — 2026-08-21 — Private testing
 
 - Removed Opinion, Editorial, Analysis, Commentary, Review, Explainer and Deep Dive prefixes from search terms.
