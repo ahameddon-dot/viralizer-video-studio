@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.14 — 2026-08-21 — Private testing
+
+- Corrected the MCP creation page to follow the approved visual order.
+- Added a compact Viralizer report summary with Why it matters, viral rank and audience.
+- Removed the large title, hooks, tags and thumbnail form from the initial creation flow.
+- The page now follows: report summary → choose format → edit prompt → confirm.
+- Infographic selection now opens only the infographic prompt workflow.
+
 ## v1.1.0-beta.13 — 2026-08-21 — Private testing
 
 - Matched the approved Creation Hub flow more closely.
