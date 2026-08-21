@@ -11,6 +11,7 @@
 | v1.1.0-beta.15 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Manual studio isolated from MCP and sample prompt content |
 | v1.1.0-beta.16 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Restored infographic confirmation and generation action |
 | v1.1.0-beta.17 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added staged MCP format, prompt preparation and generation flow |
+| v1.1.0-beta.18 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Restored full Viralizer generator-content fields before creation |
 
 ## Deployment rules
 

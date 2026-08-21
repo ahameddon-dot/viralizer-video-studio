@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.18 — 2026-08-22 — Private testing
+
+- Restored the full Video generator content panel for Viralizer-report workflows.
+- Viralizer results now display KPIs, suggested title, hook options, editable hook, tags and keywords, and topic thumbnail controls before format selection.
+- Kept the panel hidden in the separate manual creation studio.
+- Preserved the staged choose format → prepare prompt → review and generate workflow.
+
 ## v1.1.0-beta.17 — 2026-08-22 — Private testing
 
 - Changed MCP report creation to a clear three-stage flow: choose format → prepare prompt → review and generate.
