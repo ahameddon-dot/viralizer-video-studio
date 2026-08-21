@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.13 — 2026-08-21 — Private testing
+
+- Matched the approved Creation Hub flow more closely.
+- The studio now opens with format choices only instead of a large prompt editor.
+- Prompt, provider and generation controls open only after a format is selected.
+- Added clearer format descriptions for Video, Image, Instagram, Carousel and Infographic.
+- MCP reports still open with their report context connected in the background.
+
 ## v1.1.0-beta.12 — 2026-08-21 — Private testing
 
 - Separated MCP-driven creation from the Manual Creation Studio.

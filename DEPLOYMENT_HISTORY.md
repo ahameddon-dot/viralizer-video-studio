@@ -6,6 +6,7 @@
 | v1.1.0-beta.1 | Private beta | `develop` | `d386f35` | 2026-08-17 | Superseded before deployment |
 | v1.1.0-beta.2 | Private beta | `develop` | Assigned when committed | 2026-08-17 | Testing — free ephemeral storage |
 | v1.1.0-beta.12 | Private beta | `develop` | Assigned when committed | 2026-08-21 | MCP creation-flow UI sent for testing |
+| v1.1.0-beta.13 | Private beta | `develop` | Assigned when committed | 2026-08-21 | Creation Hub corrected to match approved visual |
 
 ## Deployment rules
 
