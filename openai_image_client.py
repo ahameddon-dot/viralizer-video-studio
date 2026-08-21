@@ -361,6 +361,14 @@ async def generate_instagram_album(
     content: dict[str, Any], count: int = 5, prompt: str | None = None
 ) -> list[bytes]:
     base = prompt or await prepare_image_prompt(content)
+    manual_prompt_only = not any(content.get(key) for key in ("topic", "suggested_title", "hook", "video_idea"))
+    if manual_prompt_only:
+        total = max(1, min(5, count))
+        prompts = [
+            f"{base} Create artwork {index + 1} of {total} as a distinct but cohesive carousel variation. Keep the same subject, palette, visual identity, and art direction. Create one static square artwork without rendered text."
+            for index in range(total)
+        ]
+        return list(await asyncio.gather(*(_generate_image(item) for item in prompts)))
     topic = " ".join(str(content.get("topic") or "the topic").split()[:24])
     story_beats = [
         "Cover slide: introduce the topic with the strongest single visual and an immediate curiosity gap.",

@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.15 — 2026-08-22 — Private testing
+
+- Manual Creation Studio now clears all inherited MCP and sample content.
+- Video, Image, Instagram, Carousel and Infographic open with empty user-owned prompts.
+- Automatic Prepare Prompt actions are hidden in manual mode.
+- Manual generation remains blocked until the user enters a prompt and confirms.
+- Manual carousel generation now uses only the user's prompt without topic titles or MCP-derived slide text.
+
 ## v1.1.0-beta.14 — 2026-08-21 — Private testing
 
 - Corrected the MCP creation page to follow the approved visual order.
