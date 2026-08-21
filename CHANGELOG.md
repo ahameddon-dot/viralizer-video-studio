@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.17 — 2026-08-22 — Private testing
+
+- Changed MCP report creation to a clear three-stage flow: choose format → prepare prompt → review and generate.
+- Prompt editors now remain hidden until the selected format's Prepare prompt action completes.
+- Added report-based prompt preparation for the standalone Image format.
+- The correct Video or Image confirmation button appears only after its prompt is ready.
+- Kept the manual creation studio as a separate user-prompt-first workflow.
+
 ## v1.1.0-beta.16 — 2026-08-22 — Private testing
 
 - Fixed the missing Confirm & generate image button after preparing an infographic prompt.
