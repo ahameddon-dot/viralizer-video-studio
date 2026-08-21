@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.16 — 2026-08-22 — Private testing
+
+- Fixed the missing Confirm & generate image button after preparing an infographic prompt.
+- Removed the workspace refresh that immediately hid the confirmation action.
+- The infographic flow now remains: prepare prompt → review/edit → confirm generation.
+
 ## v1.1.0-beta.15 — 2026-08-22 — Private testing
 
 - Manual Creation Studio now clears all inherited MCP and sample content.
