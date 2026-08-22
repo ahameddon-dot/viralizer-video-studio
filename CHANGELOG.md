@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.23 — 2026-08-22 — Private testing
+
+- Added topic thumbnails beside every Daily trend discovery headline.
+- Added GDELT source-image collection and propagation into daily trend results.
+- Uses available source, Viralizer or topic images and lazy-loads them in the table.
+- Displays a stable No image placeholder when no trustworthy image exists or an image fails.
+- Preserved the corrected Published date-and-time column layout.
+
 ## v1.1.0-beta.22 — 2026-08-22 — Private testing
 
 - Corrected the Daily trend discovery table's Published column directly.

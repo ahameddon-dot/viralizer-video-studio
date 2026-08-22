@@ -264,7 +264,7 @@ async def discover_global_sources() -> list[dict[str, Any]]:
                         return [record(item.get("title", ""), category, "Hacker News", item.get("url") or f"https://news.ycombinator.com/item?id={item.get('objectID')}", datetime.fromtimestamp(item.get("created_at_i", 0), timezone.utc), max(1, int(item.get("points") or 0))) for item in response.json().get("hits", []) if item.get("title")]
                     response = await client.get("https://api.gdeltproject.org/api/v2/doc/doc", params={"query": query, "mode": "ArtList", "maxrecords": 20, "format": "json", "sort": "HybridRel", "timespan": "2d"})
                     response.raise_for_status()
-                    return [record(item.get("title", ""), category, "GDELT", item.get("url", ""), parse_date(item.get("seendate")), 1) for item in response.json().get("articles", []) if item.get("title")]
+                    return [record(item.get("title", ""), category, "GDELT", item.get("url", ""), parse_date(item.get("seendate")), 1, image_url=item.get("socialimage", "")) for item in response.json().get("articles", []) if item.get("title")]
                 except Exception:
                     return []
 
@@ -355,7 +355,7 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                 )
                 response.raise_for_status()
                 return [
-                    record(item.get("title", ""), search_query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1)
+                    record(item.get("title", ""), search_query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1, image_url=item.get("socialimage", ""))
                     for item in response.json().get("articles", [])
                     if item.get("title")
                 ]
@@ -381,6 +381,8 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                 existing["published_at"] = item["published_at"]
             if len(item.get("summary", "")) > len(existing.get("summary", "")):
                 existing["summary"] = item["summary"]
+            if not existing.get("image_url") and item.get("image_url"):
+                existing["image_url"] = item["image_url"]
         else:
             merged[key] = item
     ordered = sorted(
@@ -406,7 +408,7 @@ def parse_date(value: Any) -> datetime:
 
 def record(
     title: str, category: str, source: str, url: str, published: datetime, engagement: int,
-    summary: str = "",
+    summary: str = "", image_url: str = "",
 ) -> dict[str, Any]:
     return {
         "topic": " ".join(str(title).split()),
@@ -417,4 +419,5 @@ def record(
         "mentions": 1,
         "source_platforms": [source],
         "source_engagement": {source: engagement},
+        "image_url": image_url if str(image_url).startswith(("http://", "https://")) else "",
     }

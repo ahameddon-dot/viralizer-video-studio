@@ -16,6 +16,7 @@
 | v1.1.0-beta.20 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added visible search topic, entity type and category labels |
 | v1.1.0-beta.21 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Kept dates and times inside topic-result columns |
 | v1.1.0-beta.22 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Corrected Daily trend Published-cell date and time layout |
+| v1.1.0-beta.23 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added source topic images to Daily trend discovery rows |
 
 ## Deployment rules
 
