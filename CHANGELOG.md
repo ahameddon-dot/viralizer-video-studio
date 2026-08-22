@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.27 — 2026-08-22 — Private testing
+
+- Restored all seven Daily trend table columns at the normal page width.
+- Added fixed column proportions and controlled wrapping so long topics cannot push Category, Sources, Heat, signals, or Published off-screen.
+- Kept the text-only layout, caching, and background refresh from beta.26.
+
 ## v1.1.0-beta.26 — 2026-08-22 — Private testing
 
 - Removed Daily trend topic-image collection and display from beta.23/beta.24.

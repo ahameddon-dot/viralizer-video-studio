@@ -20,6 +20,7 @@
 | v1.1.0-beta.24 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Removed No image placeholders and empty media space |
 | v1.1.0-beta.25 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added instant cached Daily trend display and background refresh |
 | v1.1.0-beta.26 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Removed topic images while preserving caching and text-only table |
+| v1.1.0-beta.27 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Restored seven-column Daily trend alignment with controlled wrapping |
 
 ## Deployment rules
 
