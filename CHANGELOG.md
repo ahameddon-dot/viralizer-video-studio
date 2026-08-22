@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.21 — 2026-08-22 — Private testing
+
+- Fixed publication dates and times overflowing topic-result columns.
+- Displayed the date and time on separate lines inside category topic cards.
+- Added wrapping and width protection for cards, badges, KPI values and table date cells.
+- Improved date behavior on narrow and mobile layouts.
+
 ## v1.1.0-beta.20 — 2026-08-22 — Private testing
 
 - Added a prominent Search topic field to every Viralizer generator-content report.

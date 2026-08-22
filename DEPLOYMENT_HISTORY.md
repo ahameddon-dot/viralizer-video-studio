@@ -14,6 +14,7 @@
 | v1.1.0-beta.18 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Restored full Viralizer generator-content fields before creation |
 | v1.1.0-beta.19 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added incomplete-media refetch and corrected empty thumbnail previews |
 | v1.1.0-beta.20 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added visible search topic, entity type and category labels |
+| v1.1.0-beta.21 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Kept dates and times inside topic-result columns |
 
 ## Deployment rules
 
