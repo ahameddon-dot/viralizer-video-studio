@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.26 — 2026-08-22 — Private testing
+
+- Removed Daily trend topic-image collection and display from beta.23/beta.24.
+- Restored the approved clean text-only Topic and report column.
+- Kept the beta.25 instant cache and background refresh performance improvement.
+- Kept the corrected Published date-and-time layout.
+
 ## v1.1.0-beta.25 — 2026-08-22 — Private testing
 
 - Added instant browser-side caching for the latest Daily trend discovery report.

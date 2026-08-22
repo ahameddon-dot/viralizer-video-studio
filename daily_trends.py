@@ -192,8 +192,6 @@ class DailyTrendService:
                 existing["source_urls"] = list(dict.fromkeys(existing["source_urls"] + item["source_urls"]))
                 existing["source_platforms"] = list(dict.fromkeys(existing.get("source_platforms", []) + item["source_platforms"]))
                 existing.setdefault("source_engagement", {}).update(item.get("source_engagement", {}))
-                if not existing.get("image_url") and item.get("image_url"):
-                    existing["image_url"] = item["image_url"]
             elif len(item["topic"]) >= 8:
                 candidates[item_key] = item
         ordered = sorted(
