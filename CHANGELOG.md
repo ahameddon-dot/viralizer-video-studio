@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.22 — 2026-08-22 — Private testing
+
+- Corrected the Daily trend discovery table's Published column directly.
+- Date and numeric time now render as separate non-breaking lines, preventing orphaned AM/PM text.
+- Gave the Published cell a protected minimum width.
+- Contained wide tables inside a horizontal scroller instead of clipping the final column.
+
 ## v1.1.0-beta.21 — 2026-08-22 — Private testing
 
 - Fixed publication dates and times overflowing topic-result columns.
