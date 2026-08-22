@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import re
+import time
 import httpx
 import io
 from pathlib import Path
@@ -35,6 +36,7 @@ from mcp_outline_client import (
     get_idea_smith_from_mcp,
     get_category_intelligence_from_mcp,
     get_outline_from_mcp,
+    outline_from_full_report,
 )
 from viralizer_pdf import build_viralizer_pdf
 from betting_topics import betting_report
@@ -53,6 +55,10 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
+
+REPORT_CACHE_TTL_SECONDS = int(os.getenv("VIRALIZER_REPORT_CACHE_TTL", "1800"))
+_viralizer_report_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_viralizer_report_locks: dict[str, asyncio.Lock] = {}
 
 AUTH_COOKIE = "viralizer_access"
 ADMIN_COOKIE = "viralizer_admin_access"
@@ -325,31 +331,33 @@ def topic_variants(topic: str) -> list[str]:
 
 
 async def outline_with_fallback(topic: str):
-    last_error = None
-    variants = topic_variants(topic)
-    for attempt in range(3):
-        for variant in variants:
-            try:
-                return await get_outline_from_mcp(variant)
-            except MCPOutlineError as exc:
-                last_error = exc
-        if attempt < 2:
-            await asyncio.sleep(2 * (attempt + 1))
-    raise last_error or MCPOutlineError("Viralizer returned no report for this topic.")
+    payload = await full_report_with_fallback(topic)
+    return outline_from_full_report(payload, topic)
 
 
 async def full_report_with_fallback(topic: str):
-    last_error = None
-    variants = topic_variants(topic)
-    for attempt in range(3):
-        for variant in variants:
+    cache_key = " ".join(topic.lower().split())
+    cached = _viralizer_report_cache.get(cache_key)
+    if cached and time.monotonic() - cached[0] < REPORT_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    lock = _viralizer_report_locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:
+        cached = _viralizer_report_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < REPORT_CACHE_TTL_SECONDS:
+            return cached[1]
+
+        last_error = None
+        # One MCP call already polls Viralizer for up to 150 seconds. Use only a
+        # concise alternate after failure instead of repeating up to nine tasks.
+        for variant in topic_variants(topic)[:2]:
             try:
-                return await get_full_report_from_mcp(variant)
+                payload = await get_full_report_from_mcp(variant)
+                _viralizer_report_cache[cache_key] = (time.monotonic(), payload)
+                return payload
             except MCPOutlineError as exc:
                 last_error = exc
-        if attempt < 2:
-            await asyncio.sleep(2 * (attempt + 1))
-    raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
+        raise last_error or MCPOutlineError("Viralizer returned no full report for this topic.")
 
 
 async def category_intelligence_with_retry(request: CategoryIntelligenceRequest):

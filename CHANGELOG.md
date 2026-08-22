@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.28 — 2026-08-22 — Private testing
+
+- Added a 30-minute shared Viralizer report cache for Daily trend Generate video and Get PDF actions.
+- Reuses the same completed report when a user requests both video content and PDF for a topic.
+- Prevents simultaneous clicks for the same topic from starting duplicate MCP analyses.
+- Reduced redundant fallback calls from as many as nine MCP tasks to at most two distinct topic variants.
+
 ## v1.1.0-beta.27 — 2026-08-22 — Private testing
 
 - Restored all seven Daily trend table columns at the normal page width.

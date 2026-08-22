@@ -364,6 +364,11 @@ async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
 
 async def get_outline_from_mcp(topic: str) -> dict[str, Any]:
     final_payload = await get_full_report_from_mcp(topic)
+    return outline_from_full_report(final_payload, topic)
+
+
+def outline_from_full_report(final_payload: dict[str, Any], topic: str) -> dict[str, Any]:
+    """Convert an already-fetched Viralizer report without starting another MCP task."""
     outline = _viralizer_outline(final_payload, topic)
     if not str(outline.get("hook", "")).strip() and not str(
         outline.get("video_idea", "")
