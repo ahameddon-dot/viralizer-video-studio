@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.25 — 2026-08-22 — Private testing
+
+- Added instant browser-side caching for the latest Daily trend discovery report.
+- Previously loaded results now appear immediately while the server checks for updates.
+- Running a fresh discovery no longer clears the current table and leaves users waiting on an empty section.
+- Fresh results automatically replace the cached view when discovery completes.
+- Topic images remain lazy-loaded and do not block table rendering.
+
 ## v1.1.0-beta.24 — 2026-08-22 — Private testing
 
 - Removed all No image placeholders from Daily trend discovery.

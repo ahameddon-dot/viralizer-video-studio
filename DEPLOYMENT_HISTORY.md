@@ -18,6 +18,7 @@
 | v1.1.0-beta.22 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Corrected Daily trend Published-cell date and time layout |
 | v1.1.0-beta.23 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added source topic images to Daily trend discovery rows |
 | v1.1.0-beta.24 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Removed No image placeholders and empty media space |
+| v1.1.0-beta.25 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Added instant cached Daily trend display and background refresh |
 
 ## Deployment rules
 
