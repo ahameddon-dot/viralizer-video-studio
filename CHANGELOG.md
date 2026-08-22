@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.24 — 2026-08-22 — Private testing
+
+- Removed all No image placeholders from Daily trend discovery.
+- Rows without usable media now show the topic normally with no empty thumbnail space.
+- If a remote image fails to load, it disappears cleanly and the topic expands into its place.
+- Real source images are still displayed when available.
+
 ## v1.1.0-beta.23 — 2026-08-22 — Private testing
 
 - Added topic thumbnails beside every Daily trend discovery headline.
