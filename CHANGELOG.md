@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.20 — 2026-08-22 — Private testing
+
+- Added a prominent Search topic field to every Viralizer generator-content report.
+- Added Entity type labels including Company / Brand, Influencer / Creator, Celebrity, Product, App / Software, Government, Country / Region, Event and Organization.
+- Added the report Category beside the search topic and entity type.
+- Preserved entity and category labels from worldwide discovery when opening the Viralizer report.
+- Added a fallback classifier for Viralizer reports that do not include an entity-type label.
+
 ## v1.1.0-beta.19 — 2026-08-22 — Private testing
 
 - Added automatic background refetch when a Viralizer report arrives without usable topic images.
