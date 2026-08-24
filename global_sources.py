@@ -4,10 +4,25 @@ import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus, urlparse
 from xml.etree import ElementTree
 
 import httpx
+
+
+_WIKIDATA_CACHE: dict[str, dict[str, Any] | None] = {}
+_WIKIDATA_RELATION_PROPERTIES = {
+    "P749": "Parent organization", "P112": "Founder", "P169": "Chief executive",
+    "P127": "Owned by", "P176": "Manufacturer", "P355": "Subsidiary",
+    "P54": "Sports team", "P26": "Spouse", "P710": "Participant",
+}
+_ENTITY_CANDIDATE_STOP = {
+    "new", "latest", "model", "models", "could", "would", "will", "may", "might",
+    "says", "said", "launch", "launches", "launched", "update", "updates", "review",
+    "reviews", "news", "report", "reports", "target", "targets", "top", "best", "how",
+    "why", "what", "which", "selection", "smart", "global", "services", "group",
+    "market", "markets", "industry", "industries", "company", "companies", "brand",
+}
 
 
 SOURCE_QUERIES = {
@@ -269,6 +284,174 @@ def _source_media_entity(item: dict[str, Any]) -> list[dict[str, Any]]:
     }]
 
 
+def _entity_candidates(title: str) -> list[str]:
+    """Extract a few conservative proper-name candidates from a news headline."""
+    clean = re.sub(r"[|:;!?()]", " ", " ".join(str(title).split()))
+    sequences = re.findall(
+        r"(?<!\w)(?:[A-Z][A-Za-z0-9.&'’+-]*|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9.&'’+-]*|[A-Z]{2,}|of|the|and)){0,3}",
+        clean,
+    )
+    candidates: list[str] = []
+    for sequence in sequences:
+        words = sequence.split()
+        kept = []
+        for word in words:
+            if word.lower().strip(".&'’+-") in _ENTITY_CANDIDATE_STOP:
+                break
+            kept.append(word)
+        candidate = " ".join(kept).strip(" -–—.,")
+        if not candidate or len(candidate) < 2:
+            continue
+        if len(candidate.split()) == 1 and not (candidate.isupper() or len(candidate) >= 4):
+            continue
+        if candidate.lower() not in {value.lower() for value in candidates}:
+            candidates.append(candidate)
+        if len(candidates) == 3:
+            break
+    return candidates
+
+
+def _claim_value(claims: dict[str, Any], property_id: str) -> str:
+    for claim in claims.get(property_id, []):
+        value = claim.get("mainsnak", {}).get("datavalue", {}).get("value")
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _claim_entity_ids(claims: dict[str, Any], property_id: str) -> list[str]:
+    values = []
+    ranked_claims = sorted(
+        (claim for claim in claims.get(property_id, []) if claim.get("rank") != "deprecated"),
+        key=lambda claim: 0 if claim.get("rank") == "preferred" else 1,
+    )
+    for claim in ranked_claims:
+        value = claim.get("mainsnak", {}).get("datavalue", {}).get("value", {})
+        entity_id = value.get("id") if isinstance(value, dict) else ""
+        if entity_id and entity_id not in values:
+            values.append(entity_id)
+    return values
+
+
+def _commons_media_url(filename: str) -> str:
+    return f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(filename)}?width=160" if filename else ""
+
+
+async def _resolve_wikidata_candidate(client: httpx.AsyncClient, candidate: str) -> dict[str, Any] | None:
+    cache_key = candidate.casefold()
+    if cache_key in _WIKIDATA_CACHE:
+        return _WIKIDATA_CACHE[cache_key]
+    try:
+        summary_response = await client.get(
+            f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(candidate.replace(' ', '_'), safe='')}",
+        )
+        summary_response.raise_for_status()
+        summary = summary_response.json()
+        normalized = re.sub(r"[^a-z0-9]", "", candidate.casefold())
+        label = str(summary.get("title", ""))
+        if re.sub(r"[^a-z0-9]", "", label.casefold()) != normalized:
+            _WIKIDATA_CACHE[cache_key] = None
+            return None
+        entity_id = str(summary.get("wikibase_item", ""))
+        if not entity_id:
+            _WIKIDATA_CACHE[cache_key] = None
+            return None
+        response = await client.get(
+            f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json",
+        )
+        response.raise_for_status()
+        entity = response.json().get("entities", {}).get(entity_id, {})
+        claims = entity.get("claims", {})
+        label = entity.get("labels", {}).get("en", {}).get("value") or label
+        description = entity.get("descriptions", {}).get("en", {}).get("value") or summary.get("description") or "Verified Wikidata entity"
+        website = _claim_value(claims, "P856")
+        domain = urlparse(website).netloc.removeprefix("www.") if website else ""
+        logo = _claim_value(claims, "P154")
+        picture = _claim_value(claims, "P18")
+        summary_picture = summary.get("thumbnail", {}).get("source", "")
+        related = []
+        for property_id, relation in _WIKIDATA_RELATION_PROPERTIES.items():
+            for entity_id in _claim_entity_ids(claims, property_id)[:1]:
+                related.append((entity_id, relation))
+        resolved = {
+            "id": entity_id, "name": label, "kind": description[:80], "relation": "Verified primary entity",
+            "confidence": 94, "official_domain": domain,
+            "logo_url": _commons_media_url(logo) or (f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128" if domain else ""),
+            "image_url": summary_picture or _commons_media_url(picture), "related_ids": related[:6],
+        }
+        _WIKIDATA_CACHE[cache_key] = resolved
+        return resolved
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return None
+
+
+async def _resolve_wikidata_relations(client: httpx.AsyncClient, entity: dict[str, Any]) -> list[dict[str, Any]]:
+    related = entity.get("related_ids", [])
+    if not related:
+        return []
+    relation_by_id = dict(related)
+    try:
+        responses = await asyncio.gather(*(
+            client.get(f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json")
+            for entity_id in list(relation_by_id)[:3]
+        ))
+        output = []
+        for entity_id, response in zip(list(relation_by_id)[:3], responses):
+            response.raise_for_status()
+            value = response.json().get("entities", {}).get(entity_id, {})
+            label = value.get("labels", {}).get("en", {}).get("value")
+            if not label:
+                continue
+            claims = value.get("claims", {})
+            website = _claim_value(claims, "P856")
+            domain = urlparse(website).netloc.removeprefix("www.") if website else ""
+            logo = _claim_value(claims, "P154")
+            picture = _claim_value(claims, "P18")
+            relation = relation_by_id.get(entity_id, "Related entity")
+            output.append({
+                "name": label, "kind": "Verified Wikidata entity", "relation": relation, "confidence": 92,
+                "official_domain": domain,
+                "logo_url": _commons_media_url(logo) or (f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128" if domain else ""),
+                "image_url": _commons_media_url(picture),
+                "explanation": f"Wikidata identifies this entity as: {relation.lower()} of {entity['name']}",
+            })
+            if len(output) == 3:
+                break
+        return output
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return []
+
+
+async def enrich_topic_entities(topics: list[dict[str, Any]]) -> None:
+    """Resolve unknown named entities concurrently and cache authoritative results."""
+    semaphore = asyncio.Semaphore(6)
+    headers = {"User-Agent": "ViralizerTopicIntelligence/1.0 (https://mcp.intuitionintelligence.com; contact@intuitionintelligence.com)"}
+    async with httpx.AsyncClient(timeout=8, follow_redirects=True, headers=headers) as client:
+        async def enrich(item: dict[str, Any]) -> None:
+            if _key_company_entities(item.get("topic", ""), item.get("summary", ""), ""):
+                return
+            async with semaphore:
+                candidates = _entity_candidates(item.get("topic", ""))
+                resolved = [
+                    entity for entity in await asyncio.gather(
+                        *(_resolve_wikidata_candidate(client, candidate) for candidate in candidates)
+                    ) if entity
+                ]
+                if not resolved:
+                    return
+                comparison = bool(re.search(r"\b(vs\.?|versus|against|opposes?|sues?|suing)\b", item.get("topic", ""), re.IGNORECASE))
+                primary_entities = []
+                for index, entity in enumerate(resolved[:3]):
+                    clean_entity = {key: value for key, value in entity.items() if key != "related_ids"}
+                    if index:
+                        clean_entity["relation"] = "Compared / opposing entity" if comparison else "Co-mentioned verified entity"
+                        clean_entity["confidence"] = 92
+                    primary_entities.append(clean_entity)
+                item["resolved_entities"] = primary_entities
+                item["resolved_relationships"] = await _resolve_wikidata_relations(client, resolved[0])
+        await asyncio.gather(*(enrich(item) for item in topics))
+
+
 def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
     """Return an explainable editorial signal label, not a factual verdict."""
     text = f"{title} {summary}".lower()
@@ -384,11 +567,16 @@ def annotate_topic_taxonomy(
         item["key_entities"] = _key_company_entities(
             item.get("topic", ""), item.get("summary", ""), item["entity_type_label"]
         )
+        if not item["key_entities"] and item.get("resolved_entities"):
+            item["key_entities"] = item["resolved_entities"][:3]
         if not item["key_entities"]:
             item["key_entities"] = _source_media_entity(item)
         item["competitive_landscape"], item["competitive_landscape_label"] = _competitive_landscape(
             item["key_entities"], super_category
         )
+        if not item["competitive_landscape"] and item.get("resolved_relationships"):
+            item["competitive_landscape"] = item["resolved_relationships"][:3]
+            item["competitive_landscape_label"] = "Verified topic relationships"
         annotated.append(item)
     return annotated
 
@@ -605,10 +793,12 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
         key=lambda item: (item.get("published_at", ""), item.get("mentions", 0)),
         reverse=True,
     )
-    for item in ordered:
+    selected = ordered[:max(1, min(50, limit))]
+    for item in selected:
         item["youtube_search_topic"], item["alternate_topics"] = _youtube_search_terms(item["topic"])
         item["reputation_label"], item["reputation_signals"] = _reputation_label(item["topic"], item.get("summary", ""))
-    return ordered[:max(1, min(50, limit))]
+    await enrich_topic_entities(selected)
+    return selected
 
 
 def parse_date(value: Any) -> datetime:

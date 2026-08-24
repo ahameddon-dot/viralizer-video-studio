@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.41 — 2026-08-25 — Private testing
+
+- Added dynamic Wikidata entity verification for Topic Intelligence across every taxonomy path.
+- Added authoritative logo, picture, official-domain, parent, founder, CEO, owner, manufacturer, subsidiary, team, spouse, and participant relationships where available.
+- Added concurrent resolution, strict exact-name validation, and in-process caching to limit latency and prevent guessed entities.
+- Preserved curated direct competitors while adding verified knowledge-graph relationships for previously unsupported categories.
+
 ## v1.1.0-beta.40 — 2026-08-25 — Private testing
 
 - Removed generic super-category leaders from individual Topic Intelligence stories because they could imply false relationships.
