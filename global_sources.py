@@ -65,12 +65,35 @@ _NEGATIVE_REPUTATION_SIGNALS = (
 _MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and cons", "questions", "uncertain")
 
 _COMPANY_BRANDS = (
-    ("ACN", ("acn inc", "acn"), "Company", "acn.com", ""),
+    ("Accenture", ("accenture", "acn stock", "acn"), "Company", "accenture.com", ""),
     ("SAIC", ("science applications international corporation", "saic"), "Company", "saic.com", ""),
     ("Thomson Reuters", ("thomson reuters",), "Company", "thomsonreuters.com", ""),
     ("CloudEQ", ("cloudeq",), "Company", "cloudeq.com", ""),
     ("Bannerbear", ("bannerbear",), "Company", "bannerbear.com", ""),
     ("Kingfisher Learning Trust", ("kingfisher learning trust",), "Organization", "kingfisherlearningtrust.co.uk", ""),
+    ("Bloomberg", ("bloomberg",), "Company", "bloomberg.com", ""),
+    ("LexisNexis", ("lexisnexis", "lexis nexis"), "Company", "lexisnexis.com", ""),
+    ("Wolters Kluwer", ("wolters kluwer",), "Company", "wolterskluwer.com", ""),
+    ("Booz Allen Hamilton", ("booz allen hamilton", "booz allen"), "Company", "boozallen.com", ""),
+    ("Leidos", ("leidos",), "Company", "leidos.com", ""),
+    ("CACI", ("caci international", "caci"), "Company", "caci.com", ""),
+    ("Kyndryl", ("kyndryl",), "Company", "kyndryl.com", ""),
+    ("DXC Technology", ("dxc technology",), "Company", "dxc.com", ""),
+    ("Canva", ("canva",), "Company", "canva.com", ""),
+    ("Adobe Express", ("adobe express",), "Product brand", "adobe.com/express", ""),
+    ("Placid", ("placid app",), "Product brand", "placid.app", ""),
+    ("Anthropic", ("anthropic", "claude ai"), "Company", "anthropic.com", ""),
+    ("Hexaware", ("hexaware",), "Company", "hexaware.com", ""),
+    ("Infosys", ("infosys",), "Company", "infosys.com", ""),
+    ("Wipro", ("wipro",), "Company", "wipro.com", ""),
+    ("Cognizant", ("cognizant",), "Company", "cognizant.com", ""),
+    ("TagMango", ("tagmango",), "Company", "tagmango.com", ""),
+    ("Graphy", ("graphy",), "Company", "graphy.com", ""),
+    ("Nas.io", ("nas.io", "nas io"), "Company", "nas.io", ""),
+    ("Patreon", ("patreon",), "Company", "patreon.com", ""),
+    ("Hevo Data", ("hevo data", "hevo"), "Company", "hevodata.com", ""),
+    ("Fivetran", ("fivetran",), "Company", "fivetran.com", ""),
+    ("Airbyte", ("airbyte",), "Company", "airbyte.com", ""),
     ("Apple", ("apple",), "Company", "apple.com", "apple"),
     ("App Store", ("app store",), "Product brand", "apple.com/app-store", "appstore"),
     ("Spotify", ("spotify",), "Company", "spotify.com", "spotify"),
@@ -115,6 +138,49 @@ _COMPANY_BRANDS = (
     ("Nintendo", ("nintendo",), "Company", "nintendo.com", "nintendo"),
     ("Xbox", ("xbox",), "Product brand", "xbox.com", "xbox"),
 )
+
+_COMPETITIVE_RELATIONSHIPS = {
+    "Thomson Reuters": (("Bloomberg", "Competitor", "Professional information and financial-data competitor"), ("LexisNexis", "Competitor", "Legal research and information competitor"), ("Wolters Kluwer", "Competitor", "Legal, tax, and professional-information competitor")),
+    "Accenture": (("Booz Allen Hamilton", "Competitor", "Technology consulting competitor"), ("Leidos", "Competitor", "Government technology and services competitor"), ("CACI", "Competitor", "Government IT services competitor")),
+    "SAIC": (("Leidos", "Competitor", "Government technology and defense-services competitor"), ("Booz Allen Hamilton", "Competitor", "Government consulting competitor"), ("CACI", "Competitor", "Federal IT services competitor")),
+    "CloudEQ": (("Accenture", "Competitor", "Cloud transformation and managed-services competitor"), ("Kyndryl", "Competitor", "Enterprise infrastructure-services competitor"), ("DXC Technology", "Competitor", "Enterprise IT services competitor")),
+    "Bannerbear": (("Canva", "Competitor", "Automated visual-content platform competitor"), ("Adobe Express", "Competitor", "Template-based content creation competitor"), ("Placid", "Competitor", "Creative automation competitor")),
+    "Anthropic": (("OpenAI", "Competitor", "Foundation-model and AI assistant competitor"), ("Google", "Competitor", "Foundation-model competitor"), ("Microsoft", "Competitor", "Enterprise generative-AI competitor")),
+    "Hexaware": (("Infosys", "Competitor", "Global IT services competitor"), ("Wipro", "Competitor", "Technology consulting competitor"), ("Cognizant", "Competitor", "Digital services competitor")),
+    "TagMango": (("Graphy", "Competitor", "Creator monetization and course-platform competitor"), ("Nas.io", "Competitor", "Community and creator-business competitor"), ("Patreon", "Competitor", "Creator membership competitor")),
+    "Hevo Data": (("Fivetran", "Competitor", "Managed data-pipeline competitor"), ("Airbyte", "Competitor", "Data integration competitor")),
+}
+
+
+def _catalog_entity(name: str, relation: str, explanation: str) -> dict[str, Any] | None:
+    for catalog_name, aliases, kind, domain, icon in _COMPANY_BRANDS:
+        if catalog_name != name:
+            continue
+        return {
+            "name": catalog_name, "kind": kind, "relation": relation, "confidence": 90,
+            "official_domain": domain,
+            "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128",
+            "explanation": explanation,
+        }
+    return None
+
+
+def _competitive_landscape(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    primary_order = list(dict.fromkeys(str(entity.get("name", "")) for entity in entities if entity.get("name")))
+    primary_names = set(primary_order)
+    landscape: list[dict[str, Any]] = []
+    seen = set(primary_names)
+    for primary in primary_order:
+        for name, relation, explanation in _COMPETITIVE_RELATIONSHIPS.get(primary, ()):
+            if name in seen:
+                continue
+            entity = _catalog_entity(name, relation, explanation)
+            if entity:
+                landscape.append(entity)
+                seen.add(name)
+            if len(landscape) == 3:
+                return landscape
+    return landscape
 
 
 def _key_company_entities(title: str, summary: str, entity_type: str) -> list[dict[str, Any]]:
@@ -286,6 +352,7 @@ def annotate_topic_taxonomy(
         )
         if not item["key_entities"]:
             item["key_entities"] = _source_media_entity(item)
+        item["competitive_landscape"] = _competitive_landscape(item["key_entities"])
         annotated.append(item)
     return annotated
 

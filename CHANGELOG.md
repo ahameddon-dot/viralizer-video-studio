@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.38 — 2026-08-25 — Private testing
+
+- Added an expandable verified competitive landscape to Topic Intelligence results.
+- Added relationship explanations and official-domain logos for direct competitors.
+- Corrected ACN stock-ticker recognition to display the company as Accenture.
+- Added verified recognition for Anthropic, Hexaware, TagMango, Hevo Data, and their relevant competitor sets.
+
 ## v1.1.0-beta.37 — 2026-08-25 — Private testing
 
 - Added verified entity and official-domain logo mappings for Thomson Reuters, CloudEQ, Bannerbear, and Kingfisher Learning Trust.
