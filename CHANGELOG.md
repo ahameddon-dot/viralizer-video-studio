@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.29 — 2026-08-25 — Private testing
+
+- Separated PixVerse Image to Video from the normal Video workflow.
+- Added an Image to Video format button beside Infographic.
+- Person, Product, Ad reference, Logo, and readable-text controls now appear only when Image to Video is selected.
+- Changed the Video format description to Text to video.
+
 ## v1.1.0-beta.28 — 2026-08-22 — Private testing
 
 - Added a 30-minute shared Viralizer report cache for Daily trend Generate video and Get PDF actions.
