@@ -28,6 +28,7 @@
 | v1.1.0-beta.32 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added a manually owned PixVerse runtime-key override for beta |
 | v1.1.0-beta.33 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Reorganized only the Viralizer-report creation flow into four clear stages |
 | v1.1.0-beta.34 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Moved category intelligence into a dedicated Topic Intelligence navigation view |
+| v1.1.0-beta.35 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added key company and brand metadata, logos and actions to Topic Intelligence results |
 
 ## Deployment rules
 

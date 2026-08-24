@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.35 — 2026-08-25 — Private testing
+
+- Enriched Topic Intelligence results with entity type, category and reputation labels.
+- Added up to three story-relevant companies or brands with logo, relationship and relevance metadata.
+- Added initials fallback when a verified brand logo is unavailable.
+- Added direct Generate video, Get PDF and Full news actions to Topic Intelligence results.
+
 ## v1.1.0-beta.34 — 2026-08-25 — Private testing
 
 - Added a dedicated Topic Intelligence navigation button.

@@ -64,6 +64,99 @@ _NEGATIVE_REPUTATION_SIGNALS = (
 )
 _MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and cons", "questions", "uncertain")
 
+_COMPANY_BRANDS = (
+    ("Apple", ("apple",), "Company", "apple.com", "apple"),
+    ("App Store", ("app store",), "Product brand", "apple.com/app-store", "appstore"),
+    ("Spotify", ("spotify",), "Company", "spotify.com", "spotify"),
+    ("Nvidia", ("nvidia",), "Company", "nvidia.com", "nvidia"),
+    ("Microsoft", ("microsoft",), "Company", "microsoft.com", "microsoft"),
+    ("Azure", ("microsoft azure", "azure"), "Product brand", "azure.microsoft.com", "microsoftazure"),
+    ("OpenAI", ("openai", "chatgpt"), "Company", "openai.com", "openai"),
+    ("Google", ("google",), "Company", "google.com", "google"),
+    ("Alphabet", ("alphabet inc", "alphabet"), "Company", "abc.xyz", "alphabet"),
+    ("Meta", ("meta platforms", "meta"), "Company", "meta.com", "meta"),
+    ("Facebook", ("facebook",), "Product brand", "facebook.com", "facebook"),
+    ("Instagram", ("instagram",), "Product brand", "instagram.com", "instagram"),
+    ("WhatsApp", ("whatsapp",), "Product brand", "whatsapp.com", "whatsapp"),
+    ("Amazon", ("amazon",), "Company", "amazon.com", "amazon"),
+    ("AWS", ("amazon web services", "aws"), "Product brand", "aws.amazon.com", "amazonwebservices"),
+    ("Tesla", ("tesla",), "Company", "tesla.com", "tesla"),
+    ("Samsung", ("samsung",), "Company", "samsung.com", "samsung"),
+    ("TikTok", ("tiktok",), "Product brand", "tiktok.com", "tiktok"),
+    ("ByteDance", ("bytedance",), "Company", "bytedance.com", "bytedance"),
+    ("Netflix", ("netflix",), "Company", "netflix.com", "netflix"),
+    ("Disney", ("walt disney", "disney"), "Company", "thewaltdisneycompany.com", "disney"),
+    ("Coca-Cola", ("coca-cola", "coca cola", "coke"), "Brand", "coca-cola.com", "cocacola"),
+    ("Pepsi", ("pepsico", "pepsi"), "Brand", "pepsi.com", "pepsi"),
+    ("Nike", ("nike",), "Brand", "nike.com", "nike"),
+    ("Adidas", ("adidas",), "Brand", "adidas.com", "adidas"),
+    ("Uber", ("uber",), "Company", "uber.com", "uber"),
+    ("Airbnb", ("airbnb",), "Company", "airbnb.com", "airbnb"),
+    ("Walmart", ("walmart",), "Company", "walmart.com", "walmart"),
+    ("Alibaba", ("alibaba",), "Company", "alibaba.com", "alibabadotcom"),
+    ("Temu", ("temu",), "Brand", "temu.com", "temu"),
+    ("Shein", ("shein",), "Brand", "shein.com", "shein"),
+    ("X", ("twitter", "x corp", "x platform"), "Product brand", "x.com", "x"),
+    ("LinkedIn", ("linkedin",), "Product brand", "linkedin.com", "linkedin"),
+    ("Intel", ("intel",), "Company", "intel.com", "intel"),
+    ("AMD", ("advanced micro devices", "amd"), "Company", "amd.com", "amd"),
+    ("Qualcomm", ("qualcomm",), "Company", "qualcomm.com", "qualcomm"),
+    ("Oracle", ("oracle",), "Company", "oracle.com", "oracle"),
+    ("Salesforce", ("salesforce",), "Company", "salesforce.com", "salesforce"),
+    ("Adobe", ("adobe",), "Company", "adobe.com", "adobe"),
+    ("IBM", ("international business machines", "ibm"), "Company", "ibm.com", "ibm"),
+    ("Sony", ("sony",), "Company", "sony.com", "sony"),
+    ("Nintendo", ("nintendo",), "Company", "nintendo.com", "nintendo"),
+    ("Xbox", ("xbox",), "Product brand", "xbox.com", "xbox"),
+)
+
+
+def _key_company_entities(title: str, summary: str, entity_type: str) -> list[dict[str, Any]]:
+    """Return up to three clearly mentioned companies or brands, ranked by story relevance."""
+    title_text = " ".join(title.split())
+    combined = f"{title_text} {summary}".lower()
+    title_lower = title_text.lower()
+    matches: list[tuple[int, int, dict[str, Any]]] = []
+    for name, aliases, kind, domain, icon in _COMPANY_BRANDS:
+        positions = [match.start() for alias in aliases for match in re.finditer(rf"(?<!\w){re.escape(alias)}(?!\w)", combined)]
+        if not positions:
+            continue
+        in_title = any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", title_lower) for alias in aliases)
+        position = min(positions)
+        matches.append((0 if in_title else 1, position, {
+            "name": name,
+            "kind": kind,
+            "relation": "",
+            "confidence": 0,
+            "official_domain": domain,
+            "logo_url": f"https://cdn.simpleicons.org/{icon}",
+        }))
+    matches.sort(key=lambda entry: (entry[0], entry[1]))
+    entities = [entry[2] for entry in matches[:3]]
+    for index, entity in enumerate(entities):
+        entity["relation"] = "Product brand" if "brand" in entity["kind"].lower() else ("Primary company" if index == 0 else "Related company")
+        entity["confidence"] = 98 if index == 0 else 91 if index == 1 else 76
+    if entities or "company" not in entity_type.lower() and "brand" not in entity_type.lower():
+        return entities
+
+    # Unknown companies still receive a useful initials fallback, but never a guessed logo/domain.
+    ignored = {"The", "A", "An", "New", "Latest", "Breaking", "Company", "Brand", "CEO"}
+    for candidate in re.findall(r"\b[A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*){0,2}", title_text):
+        candidate = candidate.strip(" .,-")
+        if not candidate or candidate in ignored or any(candidate.lower() == item["name"].lower() for item in entities):
+            continue
+        entities.append({
+            "name": candidate,
+            "kind": "Company / Brand",
+            "relation": "Mentioned entity",
+            "confidence": 68,
+            "official_domain": "",
+            "logo_url": "",
+        })
+        if len(entities) == 3:
+            break
+    return entities
+
 
 def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
     """Return an explainable editorial signal label, not a factual verdict."""
@@ -176,6 +269,9 @@ def annotate_topic_taxonomy(
         item["entity_label"] = _entity_label(item.get("topic", ""), item.get("youtube_search_topic", ""))
         item["entity_type_label"], item["entity_type_match"] = _detected_entity_type(
             item.get("topic", ""), item.get("summary", ""), item["category_label"], entity_type
+        )
+        item["key_entities"] = _key_company_entities(
+            item.get("topic", ""), item.get("summary", ""), item["entity_type_label"]
         )
         annotated.append(item)
     return annotated
