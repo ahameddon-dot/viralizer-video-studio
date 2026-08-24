@@ -1,5 +1,10 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.37 — 2026-08-25 — Private testing
+
+- Added verified entity and official-domain logo mappings for Thomson Reuters, CloudEQ, Bannerbear, and Kingfisher Learning Trust.
+- Preserved strict entity verification so unrelated search results are never displayed as company logos.
+
 ## v1.1.0-beta.36 — 2026-08-25 — Private testing
 
 - Removed guessed capitalized phrases from Topic Intelligence entities; unverified phrases are no longer presented as companies or brands.

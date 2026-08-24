@@ -67,6 +67,10 @@ _MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and con
 _COMPANY_BRANDS = (
     ("ACN", ("acn inc", "acn"), "Company", "acn.com", ""),
     ("SAIC", ("science applications international corporation", "saic"), "Company", "saic.com", ""),
+    ("Thomson Reuters", ("thomson reuters",), "Company", "thomsonreuters.com", ""),
+    ("CloudEQ", ("cloudeq",), "Company", "cloudeq.com", ""),
+    ("Bannerbear", ("bannerbear",), "Company", "bannerbear.com", ""),
+    ("Kingfisher Learning Trust", ("kingfisher learning trust",), "Organization", "kingfisherlearningtrust.co.uk", ""),
     ("Apple", ("apple",), "Company", "apple.com", "apple"),
     ("App Store", ("app store",), "Product brand", "apple.com/app-store", "appstore"),
     ("Spotify", ("spotify",), "Company", "spotify.com", "spotify"),
