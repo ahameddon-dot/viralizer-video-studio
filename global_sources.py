@@ -65,6 +65,8 @@ _NEGATIVE_REPUTATION_SIGNALS = (
 _MIXED_REPUTATION_SIGNALS = ("debate", "divides", "mixed reviews", "pros and cons", "questions", "uncertain")
 
 _COMPANY_BRANDS = (
+    ("ACN", ("acn inc", "acn"), "Company", "acn.com", ""),
+    ("SAIC", ("science applications international corporation", "saic"), "Company", "saic.com", ""),
     ("Apple", ("apple",), "Company", "apple.com", "apple"),
     ("App Store", ("app store",), "Product brand", "apple.com/app-store", "appstore"),
     ("Spotify", ("spotify",), "Company", "spotify.com", "spotify"),
@@ -129,33 +131,38 @@ def _key_company_entities(title: str, summary: str, entity_type: str) -> list[di
             "relation": "",
             "confidence": 0,
             "official_domain": domain,
-            "logo_url": f"https://cdn.simpleicons.org/{icon}",
+            "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128",
         }))
     matches.sort(key=lambda entry: (entry[0], entry[1]))
     entities = [entry[2] for entry in matches[:3]]
     for index, entity in enumerate(entities):
         entity["relation"] = "Product brand" if "brand" in entity["kind"].lower() else ("Primary company" if index == 0 else "Related company")
         entity["confidence"] = 98 if index == 0 else 91 if index == 1 else 76
-    if entities or "company" not in entity_type.lower() and "brand" not in entity_type.lower():
-        return entities
-
-    # Unknown companies still receive a useful initials fallback, but never a guessed logo/domain.
-    ignored = {"The", "A", "An", "New", "Latest", "Breaking", "Company", "Brand", "CEO"}
-    for candidate in re.findall(r"\b[A-Z][A-Za-z0-9&.-]*(?:\s+[A-Z][A-Za-z0-9&.-]*){0,2}", title_text):
-        candidate = candidate.strip(" .,-")
-        if not candidate or candidate in ignored or any(candidate.lower() == item["name"].lower() for item in entities):
-            continue
-        entities.append({
-            "name": candidate,
-            "kind": "Company / Brand",
-            "relation": "Mentioned entity",
-            "confidence": 68,
-            "official_domain": "",
-            "logo_url": "",
-        })
-        if len(entities) == 3:
-            break
     return entities
+
+
+def _source_media_entity(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """Use source media for a confidently typed non-company subject; never guess a company logo."""
+    entity_type = str(item.get("entity_type_label", ""))
+    source_image = str(item.get("image", ""))
+    if not source_image.startswith(("http://", "https://")):
+        return []
+    if not any(kind in entity_type.lower() for kind in ("person", "celebrity", "product", "movie", "tv show", "event")):
+        return []
+    name = _entity_label(item.get("topic", ""), item.get("youtube_search_topic", ""))
+    bad_words = {"which", "how", "why", "what", "services", "latest", "update", "news", "review"}
+    words = {word.lower().strip(".,:;?!") for word in name.split()}
+    if not name or words & bad_words:
+        return []
+    return [{
+        "name": name,
+        "kind": entity_type,
+        "relation": "Primary subject",
+        "confidence": 82,
+        "official_domain": "",
+        "logo_url": "",
+        "image_url": source_image,
+    }]
 
 
 def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
@@ -273,6 +280,8 @@ def annotate_topic_taxonomy(
         item["key_entities"] = _key_company_entities(
             item.get("topic", ""), item.get("summary", ""), item["entity_type_label"]
         )
+        if not item["key_entities"]:
+            item["key_entities"] = _source_media_entity(item)
         annotated.append(item)
     return annotated
 
@@ -436,9 +445,12 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                         published = parsedate_to_datetime(item.findtext("pubDate", ""))
                     except (TypeError, ValueError):
                         published = datetime.now(timezone.utc)
-                    description = html.unescape(re.sub(r"<[^>]+>", " ", item.findtext("description", "") or ""))
+                    raw_description = item.findtext("description", "") or ""
+                    image_match = re.search(r'<img[^>]+src=["\']([^"\']+)', raw_description, re.IGNORECASE)
+                    image_url = html.unescape(image_match.group(1)) if image_match else ""
+                    description = html.unescape(re.sub(r"<[^>]+>", " ", raw_description))
                     description = " ".join(description.split())
-                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1, description))
+                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1, description, image_url))
                 return found
             except Exception:
                 return []
@@ -451,7 +463,7 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                 )
                 response.raise_for_status()
                 return [
-                    record(item.get("title", ""), search_query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1)
+                    record(item.get("title", ""), search_query, "GDELT Worldwide", item.get("url", ""), parse_date(item.get("seendate")), 1, "", item.get("socialimage", ""))
                     for item in response.json().get("articles", [])
                     if item.get("title")
                 ]
@@ -477,6 +489,8 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                 existing["published_at"] = item["published_at"]
             if len(item.get("summary", "")) > len(existing.get("summary", "")):
                 existing["summary"] = item["summary"]
+            if not existing.get("image") and item.get("image"):
+                existing["image"] = item["image"]
         else:
             merged[key] = item
     ordered = sorted(
@@ -502,7 +516,7 @@ def parse_date(value: Any) -> datetime:
 
 def record(
     title: str, category: str, source: str, url: str, published: datetime, engagement: int,
-    summary: str = "",
+    summary: str = "", image_url: str = "",
 ) -> dict[str, Any]:
     return {
         "topic": " ".join(str(title).split()),
@@ -513,4 +527,5 @@ def record(
         "mentions": 1,
         "source_platforms": [source],
         "source_engagement": {source: engagement},
+        "image": image_url if str(image_url).lower().startswith(("http://", "https://")) else "",
     }

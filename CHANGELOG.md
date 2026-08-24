@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.36 — 2026-08-25 — Private testing
+
+- Removed guessed capitalized phrases from Topic Intelligence entities; unverified phrases are no longer presented as companies or brands.
+- Added verified ACN and SAIC company recognition with official-domain logo sources.
+- Added source-provided pictures for confidently typed people, products, movies, shows, and events.
+- Topic cards now show fewer than three entities when fewer than three can be verified.
+
 ## v1.1.0-beta.35 — 2026-08-25 — Private testing
 
 - Enriched Topic Intelligence results with entity type, category and reputation labels.
