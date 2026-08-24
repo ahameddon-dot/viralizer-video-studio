@@ -26,6 +26,7 @@
 | v1.1.0-beta.30 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added safe PixVerse authentication health check and trimmed pasted credentials |
 | v1.1.0-beta.31 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Stopped the beta Blueprint from resetting the manually configured PixVerse API secret |
 | v1.1.0-beta.32 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added a manually owned PixVerse runtime-key override for beta |
+| v1.1.0-beta.33 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Reorganized only the Viralizer-report creation flow into four clear stages |
 
 ## Deployment rules
 

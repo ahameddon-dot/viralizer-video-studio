@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.33 — 2026-08-25 — Private testing
+
+- Reorganized only the Viralizer-report creation workflow into report review, content/assets review, format selection, and prompt preparation/confirmation.
+- Kept the manual Video/Image Studio workflow unchanged.
+- Format selection now reveals only the matching prepare action; editable prompts and generation confirmation remain hidden until preparation finishes.
+
 ## v1.1.0-beta.32 — 2026-08-25 — Private testing
 
 - Added a manually owned `PIXVERSE_API_KEY_RUNTIME` override so beta can retain the production PixVerse credential independently of its legacy Blueprint-managed empty variable.
