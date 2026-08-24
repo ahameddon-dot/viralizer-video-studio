@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.40 — 2026-08-25 — Private testing
+
+- Removed generic super-category leaders from individual Topic Intelligence stories because they could imply false relationships.
+- Market and competitor panels now appear only for a verified primary entity with a curated, explainable relationship.
+- Added Rolex recognition with Omega and Cartier as verified luxury-watch competitors when Rolex is actually mentioned.
+
 ## v1.1.0-beta.39 — 2026-08-25 — Private testing
 
 - Extended market and competitor landscape coverage to all 22 Topic Intelligence super-categories.

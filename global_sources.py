@@ -71,6 +71,9 @@ _COMPANY_BRANDS = (
     ("CloudEQ", ("cloudeq",), "Company", "cloudeq.com", ""),
     ("Bannerbear", ("bannerbear",), "Company", "bannerbear.com", ""),
     ("Kingfisher Learning Trust", ("kingfisher learning trust",), "Organization", "kingfisherlearningtrust.co.uk", ""),
+    ("Rolex", ("rolex",), "Brand", "rolex.com", ""),
+    ("Omega", ("omega watches", "omega watch"), "Brand", "omegawatches.com", ""),
+    ("Cartier", ("cartier",), "Brand", "cartier.com", ""),
     ("Bloomberg", ("bloomberg",), "Company", "bloomberg.com", ""),
     ("LexisNexis", ("lexisnexis", "lexis nexis"), "Company", "lexisnexis.com", ""),
     ("Wolters Kluwer", ("wolters kluwer",), "Company", "wolterskluwer.com", ""),
@@ -149,6 +152,7 @@ _COMPETITIVE_RELATIONSHIPS = {
     "Hexaware": (("Infosys", "Competitor", "Global IT services competitor"), ("Wipro", "Competitor", "Technology consulting competitor"), ("Cognizant", "Competitor", "Digital services competitor")),
     "TagMango": (("Graphy", "Competitor", "Creator monetization and course-platform competitor"), ("Nas.io", "Competitor", "Community and creator-business competitor"), ("Patreon", "Competitor", "Creator membership competitor")),
     "Hevo Data": (("Fivetran", "Competitor", "Managed data-pipeline competitor"), ("Airbyte", "Competitor", "Data integration competitor")),
+    "Rolex": (("Omega", "Competitor", "Luxury watch competitor"), ("Cartier", "Competitor", "Luxury watch and jewelry competitor")),
 }
 
 _CATEGORY_LANDSCAPES = {
@@ -207,15 +211,10 @@ def _competitive_landscape(entities: list[dict[str, Any]], super_category: str =
                 return landscape, "Direct competitors and related entities"
     if landscape:
         return landscape, "Direct competitors and related entities"
-    category_context = []
-    for name, domain in _CATEGORY_LANDSCAPES.get(super_category, ()):
-        category_context.append({
-            "name": name, "kind": "Category reference", "relation": "Category leader", "confidence": 85,
-            "official_domain": domain,
-            "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128",
-            "explanation": f"Verified reference entity in {super_category}; not necessarily a direct competitor in this story",
-        })
-    return category_context, "Category leaders and comparable entities"
+    # Never attach generic category leaders to an individual news story. A
+    # landscape is useful only when the story contains a verified primary
+    # entity with a curated, explainable relationship.
+    return [], ""
 
 
 def _key_company_entities(title: str, summary: str, entity_type: str) -> list[dict[str, Any]]:
