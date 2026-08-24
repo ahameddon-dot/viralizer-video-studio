@@ -25,6 +25,7 @@
 | v1.1.0-beta.29 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Separated Image to Video reference assets from text-to-video workflow |
 | v1.1.0-beta.30 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added safe PixVerse authentication health check and trimmed pasted credentials |
 | v1.1.0-beta.31 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Stopped the beta Blueprint from resetting the manually configured PixVerse API secret |
+| v1.1.0-beta.32 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added a manually owned PixVerse runtime-key override for beta |
 
 ## Deployment rules
 

@@ -52,7 +52,11 @@ def build_image_prompt(content: dict[str, Any]) -> str:
 
 class PixVerseClient:
     def __init__(self, api_key: str | None = None, timeout: float = 30.0):
-        self.api_key = (api_key or os.getenv("PIXVERSE_API_KEY", "")).strip()
+        self.api_key = (
+            api_key
+            or os.getenv("PIXVERSE_API_KEY_RUNTIME", "")
+            or os.getenv("PIXVERSE_API_KEY", "")
+        ).strip()
         self.timeout = timeout
         if not self.api_key:
             raise PixVerseError("PIXVERSE_API_KEY is not configured on the server.")

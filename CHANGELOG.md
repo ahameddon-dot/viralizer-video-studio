@@ -1,5 +1,9 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.32 — 2026-08-25 — Private testing
+
+- Added a manually owned `PIXVERSE_API_KEY_RUNTIME` override so beta can retain the production PixVerse credential independently of its legacy Blueprint-managed empty variable.
+
 ## v1.1.0-beta.31 — 2026-08-25 — Private testing
 
 - Removed `PIXVERSE_API_KEY` from beta Blueprint ownership so a manually configured Render secret is retained across deploys instead of being reset to an empty value.
