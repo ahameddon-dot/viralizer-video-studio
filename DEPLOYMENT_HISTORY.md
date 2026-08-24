@@ -23,6 +23,7 @@
 | v1.1.0-beta.27 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Restored seven-column Daily trend alignment with controlled wrapping |
 | v1.1.0-beta.28 | Private beta | `develop` | Assigned when committed | 2026-08-22 | Shared cached Viralizer reports between video and PDF; removed redundant MCP retries |
 | v1.1.0-beta.29 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Separated Image to Video reference assets from text-to-video workflow |
+| v1.1.0-beta.30 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added safe PixVerse authentication health check and trimmed pasted credentials |
 
 ## Deployment rules
 

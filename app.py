@@ -102,7 +102,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/health"}
+    public_paths = {"/login", "/health", "/health/pixverse"}
     if request.url.path not in public_paths and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
@@ -266,6 +266,16 @@ async def start_daily_scheduler():
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "viralizer-video-studio"}
+
+
+@app.get("/health/pixverse")
+async def pixverse_health():
+    """Check PixVerse authentication without exposing secrets or spending credits."""
+    try:
+        await PixVerseClient().balance()
+        return {"status": "ok", "authenticated": True}
+    except PixVerseError as exc:
+        return {"status": "error", "authenticated": False, "detail": str(exc)}
 
 
 class GenerateRequest(BaseModel):

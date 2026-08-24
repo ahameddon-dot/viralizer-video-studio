@@ -52,7 +52,7 @@ def build_image_prompt(content: dict[str, Any]) -> str:
 
 class PixVerseClient:
     def __init__(self, api_key: str | None = None, timeout: float = 30.0):
-        self.api_key = api_key or os.getenv("PIXVERSE_API_KEY", "")
+        self.api_key = (api_key or os.getenv("PIXVERSE_API_KEY", "")).strip()
         self.timeout = timeout
         if not self.api_key:
             raise PixVerseError("PIXVERSE_API_KEY is not configured on the server.")
@@ -123,6 +123,18 @@ class PixVerseClient:
                 )
         except httpx.HTTPError as exc:
             raise PixVerseError(f"Could not check the PixVerse video: {exc}") from exc
+        return self._unwrap(response)
+
+    async def balance(self) -> dict[str, Any]:
+        """Validate authentication without starting a billable generation."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{PIXVERSE_BASE_URL}/account/balance",
+                    headers=self._headers(unique_request=True),
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not connect to PixVerse: {exc}") from exc
         return self._unwrap(response)
 
     async def upload_image(

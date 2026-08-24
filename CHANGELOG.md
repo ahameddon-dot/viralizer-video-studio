@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.30 — 2026-08-25 — Private testing
+
+- Added a non-billable PixVerse authentication health check using the official account-balance endpoint.
+- PixVerse credentials are now trimmed before use to prevent pasted whitespace from breaking authentication.
+- The health response never exposes the API key, account identity, or credit balance.
+
 ## v1.1.0-beta.29 — 2026-08-25 — Private testing
 
 - Separated PixVerse Image to Video from the normal Video workflow.
