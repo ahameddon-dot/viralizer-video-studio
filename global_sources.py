@@ -151,6 +151,31 @@ _COMPETITIVE_RELATIONSHIPS = {
     "Hevo Data": (("Fivetran", "Competitor", "Managed data-pipeline competitor"), ("Airbyte", "Competitor", "Data integration competitor")),
 }
 
+_CATEGORY_LANDSCAPES = {
+    "Fashion, Apparel & Luxury": (("Nike", "nike.com"), ("Adidas", "adidas.com"), ("LVMH", "lvmh.com")),
+    "Beauty, Personal Care & Lifestyle": (("L'Oréal", "loreal.com"), ("Estée Lauder", "elcompanies.com"), ("Sephora", "sephora.com")),
+    "Home, Household & Consumer Products": (("IKEA", "ikea.com"), ("Procter & Gamble", "pg.com"), ("Unilever", "unilever.com")),
+    "Food, Beverage & Hospitality": (("Nestlé", "nestle.com"), ("Coca-Cola", "coca-cola.com"), ("McDonald's", "mcdonalds.com")),
+    "Health, Medicine & Longevity": (("Pfizer", "pfizer.com"), ("Johnson & Johnson", "jnj.com"), ("Roche", "roche.com")),
+    "Technology, AI & DeepTech": (("Nvidia", "nvidia.com"), ("Microsoft", "microsoft.com"), ("Google", "google.com")),
+    "Apps, Software & Enterprise Products": (("Microsoft", "microsoft.com"), ("Salesforce", "salesforce.com"), ("Oracle", "oracle.com")),
+    "Gaming": (("Sony", "sony.com"), ("Nintendo", "nintendo.com"), ("Xbox", "xbox.com")),
+    "Finance, Banking & Investment": (("JPMorgan Chase", "jpmorganchase.com"), ("Goldman Sachs", "goldmansachs.com"), ("Visa", "visa.com")),
+    "Business, Entrepreneurship & SMB": (("Shopify", "shopify.com"), ("Intuit", "intuit.com"), ("HubSpot", "hubspot.com")),
+    "Careers, Skills & Professional Development": (("LinkedIn", "linkedin.com"), ("Coursera", "coursera.org"), ("Udemy", "udemy.com")),
+    "Education & Knowledge": (("Pearson", "pearson.com"), ("Coursera", "coursera.org"), ("Khan Academy", "khanacademy.org")),
+    "Professional Communities": (("LinkedIn", "linkedin.com"), ("Reddit", "reddit.com"), ("Stack Overflow", "stackoverflow.com")),
+    "Industrial & B2B Industries": (("Siemens", "siemens.com"), ("Honeywell", "honeywell.com"), ("Caterpillar", "caterpillar.com")),
+    "Automotive & Mobility": (("Toyota", "toyota.com"), ("Tesla", "tesla.com"), ("BYD", "byd.com")),
+    "Entertainment, Media & Creator Content": (("Disney", "thewaltdisneycompany.com"), ("Netflix", "netflix.com"), ("Warner Bros. Discovery", "wbd.com")),
+    "Arts, Crafts & Creative": (("Adobe", "adobe.com"), ("Canva", "canva.com"), ("Etsy", "etsy.com")),
+    "Sports": (("ESPN", "espn.com"), ("Nike", "nike.com"), ("Adidas", "adidas.com")),
+    "Travel, Tourism & Events": (("Booking.com", "booking.com"), ("Airbnb", "airbnb.com"), ("Expedia", "expediagroup.com")),
+    "Government, Politics, Legal & Social Impact": (("United Nations", "un.org"), ("Amnesty International", "amnesty.org"), ("Human Rights Watch", "hrw.org")),
+    "Religion, Spirituality, Culture & Demographic Interests": (("YouTube", "youtube.com"), ("Meta", "meta.com"), ("TikTok", "tiktok.com")),
+    "Real-Time & High-Velocity Categories": (("Reuters", "reuters.com"), ("Associated Press", "apnews.com"), ("BBC", "bbc.com")),
+}
+
 
 def _catalog_entity(name: str, relation: str, explanation: str) -> dict[str, Any] | None:
     for catalog_name, aliases, kind, domain, icon in _COMPANY_BRANDS:
@@ -165,7 +190,7 @@ def _catalog_entity(name: str, relation: str, explanation: str) -> dict[str, Any
     return None
 
 
-def _competitive_landscape(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _competitive_landscape(entities: list[dict[str, Any]], super_category: str = "") -> tuple[list[dict[str, Any]], str]:
     primary_order = list(dict.fromkeys(str(entity.get("name", "")) for entity in entities if entity.get("name")))
     primary_names = set(primary_order)
     landscape: list[dict[str, Any]] = []
@@ -179,8 +204,18 @@ def _competitive_landscape(entities: list[dict[str, Any]]) -> list[dict[str, Any
                 landscape.append(entity)
                 seen.add(name)
             if len(landscape) == 3:
-                return landscape
-    return landscape
+                return landscape, "Direct competitors and related entities"
+    if landscape:
+        return landscape, "Direct competitors and related entities"
+    category_context = []
+    for name, domain in _CATEGORY_LANDSCAPES.get(super_category, ()):
+        category_context.append({
+            "name": name, "kind": "Category reference", "relation": "Category leader", "confidence": 85,
+            "official_domain": domain,
+            "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=128",
+            "explanation": f"Verified reference entity in {super_category}; not necessarily a direct competitor in this story",
+        })
+    return category_context, "Category leaders and comparable entities"
 
 
 def _key_company_entities(title: str, summary: str, entity_type: str) -> list[dict[str, Any]]:
@@ -352,7 +387,9 @@ def annotate_topic_taxonomy(
         )
         if not item["key_entities"]:
             item["key_entities"] = _source_media_entity(item)
-        item["competitive_landscape"] = _competitive_landscape(item["key_entities"])
+        item["competitive_landscape"], item["competitive_landscape_label"] = _competitive_landscape(
+            item["key_entities"], super_category
+        )
         annotated.append(item)
     return annotated
 

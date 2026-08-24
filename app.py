@@ -303,6 +303,7 @@ class IdeaSmithRequest(BaseModel):
 
 class CategoryIntelligenceRequest(BaseModel):
     category: str = Field(min_length=2, max_length=120)
+    super_category: str = Field(default="", max_length=120)
     categories: list[str] = Field(default_factory=list, max_length=50)
     keyword: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=500)
@@ -523,6 +524,7 @@ async def category_intelligence(request: CategoryIntelligenceRequest):
 @app.post("/api/category/topics")
 async def category_topics(request: CategoryIntelligenceRequest):
     category = " ".join(request.category.split()[:8])
+    super_category = " ".join(request.super_category.split()[:10])
     categories = [" ".join(value.split()[:8]) for value in request.categories if value.strip()][:50]
     keyword = " ".join(request.keyword.split()[:8])
     description = " ".join(request.description.split()[:10])
@@ -542,7 +544,7 @@ async def category_topics(request: CategoryIntelligenceRequest):
         topics = await discover_category_topics(queries, 30)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide category topics: {exc}") from exc
-    topics = annotate_topic_taxonomy(topics, categories or [category], category, lens)
+    topics = annotate_topic_taxonomy(topics, categories or [category], super_category or category, lens)
     return {"queries": queries, "count": len(topics), "topics": topics, "source": "Worldwide public news sources", "categories_searched": categories or [category]}
 
 

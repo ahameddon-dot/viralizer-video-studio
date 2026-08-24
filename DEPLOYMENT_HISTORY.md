@@ -28,6 +28,7 @@
 | v1.1.0-beta.32 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added a manually owned PixVerse runtime-key override for beta |
 | v1.1.0-beta.33 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Reorganized only the Viralizer-report creation flow into four clear stages |
 | v1.1.0-beta.34 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Moved category intelligence into a dedicated Topic Intelligence navigation view |
+| v1.1.0-beta.39 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Extended verified market and competitor landscapes across all Topic Intelligence super-categories |
 | v1.1.0-beta.38 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added expandable verified competitors and relationship explanations to Topic Intelligence |
 | v1.1.0-beta.37 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Added verified logos for the company and organization entities visible in Topic Intelligence testing |
 | v1.1.0-beta.36 | Private beta | `develop` | Assigned when committed | 2026-08-25 | Verified Topic Intelligence entities and real logo/source-image handling; removed invented phrase entities |

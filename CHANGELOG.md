@@ -1,5 +1,12 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.39 — 2026-08-25 — Private testing
+
+- Extended market and competitor landscape coverage to all 22 Topic Intelligence super-categories.
+- Direct competitors appear when a verified primary entity is known; otherwise the panel clearly shows verified category leaders and comparable entities.
+- Added explicit wording that category references are not necessarily direct competitors in the selected story.
+- Preserved the selected super-category in discovery requests so category landscapes also appear for individual category and subcategory searches.
+
 ## v1.1.0-beta.38 — 2026-08-25 — Private testing
 
 - Added an expandable verified competitive landscape to Topic Intelligence results.
