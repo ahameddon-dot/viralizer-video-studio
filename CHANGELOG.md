@@ -1,5 +1,10 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.34 — 2026-08-25 — Private testing
+
+- Added a dedicated Topic Intelligence navigation button.
+- Moved the complete category, entity, and reputation search screen out of Hot Topics and into its own Topic Intelligence view.
+
 ## v1.1.0-beta.33 — 2026-08-25 — Private testing
 
 - Reorganized only the Viralizer-report creation workflow into report review, content/assets review, format selection, and prompt preparation/confirmation.
