@@ -27,9 +27,16 @@ HeyGen Video Agent. Add provider keys to `.env` as needed:
 
 ```text
 PIXVERSE_API_KEY=your_pixverse_key
+PIXVERSE_GROWTH_API_KEY=your_mh_live_growth_studio_key
 RUNWAYML_API_SECRET=your_runway_key
 HEYGEN_API_KEY=your_heygen_key
 ```
+
+PixVerse Growth Studio is a separate product-marketing workflow. Its credential must begin
+with `mh_live_` and is not interchangeable with `PIXVERSE_API_KEY`. The Growth Studio format
+accepts a public product URL or manual product details with uploaded images, then supports
+status polling, playback, clip edits, and recent-video history. Both credentials remain
+server-side.
 
 Runway uses a selected thumbnail as its image-to-video input, or text-to-video when no HTTPS
 thumbnail is selected. Runway clips duration to its current 10-second API maximum. HeyGen uses

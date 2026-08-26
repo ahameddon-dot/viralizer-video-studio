@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
 from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
+from pixverse_growth_client import PixVerseGrowthClient, PixVerseGrowthError
 from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, generate_reference_image, prepare_image_prompt
 from cloudflare_image_client import CloudflareImageError, generate_cloudflare_album, generate_cloudflare_image
 from video_providers import (
@@ -102,7 +103,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/health", "/health/pixverse"}
+    public_paths = {"/login", "/health", "/health/pixverse", "/health/pixverse-growth"}
     if request.url.path not in public_paths and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
@@ -278,6 +279,18 @@ async def pixverse_health():
         return {"status": "error", "authenticated": False, "detail": str(exc)}
 
 
+@app.get("/health/pixverse-growth")
+async def pixverse_growth_health():
+    """Validate the separate Growth Studio bearer credential without generating a billable video."""
+    try:
+        result = await PixVerseGrowthClient().avatars()
+        data = result.get("data") or result
+        avatars = data if isinstance(data, list) else data.get("avatars") or data.get("items") or []
+        return {"status": "ok", "authenticated": True, "avatars": len(avatars)}
+    except PixVerseGrowthError as exc:
+        return {"status": "error", "authenticated": False, "detail": str(exc), "code": exc.code}
+
+
 class GenerateRequest(BaseModel):
     content: dict[str, Any]
     provider: str = "pixverse"
@@ -315,6 +328,11 @@ class DailyDiscoveryRequest(BaseModel):
     category: str = Field(default="ALL", max_length=80)
     keyword: str = Field(default="", max_length=120)
     description: str = Field(default="", max_length=500)
+
+
+class GrowthEditRequest(BaseModel):
+    clip_index: int = Field(ge=1, le=40)
+    instruction: str = Field(min_length=1, max_length=500)
 
 
 @app.get("/api/betting/topics")
@@ -676,6 +694,147 @@ async def video_status(provider: str, job_id: str):
     except VideoProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"job_id": job_id, "provider": provider, **result}
+
+
+def growth_http_error(exc: PixVerseGrowthError) -> HTTPException:
+    status_code = {
+        "INVALID_REQUEST": 422, "INVALID_API_KEY": 401, "INSUFFICIENT_BALANCE": 402,
+        "WORKSPACE_ACCESS_DENIED": 403, "VIDEO_NOT_FOUND": 404,
+        "VIDEO_EDIT_UNAVAILABLE": 409, "PAYLOAD_TOO_LARGE": 413,
+        "UNSUPPORTED_MEDIA_TYPE": 415, "PRODUCT_FETCH_FAILED": 422,
+        "MEDIA_PROCESSING_FAILED": 422, "RATE_LIMIT_EXCEEDED": 429,
+    }.get(exc.code, 503 if exc.retryable else 502)
+    detail = str(exc)
+    if exc.request_id:
+        detail += f" (request_id={exc.request_id})"
+    return HTTPException(status_code, detail)
+
+
+@app.get("/api/growth/avatars")
+async def growth_avatars():
+    try:
+        return await PixVerseGrowthClient().avatars()
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
+
+
+@app.post("/api/growth/videos")
+async def create_growth_video(
+    source_url: str = Form(""),
+    title: str = Form(""),
+    description: str = Form(""),
+    brand: str = Form(""),
+    price_amount: str = Form(""),
+    price_currency: str = Form("USD"),
+    aspect_ratio: str = Form("9:16"),
+    duration_seconds: int = Form(30),
+    resolution: str = Form("1080p"),
+    language: str = Form("en-US"),
+    voiceover: bool = Form(True),
+    captions: bool = Form(True),
+    background_music: bool = Form(True),
+    avatar_mode: str = Form("auto"),
+    avatar_url: str = Form(""),
+    product_images: list[UploadFile] | None = File(None),
+    avatar_image: UploadFile | None = File(None),
+):
+    source_url, title = source_url.strip(), title.strip()
+    if source_url and not source_url.startswith(("http://", "https://")):
+        raise HTTPException(422, "Product URL must begin with http:// or https://.")
+    uploads = product_images or []
+    if len(uploads) > 6:
+        raise HTTPException(422, "Upload no more than six product images.")
+    if not source_url and (not title or not uploads):
+        raise HTTPException(422, "Without a product URL, provide a product title and at least one product image.")
+    if duration_seconds not in {15, 30, 45, 60}:
+        raise HTTPException(422, "Growth Studio duration must be 15, 30, 45, or 60 seconds.")
+    if resolution.lower() not in {"480p", "720p", "1080p"}:
+        raise HTTPException(422, "Growth Studio resolution must be 480p, 720p, or 1080p.")
+    if avatar_mode not in {"auto", "custom", "disabled"}:
+        raise HTTPException(422, "Avatar mode must be auto, custom, or disabled.")
+    try:
+        client = PixVerseGrowthClient()
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
+
+    async def upload(upload_file: UploadFile) -> str:
+        content_type = (upload_file.content_type or "").lower()
+        if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
+            raise HTTPException(415, "Growth Studio images must be JPEG, PNG, or WebP.")
+        raw = await upload_file.read(20 * 1024 * 1024 + 1)
+        if len(raw) > 20 * 1024 * 1024:
+            raise HTTPException(413, "Each Growth Studio image must be 20 MiB or smaller.")
+        try:
+            result = await client.upload_image(raw, upload_file.filename or "image.png", content_type)
+        except PixVerseGrowthError as exc:
+            raise growth_http_error(exc) from exc
+        data = result.get("data") or result
+        return str(data.get("url") or data.get("image_url") or "")
+
+    image_urls = [await upload(image) for image in uploads]
+    if any(not value for value in image_urls):
+        raise HTTPException(502, "Growth Studio did not return a URL for an uploaded product image.")
+    if avatar_image is not None:
+        avatar_url = await upload(avatar_image)
+        avatar_mode = "custom"
+    if avatar_mode == "custom" and not avatar_url.startswith("https://"):
+        raise HTTPException(422, "Choose a system Avatar or upload a custom Avatar image.")
+
+    product: dict[str, Any] = {}
+    if source_url:
+        product["source_url"] = source_url[:2048]
+    if title:
+        product["title"] = title[:255]
+    if description.strip():
+        product["description"] = description.strip()[:5120]
+    if brand.strip():
+        product["brand"] = brand.strip()[:255]
+    if price_amount.strip():
+        product["price"] = {"amount": price_amount.strip(), "currency": price_currency.strip().upper()[:3]}
+    if image_urls:
+        product["images"] = [{"url": value} for value in image_urls]
+    video = {
+        "aspect_ratio": aspect_ratio, "duration_seconds": duration_seconds,
+        "resolution": resolution.lower(), "language": language,
+        "voiceover": voiceover, "captions": captions, "background_music": background_music,
+        "avatar": {"mode": avatar_mode},
+    }
+    if avatar_mode == "custom":
+        video["avatar"]["url"] = avatar_url
+    try:
+        return await client.create_video({"product": product, "video": video, "metadata": {"source": "viralizer-studio"}})
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
+
+
+@app.get("/api/growth/videos")
+async def list_growth_videos(limit: int = 20, cursor: str = "", status: str = ""):
+    if status and status not in {"queued", "processing", "succeeded", "failed", "canceled"}:
+        raise HTTPException(422, "Invalid Growth Studio status filter.")
+    try:
+        return await PixVerseGrowthClient().list_videos(limit=limit, cursor=cursor, status=status)
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
+
+
+@app.get("/api/growth/videos/{video_id}")
+async def growth_video_details(video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id):
+        raise HTTPException(422, "Invalid Growth Studio video ID.")
+    try:
+        return await PixVerseGrowthClient().video_details(video_id)
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
+
+
+@app.post("/api/growth/videos/{video_id}/edit")
+async def edit_growth_video(video_id: str, request: GrowthEditRequest):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id):
+        raise HTTPException(422, "Invalid Growth Studio video ID.")
+    try:
+        return await PixVerseGrowthClient().edit_video(video_id, request.clip_index, request.instruction)
+    except PixVerseGrowthError as exc:
+        raise growth_http_error(exc) from exc
 
 
 @app.post("/api/image/openai")

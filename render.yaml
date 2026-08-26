@@ -14,6 +14,10 @@ services:
         sync: false
       - key: PIXVERSE_API_KEY
         sync: false
+      - key: PIXVERSE_GROWTH_API_KEY
+        sync: false
+      - key: PIXVERSE_GROWTH_BASE_URL
+        value: https://growth-api.pixverse.ai
       - key: OPENAI_API_KEY
         sync: false
       - key: ADMIN_PASSWORD

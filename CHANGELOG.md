@@ -1,5 +1,13 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.42 — 2026-08-26 — Private testing
+
+- Added PixVerse Growth Studio as a separate product-marketing video format.
+- Supports public product URLs or manual product details with up to six uploaded images.
+- Added automatic, disabled, system, and uploaded Avatar choices plus language, duration, resolution, voice-over, captions, and music controls.
+- Added explicit confirmation before billable create/edit actions, automatic status polling, finished-video playback, clip editing, and recent-video history.
+- Kept the `mh_live_` Growth Studio credential server-side in a separate environment variable from the existing PixVerse video API key.
+
 ## v1.1.0-beta.41 — 2026-08-25 — Private testing
 
 - Added dynamic Wikidata entity verification for Topic Intelligence across every taxonomy path.
