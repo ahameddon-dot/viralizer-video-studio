@@ -1,5 +1,11 @@
 # Viralizer Video Studio changelog
 
+## v1.1.0-beta.43 — 2026-08-28 — Private testing
+
+- Replaced generic single-scene automatic video prompts with concise, shot-by-shot PixVerse prompts.
+- Uses two shots for 5 seconds, three shots for 8 seconds, and four shots for 10–15 seconds.
+- Builds shots from the real topic, video idea, creator angle, context, and call to action while preserving user review and confirmation.
+
 ## v1.1.0-beta.42 — 2026-08-26 — Private testing
 
 - Added PixVerse Growth Studio as a separate product-marketing video format.

@@ -14,16 +14,43 @@ class PixVerseError(RuntimeError):
 
 
 def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
-    """Create a short, model-friendly PixVerse prompt."""
+    """Create a concise, duration-aware shot list for PixVerse."""
     def clip(value: Any, word_limit: int) -> str:
-        return " ".join(str(value or "").strip().split()[:word_limit])
-    title = clip(content.get("suggested_title") or content.get("hook") or content.get("topic"), 18)
-    angle = clip(content.get("creator_angle"), 10)
-    return " ".join(filter(None, [
-        f'Visualize "{title}."' if title else "Create a clear topical video.",
-        f"Focus: {angle}." if angle and angle.lower() not in title.lower() else "",
-        f"One coherent vertical scene, {duration} seconds, natural motion, subtle background movement, smooth camera push-in, realistic lighting, no text.",
-    ]))
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" .:-")
+        return " ".join(cleaned.split()[:word_limit]).rstrip(" ,;:")
+
+    duration = max(5, min(15, int(duration or 5)))
+    topic = clip(content.get("topic") or content.get("suggested_title") or content.get("hook"), 16)
+    title = clip(content.get("suggested_title") or content.get("hook") or topic, 18)
+    idea = clip(content.get("video_idea"), 20)
+    angle = clip(content.get("creator_angle"), 18)
+    cta = clip(content.get("cta"), 16)
+    why = clip(content.get("why_it_matters"), 18)
+
+    candidates = [
+        f"Introduce {topic or title} in a clear, realistic hero scene",
+        idea or f"Show the main people, product, place, or event behind {title or topic}",
+        angle or why or f"Show the most important visual details of {topic or title}",
+        cta or f"End with a warm, engaging moment that invites viewers to explore {topic or title}",
+    ]
+    unique_shots: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        shot = clip(candidate, 22)
+        normalized = re.sub(r"[^a-z0-9]+", " ", shot.lower()).strip()
+        if shot and normalized not in seen:
+            seen.add(normalized)
+            unique_shots.append(shot)
+
+    shot_count = 2 if duration <= 5 else 3 if duration < 10 else 4
+    while len(unique_shots) < shot_count:
+        unique_shots.append(f"Show another realistic visual detail connected to {topic or title}")
+    header = (
+        f"Create a coherent {duration}-second vertical video with natural motion, subtle background movement, "
+        "smooth transitions, realistic lighting, and no text."
+    )
+    shots = "\n".join(f"Shot {index}: {shot}." for index, shot in enumerate(unique_shots[:shot_count], 1))
+    return f"{header}\n\n{shots}"
 
 
 def build_image_prompt(content: dict[str, Any]) -> str:
