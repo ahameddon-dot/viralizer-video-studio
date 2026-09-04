@@ -62,3 +62,12 @@ function setupExactHero(){
   const tabs=$('.tabs');if(tabs)tabs.innerHTML='<button class="tab active" data-feed="viralizer"><i>◉</i> For You</button><button class="tab" data-feed="hot"><i>🔥</i> Hot Topics</button><button class="tab"><i>▥</i> Topic Intelligence</button><button class="tab"><i>★</i> Viralizer Topics</button><button class="tab"><i>💡</i> Idea Smith</button><button class="tab"><i>🌐</i> Saudi & Arabic</button><button class="tab"><i>▣</i> Betting Topics</button>';
 }
 setupExactHero();
+
+function setupExactSidebar(){
+  const logo=$('.logo');
+  if(logo)logo.innerHTML='<img src="/static/final/viralizer-logo-mark.svg" alt="Viralizer"><span class="brand-copy"><b>VIRALIZER</b><small>Video Studio</small></span>';
+  const workspaceAvatar=$('.workspace .avatar');if(workspaceAvatar)workspaceAvatar.textContent='IN';
+  const promo=$('.side-promo');
+  if(promo)promo.innerHTML='<div class="impact-mark">◆</div><div><small>Turn ideas</small><strong>into impact.</strong><p>AI-powered video ideas<br>for every creator.</p></div>';
+}
+setupExactSidebar();
