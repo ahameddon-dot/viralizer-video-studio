@@ -37,7 +37,7 @@ services:
       - key: CLOUDFLARE_API_TOKEN
         sync: false
       - key: CLOUDFLARE_IMAGE_MODEL
-        value: @cf/leonardo/lucid-origin
+        value: "@cf/leonardo/lucid-origin"
       - key: APP_DATA_DIR
         value: /tmp/viralizer-ui-preview-data
       - key: DAILY_TRENDS_ENABLED
