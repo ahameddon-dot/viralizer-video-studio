@@ -33,11 +33,12 @@ document.addEventListener('click',event=>{
   event.preventDefault();
   event.stopImmediatePropagation();
   $$('.tab').forEach(item=>item.classList.toggle('active',item===tab));
-  if(tab.dataset.feed==='viralizer')loadViralizerTopics();
-  else loadLatest();
+  loadFeed(tab.dataset.feed);
 },true);
 
 function finalAsset(topic,large=false,index=0){
+  const direct=topic.thumbnail_url||topic.thumbnail||topic.image_url||topic.image||topic.post_image||topic.media?.image||topic.media?.thumbnail;
+  if(direct)return direct;
   const sequence=large?['fitness','nvidia','iphone','spacex','politics']:['fitness','iphone','music','nvidia','politics','saudi','spacex','startup'];
   return '/static/final/thumbnails/'+(large?'opportunity':'table')+'-'+sequence[index%sequence.length]+'.png';
 }
@@ -45,7 +46,7 @@ function filterRender(){
   const query=[$('#globalSearch').value,$('#tableSearch')?.value||''].join(' ').trim().toLowerCase(),selectedCategory=$('#category').value;
   const shown=topics.filter(topic=>(selectedCategory==='ALL'||topic.category===selectedCategory)&&(!query||JSON.stringify(topic).toLowerCase().includes(query)));
   $('#empty').classList.toggle('hidden',shown.length>0);
-  $('#topicRows').innerHTML=shown.map((topic,index)=>{const published=date(topic.published_at),source=topic.source_platforms?.[0]||topic.source||'Public sources',topicIndex=topics.indexOf(topic);return '<tr><td>'+(index+1)+'</td><td><div class="topic-cell"><div class="thumb"><img src="'+esc(finalAsset(topic,false,index))+'" onerror="this.remove()"></div><div style="min-width:0"><div class="topic-name">'+esc(topic.topic)+'</div><div class="topic-alt">'+esc(topic.youtube_search_topic||topic.alternate_topics?.[0]||'Worldwide trend')+'</div></div></div></td><td><span class="pill">'+esc(topic.category||'General')+'</span></td><td>'+esc(source)+'</td><td class="score">'+score(topic)+'%</td><td>'+conv(topic)+'</td><td>'+esc(published[0])+'<br><small style="color:var(--muted)">'+esc(published[1])+'</small></td><td><div class="row-actions"><button class="action" data-i="'+topicIndex+'">View</button><button class="action video-action" data-i="'+topicIndex+'">Create video</button><button class="action pdf-action" data-i="'+topicIndex+'">PDF</button><button class="action more-action" data-i="'+topicIndex+'">•••</button></div></td></tr>'}).join('');
+  $('#topicRows').innerHTML=shown.map((topic,index)=>{const published=date(topic.published_at),source=topic.source_platforms?.[0]||topic.source||'Public sources',topicIndex=topics.indexOf(topic);return '<tr><td>'+(index+1)+'</td><td><div class="topic-cell"><div class="thumb"><img src="'+esc(finalAsset(topic,false,index))+'" onerror="this.onerror=null;this.src=\'/static/final/thumbnails/table-iphone.png\'"></div><div style="min-width:0"><div class="topic-name">'+esc(topic.topic)+'</div><div class="topic-alt">'+esc(topic.youtube_search_topic||topic.alternate_topics?.[0]||'Worldwide trend')+'</div></div></div></td><td><span class="pill">'+esc(topic.category||'General')+'</span></td><td>'+esc(source)+'</td><td class="score">'+score(topic)+'%</td><td>'+conv(topic)+'</td><td>'+esc(published[0])+'<br><small style="color:var(--muted)">'+esc(published[1])+'</small></td><td><div class="row-actions"><button class="action" data-i="'+topicIndex+'">View</button><button class="action video-action" data-i="'+topicIndex+'">Create video</button><button class="action pdf-action" data-i="'+topicIndex+'">PDF</button><button class="action more-action" data-i="'+topicIndex+'">•••</button></div></td></tr>'}).join('');
   $('#opportunities').innerHTML=shown.slice(0,5).map((topic,index)=>'<article class="opp"><div class="opp-media" style="background-image:linear-gradient(180deg,transparent,#060a14bb),url(\''+esc(finalAsset(topic,true,index))+'\')"><span class="rank">#'+(index+1)+'</span><span class="heat">'+esc(heat(topic))+'</span></div><div class="opp-body"><h3>'+esc(topic.topic)+'</h3><div class="opp-meta"><span>'+esc(topic.category||'General')+'</span><b style="color:var(--green)">'+score(topic)+'%</b></div><button class="action quick-insight" data-i="'+topics.indexOf(topic)+'">View insight</button></div></article>').join('');
   const stats=$$('.hero-stat strong');if(stats.length===3){stats[0].textContent=shown.reduce((sum,item)=>sum+(Number(item.mentions)||0),0).toLocaleString();stats[1].textContent=shown.length;stats[2].textContent=(shown.length?Math.max(...shown.map(score)):0)+'%'}
 }
@@ -59,9 +60,47 @@ function setupExactHero(){
   const headerAvatar=$('.top-actions .avatar');if(headerAvatar)headerAvatar.textContent='IN';
   const actions=$('.hero-actions');if(actions)actions.remove();
   const stats=$('.hero-stats');if(stats)stats.innerHTML='<div class="trend-card"><div class="trend-label">GLOBAL TRENDS<br><b>REAL OPPORTUNITIES</b></div><div class="trend-chart"><i style="height:25%"></i><i style="height:42%"></i><i style="height:32%"></i><i style="height:55%"></i><i style="height:46%"></i><i style="height:68%"></i><i style="height:51%"></i><i style="height:76%"></i><i style="height:61%"></i><i style="height:88%"></i><i style="height:72%"></i><i style="height:100%"></i></div><div class="trend-metrics"><span><strong>12.4M</strong><small>Topics Tracked</small></span><span><strong>240+</strong><small>Sources</small></span><span><strong>95%</strong><small>Trend Accuracy</small></span></div></div>';
-  const tabs=$('.tabs');if(tabs)tabs.innerHTML='<button class="tab active" data-feed="viralizer"><i>◉</i> For You</button><button class="tab" data-feed="hot"><i>🔥</i> Hot Topics</button><button class="tab"><i>▥</i> Topic Intelligence</button><button class="tab"><i>★</i> Viralizer Topics</button><button class="tab"><i>💡</i> Idea Smith</button><button class="tab"><i>🌐</i> Saudi & Arabic</button><button class="tab"><i>▣</i> Betting Topics</button>';
+  const tabs=$('.tabs');if(tabs)tabs.innerHTML='<button class="tab active" data-feed="viralizer"><i>★</i> Viralizer Topics</button><button class="tab" data-feed="hot"><i>🔥</i> Hot Topics</button><button class="tab" data-feed="topic-intelligence"><i>▥</i> Topic Intelligence</button><button class="tab" data-feed="idea-smith"><i>💡</i> Idea Smith</button><button class="tab" data-feed="saudi"><i>🌐</i> Saudi & Arabic Topics</button><button class="tab" data-feed="betting"><i>▣</i> Betting Topics</button>';
 }
 setupExactHero();
+
+function topicList(value){
+  if(Array.isArray(value))return value;
+  if(!value||typeof value!=='object')return [];
+  if(value.topic||value.title||value.name||value.idea)return [value];
+  for(const key of ['topics','ideas','content','results','items']){const found=topicList(value[key]);if(found.length)return found}
+  const nested=Object.values(value).filter(item=>item&&typeof item==='object');
+  if(nested.some(item=>item.topic||item.title||item.name||item.idea))return nested;
+  return Object.entries(value).filter(([key,item])=>typeof item==='string'&&/(idea|title|hook|topic)/i.test(key)).map(([,item])=>({topic:item}));
+}
+function normalizeFeed(payload,label){
+  return topicList(payload).map((item,index)=>typeof item==='string'?{topic:item,category:label,source_platforms:[label]}:{...item,
+    topic:item.topic||item.title||item.suggested_title||item.name||item.idea||`${label} topic ${index+1}`,
+    category:item.category||item.section||label,
+    source_platforms:item.source_platforms||[item.source||label],
+    thumbnail_url:item.thumbnail_url||item.thumbnail||item.image_url||item.image||item.post_image,
+    discovery_heat:item.discovery_heat||item.trend_status||item.heat||'HOT',
+    viral_score:item.viral_score||item.score||item.resonance||(item.viralizer||{}).score,
+    mentions:item.mentions||item.global_mentions||item.volume,
+    published_at:item.published_at||item.created_at||item.event_date,
+    youtube_search_topic:item.youtube_search_topic||item.search_topic||item.topic||item.title
+  });
+}
+async function loadFeed(feed){
+  const names={viralizer:'Viralizer Topics',hot:'Hot Topics','topic-intelligence':'Topic Intelligence','idea-smith':'Idea Smith',saudi:'Saudi & Arabic Topics',betting:'Betting Topics'},label=names[feed]||'Topics';
+  $('#runStatus').textContent=`Loading ${label}…`;
+  try{
+    let payload;const query=$('#keyword').value.trim();
+    if(feed==='viralizer')payload=await(await api('/api/topics/hot')).json();
+    else if(feed==='hot')payload=await(await api('/api/daily/latest')).json();
+    else if(feed==='saudi')payload=await(await api('/api/regional/topics?query='+encodeURIComponent(query))).json();
+    else if(feed==='betting')payload=await(await api('/api/betting/topics?query='+encodeURIComponent(query))).json();
+    else if(feed==='idea-smith')payload=await(await api('/api/ideas/smith',{method:'POST',body:JSON.stringify({topic:query||'current trending content opportunities'})})).json();
+    else payload=await(await api('/api/category/topics',{method:'POST',body:JSON.stringify({category:$('#category').value!=='ALL'?$('#category').value:'Technology',keyword:query,lens:'Everything',reputation:'All reputation'})})).json();
+    const normalized=normalizeFeed(payload,label);render({topics:normalized,generated_at:payload.generated_at||new Date().toISOString()});
+    $('#runStatus').textContent=`${normalized.length} ${label} ready`;toast(`${label} loaded.`);
+  }catch(error){$('#runStatus').textContent=`Could not load ${label}`;toast(error.message,true)}
+}
 
 function setupExactSidebar(){
   const logo=$('.logo');
@@ -69,5 +108,10 @@ function setupExactSidebar(){
   const workspaceAvatar=$('.workspace .avatar');if(workspaceAvatar)workspaceAvatar.textContent='IN';
   const promo=$('.side-promo');
   if(promo)promo.innerHTML='<div class="impact-mark">◆</div><div><small>Turn ideas</small><strong>into impact.</strong><p>AI-powered video ideas<br>for every creator.</p></div>';
+  const destinations={'Video Studio':'/studio','Projects':'/studio','Assets':'/studio#referenceAssetsPanel','History':'/studio#growthStudioPanel','Settings':'/admin'};
+  $$('.side .nav a').forEach(link=>{const href=destinations[link.textContent.trim()];if(href)link.href=href});
 }
 setupExactSidebar();
+
+const sideFeeds={'Discover':'viralizer','Topic Intelligence':'topic-intelligence','Idea Smith':'idea-smith'};
+document.addEventListener('click',event=>{const link=event.target.closest('.side .nav a');if(!link)return;const feed=sideFeeds[link.textContent.trim()];if(!feed)return;event.preventDefault();event.stopImmediatePropagation();$$('.side .nav a').forEach(item=>item.classList.toggle('active',item===link));const tab=$(`.tab[data-feed="${feed}"]`);if(tab){$$('.tab').forEach(item=>item.classList.toggle('active',item===tab));tab.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})}loadFeed(feed)},true);
