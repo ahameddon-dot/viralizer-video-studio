@@ -1,9 +1,19 @@
 services:
   - type: web
-    name: viralizer-video-studio
+    name: viralizer-video-studio-ui-preview
     runtime: docker
+    plan: free
+    branch: ui-preview
     healthCheckPath: /health
     envVars:
+      - key: APP_ENVIRONMENT
+        value: ui-preview
+      - key: APP_VERSION
+        value: ui-preview-1
+      - key: APP_PASSWORD
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: MCP_SERVER_URL
         value: https://mcp.viralizer.ai/mcp
       - key: MCP_TOOL_NAME
@@ -20,8 +30,6 @@ services:
         value: https://growth-api.pixverse.ai
       - key: OPENAI_API_KEY
         sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
       - key: OPENAI_IMAGE_MODEL
         value: gpt-image-2
       - key: CLOUDFLARE_ACCOUNT_ID
@@ -29,18 +37,8 @@ services:
       - key: CLOUDFLARE_API_TOKEN
         sync: false
       - key: CLOUDFLARE_IMAGE_MODEL
-        value: "@cf/leonardo/lucid-origin"
-      - key: RUNWAYML_API_SECRET
-        sync: false
-      - key: HEYGEN_API_KEY
-        sync: false
+        value: @cf/leonardo/lucid-origin
       - key: APP_DATA_DIR
-        value: /var/data
+        value: /tmp/viralizer-ui-preview-data
       - key: DAILY_TRENDS_ENABLED
-        value: "true"
-      - key: DAILY_TRENDS_TIME
-        value: "07:00"
-    disk:
-      name: viralizer-data
-      mountPath: /var/data
-      sizeGB: 1
+        value: false
