@@ -52,3 +52,13 @@ function filterRender(){
 $('#tableSearch').oninput=filterRender;$('#heroDiscover').onclick=()=>$('#runBtn').click();$('#heroBrowse').onclick=()=>document.querySelector('.opportunities').scrollIntoView({behavior:'smooth'});$('#filterBtn').onclick=()=>$('#category').focus();$('#columnsBtn').onclick=()=>toast('All approved columns are visible.');
 $('#exportBtn').onclick=()=>{const rows=[['Topic','Category','Source','Viral score','Conversations','Published'],...topics.map(topic=>[topic.topic,topic.category||'General',topic.source_platforms?.[0]||topic.source||'',score(topic)+'%',conv(topic),topic.published_at||''])],blob=new Blob([rows.map(row=>row.map(value=>JSON.stringify(String(value??''))).join(',')).join('\n')],{type:'text/csv'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='viralizer-topics.csv';link.click()};
 document.addEventListener('click',event=>{const button=event.target.closest('.video-action,.pdf-action,.more-action');if(!button)return;const topic=topics[Number(button.dataset.i)];if(!topic)return;if(button.classList.contains('video-action'))insight(topic);else if(button.classList.contains('pdf-action')){current=topic;pdf()}else toast('Open View to inspect the full topic report.')});
+
+function setupExactHero(){
+  const search=$('.topbar .search');
+  if(search&&!search.querySelector('kbd'))search.insertAdjacentHTML('beforeend','<kbd>Ctrl K</kbd>');
+  const headerAvatar=$('.top-actions .avatar');if(headerAvatar)headerAvatar.textContent='IN';
+  const actions=$('.hero-actions');if(actions)actions.remove();
+  const stats=$('.hero-stats');if(stats)stats.innerHTML='<div class="trend-card"><div class="trend-label">GLOBAL TRENDS<br><b>REAL OPPORTUNITIES</b></div><div class="trend-chart"><i style="height:25%"></i><i style="height:42%"></i><i style="height:32%"></i><i style="height:55%"></i><i style="height:46%"></i><i style="height:68%"></i><i style="height:51%"></i><i style="height:76%"></i><i style="height:61%"></i><i style="height:88%"></i><i style="height:72%"></i><i style="height:100%"></i></div><div class="trend-metrics"><span><strong>12.4M</strong><small>Topics Tracked</small></span><span><strong>240+</strong><small>Sources</small></span><span><strong>95%</strong><small>Trend Accuracy</small></span></div></div>';
+  const tabs=$('.tabs');if(tabs)tabs.innerHTML='<button class="tab active" data-feed="viralizer"><i>◉</i> For You</button><button class="tab" data-feed="hot"><i>🔥</i> Hot Topics</button><button class="tab"><i>▥</i> Topic Intelligence</button><button class="tab"><i>★</i> Viralizer Topics</button><button class="tab"><i>💡</i> Idea Smith</button><button class="tab"><i>🌐</i> Saudi & Arabic</button><button class="tab"><i>▣</i> Betting Topics</button>';
+}
+setupExactHero();
