@@ -3,3 +3,36 @@ function render(data){report=data||{};topics=Array.isArray(report.topics)?report
 async function loadLatest(){try{render(await(await api('/api/daily/latest')).json());$('#runStatus').textContent=topics.length+' cached topics ready'}catch{render({topics:[]});$('#runStatus').textContent='Ready to discover'}}async function run(){const b=$('#runBtn');b.disabled=true;b.textContent='Discovering…';try{await api('/api/daily/run',{method:'POST',body:JSON.stringify({category:$('#category').value,keyword:$('#keyword').value.trim(),description:$('#description').value.trim()})});for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,2500));const s=await(await api('/api/daily/status')).json();$('#runStatus').textContent=s.message||s.stage||'Building topic list…';if(!s.running)break}await loadLatest();toast('Discovery results refreshed.')}catch(e){toast(e.message,true)}finally{b.disabled=false;b.textContent='✦ Run Discovery'}}
 async function insight(t){current=t;$('#modalBack').classList.remove('hidden');$('#modalTitle').textContent=t.topic;$('#modalBody').innerHTML='<p>Loading the complete Viralizer report…</p>';try{const d=await(await api('/api/daily/report',{method:'POST',body:JSON.stringify({topic:t.topic})})).json();current={...t,...d};$('#modalBody').innerHTML='<p>'+esc(d.why_it_matters||d.overview||d.summary||t.best_content_angle||'The full report is ready.')+'</p><div class="modal-actions"><button class="btn secondary" id="pdfBtn">Get PDF</button><button class="btn" id="prepareBtn">Prepare video prompt</button></div>'}catch(e){$('#modalBody').innerHTML='<p>'+esc(e.message)+'</p>'}}async function prepare(){const d=await(await api('/api/video/prompt',{method:'POST',body:JSON.stringify({content:current,provider:'pixverse',duration:5,quality:'540p'})})).json();$('#modalBody').innerHTML='<p>Review and edit the prompt. Nothing is generated until you confirm.</p><textarea id="videoPrompt">'+esc(d.prompt)+'</textarea><div class="modal-controls"><select class="select" id="duration"><option value="5">5 seconds</option><option value="10">10 seconds</option></select><select class="select" id="quality"><option value="540p">540p</option><option value="720p">720p</option></select></div><div class="modal-actions"><button class="btn" id="generateBtn">Confirm & generate video</button></div>'}async function generate(){try{const d=await(await api('/api/video/generate',{method:'POST',body:JSON.stringify({content:current,prompt:$('#videoPrompt').value,provider:'pixverse',duration:+$('#duration').value,quality:$('#quality').value})})).json();$('#modalBody').innerHTML='<p>Video generation started.</p><p>Job: '+esc(d.job_id)+'</p>';toast('Video generation started.')}catch(e){toast(e.message,true)}}async function pdf(){const r=await fetch('/api/daily/pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:current.topic})});if(!r.ok)return toast('PDF could not be prepared.',true);const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());a.download='viralizer-report.pdf';a.click()}
 $('#runBtn').onclick=run;$('#globalSearch').oninput=filterRender;$('#category').onchange=filterRender;$('#descToggle').onclick=e=>{e.currentTarget.classList.toggle('on');$('#descriptionRow').style.display=e.currentTarget.classList.contains('on')?'block':'none'};$('#closeModal').onclick=()=>$('#modalBack').classList.add('hidden');document.addEventListener('click',e=>{if(e.target.matches('.action'))insight(topics[+e.target.dataset.i]);if(e.target.id==='prepareBtn')prepare();if(e.target.id==='generateBtn')generate();if(e.target.id==='pdfBtn')pdf();if(e.target.matches('.tab')&&!['For You','Hot Topics'].includes(e.target.textContent))location.href='/studio'});loadLatest();
+
+async function loadViralizerTopics(){
+  $('#runStatus').textContent='Loading Viralizer topics…';
+  try{
+    const payload=await(await api('/api/topics/hot')).json();
+    const normalized=(payload.topics||[]).map((item,index)=>({
+      ...item,
+      topic:item.topic||item.title||item.name||item.keyword||`Viralizer topic ${index+1}`,
+      category:item.category||(Array.isArray(item.categories)?item.categories[0]:item.categories)||'Viralizer',
+      source_platforms:item.source_platforms||['Viralizer'],
+      thumbnail_url:item.thumbnail_url||item.thumbnail||item.image_url||item.image,
+      discovery_heat:item.discovery_heat||item.heat||'HOT',
+      viral_score:item.viral_score||item.score||item.resonance,
+      published_at:item.published_at||item.date||item.created_at,
+      youtube_search_topic:item.youtube_search_topic||item.search_topic||item.topic||item.title
+    }));
+    render({topics:normalized,generated_at:new Date().toISOString()});
+    $('#runStatus').textContent=`${normalized.length} Viralizer topics ready`;
+  }catch(error){
+    $('#runStatus').textContent='Could not load Viralizer topics';
+    toast(error.message,true);
+  }
+}
+
+document.addEventListener('click',event=>{
+  const tab=event.target.closest('.tab[data-feed]');
+  if(!tab)return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  $$('.tab').forEach(item=>item.classList.toggle('active',item===tab));
+  if(tab.dataset.feed==='viralizer')loadViralizerTopics();
+  else loadLatest();
+},true);
