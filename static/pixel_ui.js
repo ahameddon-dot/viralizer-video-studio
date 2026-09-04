@@ -88,7 +88,7 @@ function normalizeFeed(payload,label){
 }
 async function loadFeed(feed){
   const names={viralizer:'Viralizer Topics',hot:'Hot Topics','topic-intelligence':'Topic Intelligence','idea-smith':'Idea Smith',saudi:'Saudi & Arabic Topics',betting:'Betting Topics'},label=names[feed]||'Topics';
-  $('#runStatus').textContent=`Loading ${label}…`;
+  $('#runStatus').textContent=`Loading ${label}…`;const advanced=$('#advancedTools');if(advanced)advanced.href=({viralizer:'/studio#viralizerView',hot:'/studio#hotView','topic-intelligence':'/studio#topicIntelligenceView','idea-smith':'/studio#ideaSmithView',saudi:'/studio#regionalView',betting:'/studio#bettingView'}[feed]||'/studio');
   try{
     let payload;const query=$('#keyword').value.trim();
     if(feed==='viralizer')payload=await(await api('/api/topics/hot')).json();
@@ -108,8 +108,9 @@ function setupExactSidebar(){
   const workspaceAvatar=$('.workspace .avatar');if(workspaceAvatar)workspaceAvatar.textContent='IN';
   const promo=$('.side-promo');
   if(promo)promo.innerHTML='<div class="impact-mark">◆</div><div><small>Turn ideas</small><strong>into impact.</strong><p>AI-powered video ideas<br>for every creator.</p></div>';
-  const destinations={'Video Studio':'/studio','Projects':'/studio','Assets':'/studio#referenceAssetsPanel','History':'/studio#growthStudioPanel','Settings':'/admin'};
+  const destinations={'Video Studio':'/studio#studio','Projects':'/studio#studio','Assets':'/studio#referenceAssetsPanel','History':'/studio#growthStudioPanel','Settings':'/admin'};
   $$('.side .nav a').forEach(link=>{const href=destinations[link.textContent.trim()];if(href)link.href=href});
+  const tableTools=$('.table-tools');if(tableTools&&!$('#advancedTools'))tableTools.insertAdjacentHTML('afterbegin','<a class="advanced-tools" id="advancedTools" href="/studio#viralizerView">Full tools</a>');
 }
 setupExactSidebar();
 

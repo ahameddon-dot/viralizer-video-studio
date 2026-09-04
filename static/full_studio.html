@@ -33,6 +33,7 @@
     @media(max-width:900px){main{padding:22px 18px}.creation-formats{grid-template-columns:repeat(3,1fr)}}
     .vs-app{min-height:100vh;display:grid;grid-template-columns:232px minmax(0,1fr)}.vs-side{position:sticky;top:0;height:100vh;background:#0a0d17;border-right:1px solid #252b3f;padding:18px 14px;display:flex;flex-direction:column;z-index:20}.vs-logo{display:flex;align-items:center;gap:10px;padding:0 8px 20px;font-weight:800}.vs-logo img{width:31px}.vs-beta{font-size:9px;color:#d8b1ff;background:#3c176b;border-radius:8px;padding:3px 6px}.vs-label{font-size:10px;letter-spacing:.11em;color:#596078;text-transform:uppercase;padding:16px 12px 7px}.vs-nav{display:grid;gap:4px}.vs-nav a{color:#a7aec3;display:flex;gap:11px;padding:10px 12px;border-radius:8px;text-decoration:none}.vs-nav a:hover,.vs-nav a.active{color:#fff;background:linear-gradient(90deg,#2b1550,#19162d);box-shadow:inset 3px 0 #8b2cff}.vs-workspace{margin-top:auto;background:#0f1320;border:1px solid #252b3f;border-radius:10px;padding:12px;color:#a7aec3}.vs-main{min-width:0}.vs-top{height:64px;border-bottom:1px solid #252b3f;display:flex;align-items:center;padding:0 26px;gap:16px;background:#0a0d17e8;position:sticky;top:0;z-index:15;backdrop-filter:blur(12px)}.vs-search{width:min(430px,42vw);height:38px;background:#0f1320;border:1px solid #252b3f;border-radius:9px;padding:0 13px}.vs-back{margin-left:auto;color:#d9b7ff;text-decoration:none;border:1px solid #49306d;background:#231438;padding:9px 13px;border-radius:8px;font-weight:700}.vs-content>main{margin:0 auto}.vs-content>main>h1{margin-top:6px}.vs-content>main>.sub{margin-bottom:20px}@media(max-width:900px){.vs-app{grid-template-columns:72px 1fr}.vs-side{padding:16px 9px}.vs-logo span,.vs-logo b,.vs-label,.vs-nav a span{display:none}.vs-logo{justify-content:center}.vs-nav a{justify-content:center;font-size:18px}.vs-workspace{font-size:0;text-align:center}.vs-top{padding:0 15px}}@media(max-width:560px){.vs-app{display:block}.vs-side{display:none}.vs-search{width:100%}.vs-back{white-space:nowrap}}
   </style>
+  <link rel="stylesheet" href="/static/full-studio-current.css">
 </head>
 <body><div class="loading-overlay" id="viralizerLoading" hidden><div class="loading-box"><div class="spinner"></div><h2>Fetching content from Viralizer</h2><p id="viralizerLoadingText">Contacting Viralizer...</p><div class="loading-progress"><span></span></div></div></div><div class="vs-app"><aside class="vs-side"><div class="vs-logo"><img src="/static/assets/viralizer-logo-mark.svg"><span>Viralizer Video Studio</span><b class="vs-beta">BETA</b></div><div class="vs-label">Workspace</div><nav class="vs-nav"><a href="/">⌂ <span>Discover</span></a><a href="#topicIntelligenceView">⌁ <span>Topic Intelligence</span></a><a href="#ideaSmithView">✦ <span>Idea Smith</span></a><a class="active" href="#studio">▶ <span>Video Studio</span></a></nav><div class="vs-label">Tools</div><nav class="vs-nav"><a href="#growthStudioPanel">↗ <span>Growth Studio</span></a><a href="#referenceAssetsPanel">◇ <span>Reference Assets</span></a><a href="/admin">⚙ <span>Release Dashboard</span></a></nav><div class="vs-workspace">Intuition Intelligence<br><small>Private preview</small></div></aside><section class="vs-main"><header class="vs-top"><input class="vs-search" placeholder="Search or choose a tool below"><a class="vs-back" href="/">← Discover</a></header><div class="vs-content"><main>
   <h1>Turn hot topics into video</h1>
@@ -474,4 +475,19 @@
     };
     showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();
   </script>
-</main></div></section></div></body></html>
+</main></div></section></div><script>
+function openCurrentFeature(){
+  const hash=location.hash||'#studio',routes={
+    '#hotView':()=>{discoverWorkspaceTab.click();hotTab.click()},
+    '#topicIntelligenceView':()=>{discoverWorkspaceTab.click();topicIntelligenceTab.click()},
+    '#viralizerView':()=>{discoverWorkspaceTab.click();viralizerTab.click()},
+    '#ideaSmithView':()=>{discoverWorkspaceTab.click();ideaSmithTab.click()},
+    '#regionalView':()=>{discoverWorkspaceTab.click();regionalTab.click()},
+    '#bettingView':()=>{discoverWorkspaceTab.click();bettingTab.click()},
+    '#studio':()=>studioWorkspaceTab.click(),
+    '#referenceAssetsPanel':()=>{studioWorkspaceTab.click();document.querySelector('[data-format="image-video"]').click()},
+    '#growthStudioPanel':()=>{studioWorkspaceTab.click();document.querySelector('[data-format="growth"]').click()}
+  };(routes[hash]||routes['#studio'])();setTimeout(()=>document.querySelector(hash)?.scrollIntoView({block:'start'}),120)
+}
+addEventListener('hashchange',openCurrentFeature);setTimeout(openCurrentFeature,150);
+</script></body></html>

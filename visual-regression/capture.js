@@ -12,7 +12,8 @@ const { chromium } = require('playwright');
     },
     deviceScaleFactor: 1,
   });
-  await page.goto(process.env.VIRALIZER_URL || 'http://127.0.0.1:8000/', {
+  const targetUrl = process.env.VIRALIZER_URL || 'http://127.0.0.1:8000/';
+  await page.goto(targetUrl, {
     waitUntil: 'networkidle',
   });
   if (page.url().includes('/login')) {
@@ -21,6 +22,9 @@ const { chromium } = require('playwright');
       page.waitForNavigation({ waitUntil: 'networkidle' }),
       page.locator('button[type="submit"]').click(),
     ]);
+    if (new URL(page.url()).pathname !== new URL(targetUrl).pathname || new URL(targetUrl).hash) {
+      await page.goto(targetUrl, { waitUntil: 'networkidle' });
+    }
   }
   await page.waitForTimeout(4000);
   await page.screenshot({ path: process.env.SCREENSHOT_PATH || 'current.png' });

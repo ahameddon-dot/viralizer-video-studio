@@ -472,12 +472,6 @@ async def redesign():
     )
 
 
-@app.get("/studio")
-async def full_studio():
-    """Compatibility alias for the approved Viralizer interface."""
-    return RedirectResponse(url="/?design=viralizer-exact", status_code=302)
-
-
 @app.get("/api/topic/sample")
 async def sample_topic():
     return json.loads((ROOT / "sample_hot_topic.json").read_text(encoding="utf-8"))
