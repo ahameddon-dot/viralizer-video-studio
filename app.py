@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
@@ -56,6 +57,7 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
+app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 REPORT_CACHE_TTL_SECONDS = int(os.getenv("VIRALIZER_REPORT_CACHE_TTL", "1800"))
 _viralizer_report_cache: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -440,7 +442,37 @@ async def hot_topic_details_with_retry(topic_id: str):
 
 @app.get("/")
 async def index():
-    return FileResponse(ROOT / "static" / "index.html")
+    return FileResponse(
+        ROOT / "static" / "pixel_ui.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/legacy")
+async def legacy_ui():
+    """Compatibility alias for the approved Viralizer interface."""
+    return RedirectResponse(url="/?design=viralizer-exact", status_code=302)
+
+
+@app.get("/studio")
+async def full_studio():
+    """Compatibility alias for the approved Viralizer interface."""
+    return RedirectResponse(url="/?design=viralizer-exact", status_code=302)
+
+
+@app.get("/redesign")
+async def redesign():
+    """Alias for the approved Viralizer Video Studio interface."""
+    return FileResponse(
+        ROOT / "static" / "pixel_ui.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/studio")
+async def full_studio():
+    """Compatibility alias for the approved Viralizer interface."""
+    return RedirectResponse(url="/?design=viralizer-exact", status_code=302)
 
 
 @app.get("/api/topic/sample")
