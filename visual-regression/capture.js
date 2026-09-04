@@ -6,7 +6,10 @@ const { chromium } = require('playwright');
     executablePath: process.env.BROWSER_PATH || undefined,
   });
   const page = await browser.newPage({
-    viewport: { width: 1536, height: 1024 },
+    viewport: {
+      width: Number(process.env.VIEWPORT_WIDTH || 1536),
+      height: Number(process.env.VIEWPORT_HEIGHT || 1024),
+    },
     deviceScaleFactor: 1,
   });
   await page.goto(process.env.VIRALIZER_URL || 'http://127.0.0.1:8000/', {
