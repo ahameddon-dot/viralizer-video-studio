@@ -456,8 +456,11 @@ async def legacy_ui():
 
 @app.get("/studio")
 async def full_studio():
-    """Compatibility alias for the approved Viralizer interface."""
-    return RedirectResponse(url="/?design=viralizer-exact", status_code=302)
+    """All production creation and intelligence tools for preview validation."""
+    return FileResponse(
+        ROOT / "static" / "full_studio.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/redesign")
