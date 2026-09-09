@@ -28,6 +28,7 @@ from video_providers import (
     provider_catalog,
     video_status as provider_video_status,
 )
+from media_finisher import MediaFinisherError, finish_video
 from daily_trends import daily_trends
 from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics
 from mcp_outline_client import (
@@ -724,6 +725,40 @@ async def video_status(provider: str, job_id: str):
         raise HTTPException(502, str(exc)) from exc
     return {"job_id": job_id, "provider": provider, **result}
 
+
+@app.post("/api/video/finish")
+async def finish_generated_video(video_url: str = Form(...), narration: str = Form(""), voice: str = Form("coral"), logo: UploadFile | None = File(None)):
+    narration = narration.strip()
+    if len(narration) > 4096:
+        raise HTTPException(422, "Narration must be 4,096 characters or fewer.")
+    logo_bytes = None
+    if logo is not None:
+        if (logo.content_type or "") not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+            raise HTTPException(422, "Logo must be PNG, JPG, JPEG, or WebP.")
+        logo_bytes = await logo.read(10 * 1024 * 1024 + 1)
+        if len(logo_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(422, "Logo must be smaller than 10 MB.")
+    if not narration and not logo_bytes:
+        raise HTTPException(422, "Add narration, a logo, or both.")
+    try:
+        output = await finish_video(video_url, narration, voice, logo_bytes)
+    except MediaFinisherError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"url": f"/api/finished-video/{output.name}"}
+
+
+@app.get("/api/finished-video/{filename}")
+async def finished_video(filename: str):
+    if not re.fullmatch(r"viralizer-[a-f0-9]{32}\.mp4", filename):
+        raise HTTPException(404, "Finished video not found.")
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+    if not path.is_file():
+        raise HTTPException(404, "Finished video not found.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 def growth_http_error(exc: PixVerseGrowthError) -> HTTPException:
     status_code = {
