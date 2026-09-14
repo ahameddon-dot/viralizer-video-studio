@@ -452,6 +452,68 @@ async def enrich_topic_entities(topics: list[dict[str, Any]]) -> None:
         await asyncio.gather(*(enrich(item) for item in topics))
 
 
+_SPORTS_ORGANIZATIONS = (
+    ("Liverpool FC", ("liverpool", "liverpool fc", "lfc"), "liverpoolfc.com"),
+    ("Manchester United", ("manchester united", "man united", "man utd"), "manutd.com"),
+    ("Manchester City", ("manchester city", "man city"), "mancity.com"),
+    ("Arsenal", ("arsenal", "arsenal fc"), "arsenal.com"),
+    ("Chelsea FC", ("chelsea", "chelsea fc"), "chelseafc.com"),
+    ("Real Madrid", ("real madrid",), "realmadrid.com"),
+    ("FC Barcelona", ("barcelona", "fc barcelona", "barca"), "fcbarcelona.com"),
+    ("Bayern Munich", ("bayern", "bayern munich"), "fcbayern.com"),
+    ("Paris Saint-Germain", ("paris saint-germain", "psg"), "psg.fr"),
+    ("Juventus", ("juventus",), "juventus.com"),
+    ("Inter Miami CF", ("inter miami",), "intermiamicf.com"),
+)
+
+
+def _sports_logo_entities(title: str, summary: str) -> list[dict[str, Any]]:
+    title_text = title.casefold()
+    combined = f"{title} {summary}".casefold()
+    matches = []
+    for name, aliases, domain in _SPORTS_ORGANIZATIONS:
+        positions = [match.start() for alias in aliases for match in re.finditer(rf"(?<!\w){re.escape(alias)}(?!\w)", combined)]
+        if not positions:
+            continue
+        in_title = any(re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", title_text) for alias in aliases)
+        matches.append((0 if in_title else 1, min(positions), {
+            "name": name, "kind": "Sports organization", "relation": "Primary sports club" if in_title else "Mentioned sports club",
+            "confidence": 98 if in_title else 88, "official_domain": domain,
+            "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{domain}&sz=256",
+        }))
+    matches.sort(key=lambda item: (item[0], item[1]))
+    return [item[2] for item in matches[:4]]
+
+async def suggest_logos_for_content(content: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return conservative, verified company or product logo candidates for Studio."""
+    title = " ".join(str(content.get("topic") or content.get("suggested_title") or content.get("hook") or "").split())
+    summary = " ".join(str(content.get("summary") or content.get("why_it_matters") or content.get("video_idea") or "").split())
+    # Recompute relevance from the current content instead of trusting entity
+    # metadata that may belong to an earlier transferred topic.
+    entities = _sports_logo_entities(title, "") or _key_company_entities(title, summary, str(content.get("entity_type_label") or "")) or _sports_logo_entities(title, summary)
+    if not entities and title:
+        item = {"topic": title, "summary": summary}
+        await enrich_topic_entities([item])
+        entities = list(item.get("resolved_entities") or [])
+    results = []
+    seen = set()
+    for entity in entities:
+        url = str(entity.get("logo_url") or "")
+        name = str(entity.get("name") or "").strip()
+        if not name or not url.startswith("https://") or url in seen:
+            continue
+        seen.add(url)
+        results.append({
+            "name": name,
+            "kind": entity.get("kind") or entity.get("relation") or "Verified entity",
+            "relation": entity.get("relation") or "Identified in this content",
+            "confidence": int(entity.get("confidence") or 80),
+            "logo_url": url,
+        })
+        if len(results) == 4:
+            break
+    return results
+
 def _reputation_label(title: str, summary: str = "") -> tuple[str, list[str]]:
     """Return an explainable editorial signal label, not a factual verdict."""
     text = f"{title} {summary}".lower()

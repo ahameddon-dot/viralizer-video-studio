@@ -274,7 +274,7 @@ def _viralizer_outline(payload: dict[str, Any], requested_topic: str) -> dict[st
     video_description = outline.get("video_description", {}).get("data", "")
     creator_angle = alternatives[0] if alternatives else video_description.split("\n", 1)[0]
     return {
-        "topic": topic or requested_topic,
+        "topic": requested_topic or topic,
         "viral_rank": metrics.get("Viral Topic Rank", "").replace("#", "").strip(),
         "total_audience": total_audience,
         "remaining_reach": remaining_reach,
@@ -292,6 +292,20 @@ def _viralizer_outline(payload: dict[str, Any], requested_topic: str) -> dict[st
         "source": "Viralizer MCP",
     }
 
+
+def _report_matches_requested_topic(payload: dict[str, Any], requested_topic: str) -> bool:
+    """Reject a completed MCP page when it belongs to an earlier topic task."""
+    try:
+        returned_topic = str(_viralizer_outline(payload, requested_topic).get("topic") or "")
+    except (KeyError, TypeError, ValueError):
+        return False
+    stopwords = {"about", "after", "again", "against", "from", "into", "latest", "news", "that", "their", "this", "today", "update", "what", "when", "where", "which", "with"}
+    tokens = lambda value: {word for word in re.findall(r"[a-z0-9]+", value.casefold()) if len(word) >= 2 and word not in stopwords}
+    requested_tokens = tokens(requested_topic)
+    returned_tokens = tokens(returned_topic)
+    if not requested_tokens or not returned_tokens:
+        return False
+    return bool(requested_tokens & returned_tokens)
 
 def _has_usable_viralizer_content(payload: dict[str, Any]) -> bool:
     analysis = payload.get("topicAnalysis")
@@ -359,6 +373,10 @@ async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
         ).strip()
         raise MCPOutlineError(message or "The MCP tool reported an error.")
     final_payload = _extract_outline(result)
+    if not _report_matches_requested_topic(final_payload, topic):
+        raise MCPOutlineError(
+            f"Viralizer returned a completed report for a different topic instead of '{topic}'. Please retry."
+        )
     return final_payload
 
 

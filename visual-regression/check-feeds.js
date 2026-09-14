@@ -5,6 +5,7 @@ const { chromium } = require('playwright');
   const page = await browser.newPage({ viewport: { width: 1536, height: 1024 } });
   const sample = label => ({ topics: [{ topic: `${label} result`, category: label, thumbnail_url: '/static/final/thumbnails/table-iphone.png' }] });
   await page.route('**/api/**', async route => {
+    await new Promise(resolve => setTimeout(resolve, 250));
     const url = route.request().url();
     const label = url.includes('/daily/latest') ? 'Hot Topics' : url.includes('/regional/') ? 'Saudi & Arabic Topics' : url.includes('/betting/') ? 'Betting Topics' : url.includes('/ideas/') ? 'Idea Smith' : url.includes('/category/') ? 'Topic Intelligence' : 'Viralizer Topics';
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sample(label)) });
@@ -16,6 +17,10 @@ const { chromium } = require('playwright');
   }
   const labels = ['Viralizer Topics', 'Hot Topics', 'Topic Intelligence', 'Idea Smith', 'Saudi & Arabic Topics', 'Betting Topics'];
   const results = [];
+  await page.locator('.tab[data-feed="viralizer"]').click();
+  results.push({ loadingAnimation: await page.locator('#feedLoading').isVisible() });
+  await page.waitForFunction(() => document.querySelector('#runStatus')?.textContent.includes('ready'));
+  results.push({ categoryChips: await page.locator('#feedCategoryChips .category-chip').count() });
   const feeds = ['viralizer', 'hot', 'topic-intelligence', 'idea-smith', 'saudi', 'betting'];
   for (let index = 0; index < labels.length; index++) {
     const label = labels[index];

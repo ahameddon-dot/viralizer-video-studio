@@ -7,3 +7,15 @@ output/pdf/
 tmp/
 sample_output.mp4
 .pytest_cache/
+data/finished_videos/
+data/production/
+server-*.log
+visual-regression/*-current.png
+visual-regression/diff.png
+visual-regression/live-*.png
+visual-regression/*-final.png
+visual-regression/studio-before.png
+final_exact_pack/
+ui_master_pack/
+ui_reference_pack/
+viralizer-review-contact.png

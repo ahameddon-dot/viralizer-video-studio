@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
-from pixverse_client import PixVerseClient, PixVerseError, build_video_prompt
+from pixverse_client import PixVerseClient, PixVerseError, build_narration_script, build_video_prompt
 from pixverse_growth_client import PixVerseGrowthClient, PixVerseGrowthError
 from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, generate_reference_image, prepare_image_prompt
 from cloudflare_image_client import CloudflareImageError, generate_cloudflare_album, generate_cloudflare_image
@@ -29,8 +29,14 @@ from video_providers import (
     video_status as provider_video_status,
 )
 from media_finisher import MediaFinisherError, finish_video
+from saved_videos import SavedVideoError, list_saved_videos, save_video
+from long_video import start as start_long_video, status as long_video_status
+from production_controller import prepare_production, record_production
+from heygen_client import HeyGenClient, HeyGenError
+from heygen_director import build_heygen_script, build_presenter_direction
+from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
 from daily_trends import daily_trends
-from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics
+from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, suggest_logos_for_content
 from mcp_outline_client import (
     MCPOutlineError,
     get_full_report_from_mcp,
@@ -298,9 +304,24 @@ class GenerateRequest(BaseModel):
     content: dict[str, Any]
     provider: str = "pixverse"
     prompt: str | None = None
-    duration: int = Field(default=5, ge=5, le=15)
+    duration: int = Field(default=5, ge=5, le=60)
     quality: str = "720p"
+    quality_mode: bool = True
+    aspect_ratio: str = "9:16"
+    narration: str = ""
+    avatar_id: str = ""
+    voice_id: str = ""
+    background: str = "#0B1020"
 
+
+class SaveVideoRequest(BaseModel):
+    video_url: str
+    title: str = "Generated video"
+    provider: str = "video"
+
+
+class LogoSuggestionRequest(BaseModel):
+    content: dict[str, Any]
 
 class ImageGenerateRequest(BaseModel):
     content: dict[str, Any]
@@ -596,20 +617,60 @@ async def category_topics(request: CategoryIntelligenceRequest):
     return {"queries": queries, "count": len(topics), "topics": topics, "source": "Worldwide public news sources", "categories_searched": categories or [category]}
 
 
+@app.get("/api/heygen/avatars")
+async def heygen_avatars():
+    try:
+        data = await HeyGenClient().avatars()
+        return {"avatars": data.get("avatars") or data.get("items") or []}
+    except HeyGenError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+@app.get("/api/heygen/voices")
+async def heygen_voices():
+    try:
+        data = await HeyGenClient().voices()
+        return {"voices": data.get("voices") or data.get("items") or []}
+    except HeyGenError as exc:
+        raise HTTPException(502, str(exc)) from exc
 @app.post("/api/video/generate")
 async def generate_video(request: GenerateRequest):
-    prompt = (request.prompt or build_video_prompt(request.content, request.duration)).strip()
+    selected_provider = request.provider
+    if selected_provider == "auto":
+        routing_text = " ".join(str(request.content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
+        presenter_intent = any(word in routing_text for word in ("presenter", "spokesperson", "talking", "host", "explainer", "news anchor"))
+        selected_provider = "hybrid" if presenter_intent and all(os.getenv(name, "").strip() for name in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")) and bool(os.getenv("PIXVERSE_API_KEY_RUNTIME", "").strip() or os.getenv("PIXVERSE_API_KEY", "").strip()) else "pixverse"
+    production = prepare_production(request.content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality)
+    prompt = production["prompt"]
     if not prompt:
-        raise HTTPException(422, "The MCP content did not contain a usable video prompt.")
+        raise HTTPException(422, "The selected content did not produce a usable video direction.")
+    if selected_provider == "hybrid":
+        script = request.narration or build_heygen_script(request.content, request.duration)
+        job_id = start_hybrid_video(request.content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, request.quality_mode)
+        production.update(job_id=job_id, provider="hybrid", status="processing", generation_mode="hybrid", motion_prompt=build_presenter_direction(request.content, request.duration))
+        record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+        return {"job_id": job_id, "provider": "hybrid", "status": "processing", "prompt": prompt, "quality_mode": request.quality_mode, "stage": "Planning presenter and content visuals"}
+    if selected_provider == "pixverse" and (request.duration > 15 or request.quality_mode):
+        if selected_provider != "pixverse":
+            raise HTTPException(422, "Long multi-clip videos currently require PixVerse.")
+        job_id = start_long_video(request.content, request.duration, request.quality, quality_mode=request.quality_mode, production=production)
+        production.update(job_id=job_id, provider="viralizer", status="processing")
+        record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+        return {"job_id": job_id, "provider": "viralizer", "status": "processing", "prompt": prompt, "multi_clip": True, "quality_mode": request.quality_mode, "stage": "Preparing scenes"}
     try:
         job_id = await generate_with_provider(
-            request.provider,
+            selected_provider,
             prompt,
             content=request.content,
             duration=request.duration,
             quality=request.quality,
+            narration=request.narration or (build_heygen_script(request.content, request.duration) if selected_provider == "heygen" else build_narration_script(request.content, request.duration)),
+            avatar_id=request.avatar_id,
+            voice_id=request.voice_id,
+            background=request.background,
         )
-        return {"job_id": job_id, "provider": request.provider, "status": "processing", "prompt": prompt}
+        production.update(job_id=job_id, provider=selected_provider, status="processing")
+        record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+        return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": prompt, "quality_mode": request.quality_mode, "stage": "Generating video"}
     except VideoProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -707,18 +768,46 @@ async def generate_image_video(
     return {"job_id": video_id, "provider": "pixverse", "status": "processing", "prompt": video_prompt}
 
 
+@app.post("/api/video/prepare-topic")
+async def prepare_exact_video_topic(request: TopicRequest):
+    selected_topic = " ".join(request.topic.split())
+    try:
+        outline = await outline_with_fallback(selected_topic)
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    outline["topic"] = selected_topic
+    prompt = build_video_prompt(outline, 5)
+    return {"selected_topic": selected_topic, "outline": outline, "prompt": prompt, "narration": build_narration_script(outline, 5), "transfer_version": 2}
+
+@app.post("/api/video/logo-suggestions")
+async def video_logo_suggestions(request: LogoSuggestionRequest):
+    try:
+        logos = await suggest_logos_for_content(request.content)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Could not look up logo suggestions.") from exc
+    return {"logos": logos}
+
 @app.get("/api/video/providers")
 async def video_providers():
-    return {"providers": provider_catalog()}
-
-
+    providers = provider_catalog()
+    providers.append({"id": "hybrid", "name": "Hybrid", "description": "HeyGen presenter with PixVerse content visuals", "enabled": True, "configured": bool(os.getenv("HEYGEN_API_KEY", "").strip() and (os.getenv("PIXVERSE_API_KEY_RUNTIME", "").strip() or os.getenv("PIXVERSE_API_KEY", "").strip()))})
+    return {"providers": providers}
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
-    return {"prompt": build_video_prompt(request.content, request.duration)}
+    return {"prompt": build_video_prompt(request.content, request.duration), "narration": build_narration_script(request.content, request.duration), "heygen_script": build_heygen_script(request.content, request.duration), "heygen_direction": build_presenter_direction(request.content, request.duration)}
 
 
 @app.get("/api/video/{provider}/{job_id}")
 async def video_status(provider: str, job_id: str):
+    if provider == "hybrid":
+        result = hybrid_video_status(job_id)
+        if result is None: raise HTTPException(404, "Hybrid video job not found.")
+        return {"job_id": job_id, "provider": provider, **result}
+    if provider == "viralizer":
+        result = long_video_status(job_id)
+        if result is None:
+            raise HTTPException(404, "Long video job not found.")
+        return {"job_id": job_id, "provider": provider, **result}
     try:
         result = await provider_video_status(provider, job_id)
     except VideoProviderError as exc:
@@ -726,8 +815,21 @@ async def video_status(provider: str, job_id: str):
     return {"job_id": job_id, "provider": provider, **result}
 
 
+@app.get("/api/videos/saved")
+async def saved_video_library():
+    return {"videos": list_saved_videos(ROOT)}
+
+
+@app.post("/api/videos/save")
+async def save_generated_video(request: SaveVideoRequest):
+    try:
+        return await save_video(ROOT, request.video_url, request.title, request.provider)
+    except SavedVideoError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.post("/api/video/finish")
-async def finish_generated_video(video_url: str = Form(...), narration: str = Form(""), voice: str = Form("coral"), logo: UploadFile | None = File(None)):
+async def finish_generated_video(video_url: str = Form(...), narration: str = Form(""), voice: str = Form("coral"), logo: UploadFile | None = File(None), logo_url: str = Form(""), overlay_number: str = Form(""), overlay_text: str = Form(""), overlay_position: str = Form("bottom-center"), overlay_color: str = Form("white")):
     narration = narration.strip()
     if len(narration) > 4096:
         raise HTTPException(422, "Narration must be 4,096 characters or fewer.")
@@ -738,10 +840,40 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
         logo_bytes = await logo.read(10 * 1024 * 1024 + 1)
         if len(logo_bytes) > 10 * 1024 * 1024:
             raise HTTPException(422, "Logo must be smaller than 10 MB.")
-    if not narration and not logo_bytes:
-        raise HTTPException(422, "Add narration, a logo, or both.")
+    overlay_number = overlay_number.strip()
+    overlay_text = overlay_text.strip()
+    if len(overlay_number) > 80 or len(overlay_text) > 240:
+        raise HTTPException(422, "Overlay number or text is too long.")
+    if overlay_position not in {"top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"}:
+        raise HTTPException(422, "The selected text position is not supported.")
+    if overlay_color not in {"white", "yellow", "black", "red", "lime", "cyan"}:
+        raise HTTPException(422, "The selected text color is not supported.")
+    combined_overlay = "\n".join(value for value in (overlay_number, overlay_text) if value)
+    logo_url = logo_url.strip()
+    if logo_bytes is None and logo_url:
+        parsed_logo = httpx.URL(logo_url)
+        allowed_logo_hosts = {"www.google.com", "commons.wikimedia.org", "upload.wikimedia.org"}
+        if parsed_logo.scheme != "https" or parsed_logo.host not in allowed_logo_hosts:
+            raise HTTPException(422, "Select a verified Viralizer logo or upload your own.")
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                logo_response = await client.get(logo_url)
+                logo_response.raise_for_status()
+            final_logo_host = str(logo_response.url.host or "")
+            trusted_google_favicon = bool(re.fullmatch(r"t\d+\.gstatic\.com", final_logo_host)) and logo_response.url.path == "/faviconV2"
+            if final_logo_host not in allowed_logo_hosts and not trusted_google_favicon:
+                raise HTTPException(422, "The logo source redirected to an unsupported website.")
+            if len(logo_response.content) > 10 * 1024 * 1024:
+                raise HTTPException(422, "Suggested logo must be smaller than 10 MB.")
+            logo_bytes = logo_response.content
+        except HTTPException:
+            raise
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, "Could not retrieve the selected logo.") from exc
+    if not narration and not logo_bytes and not combined_overlay:
+        raise HTTPException(422, "Add narration, a logo, or a text overlay.")
     try:
-        output = await finish_video(video_url, narration, voice, logo_bytes)
+        output = await finish_video(video_url, narration, voice, logo_bytes, combined_overlay, overlay_position, overlay_color)
     except MediaFinisherError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}
@@ -749,7 +881,7 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
 
 @app.get("/api/finished-video/{filename}")
 async def finished_video(filename: str):
-    if not re.fullmatch(r"viralizer-[a-f0-9]{32}\.mp4", filename):
+    if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
     if not path.is_file():

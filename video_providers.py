@@ -4,6 +4,7 @@ from typing import Any
 import httpx
 
 from pixverse_client import PixVerseClient, PixVerseError
+from heygen_client import HeyGenClient, HeyGenError
 
 
 class VideoProviderError(RuntimeError):
@@ -54,7 +55,7 @@ def provider_catalog() -> list[dict[str, Any]]:
             "configured": bool(info["configured"]()),
         }
         for provider_id, info in PROVIDERS.items()
-        if provider_id == "pixverse"
+        if provider_id in {"pixverse", "heygen"}
     ]
 
 
@@ -96,6 +97,10 @@ async def generate_video(
     content: dict[str, Any],
     duration: int,
     quality: str,
+    narration: str = "",
+    avatar_id: str = "",
+    voice_id: str = "",
+    background: str = "#0B1020",
 ) -> str:
     _require_provider(provider)
     if provider == "pixverse":
@@ -132,25 +137,10 @@ async def generate_video(
         return str(job_id)
 
     if provider == "heygen":
-        payload = {
-            "prompt": prompt,
-            "mode": "generate",
-            "orientation": "portrait",
-            "incognito_mode": False,
-        }
-        headers = {"x-api-key": os.environ["HEYGEN_API_KEY"]}
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(
-                "https://api.heygen.com/v3/video-agents", headers=headers, json=payload
-            )
-        if response.is_error:
-            raise _api_error(response, "HeyGen")
-        data = response.json().get("data") or {}
-        job_id = data.get("video_id")
-        if not job_id:
-            raise VideoProviderError("HeyGen did not return a video ID.")
-        return str(job_id)
-
+        try:
+            return await HeyGenClient().generate(narration,avatar_id,voice_id,background=background)
+        except HeyGenError as exc:
+            raise VideoProviderError(str(exc)) from exc
     raise VideoProviderError(f"Provider {provider} is not implemented.")
 
 
@@ -183,16 +173,8 @@ async def video_status(provider: str, job_id: str) -> dict[str, Any]:
         return {"status": state, "url": output[0] if output else None, "result": result}
 
     if provider == "heygen":
-        headers = {"x-api-key": os.environ["HEYGEN_API_KEY"]}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"https://api.heygen.com/v3/videos/{job_id}", headers=headers
-            )
-        if response.is_error:
-            raise _api_error(response, "HeyGen")
-        result = response.json().get("data") or {}
-        raw_status = str(result.get("status", "")).lower()
-        state = "complete" if raw_status == "completed" else "failed" if raw_status == "failed" else "processing"
-        return {"status": state, "url": result.get("video_url"), "result": result}
-
+        try:
+            return await HeyGenClient().status(job_id)
+        except HeyGenError as exc:
+            raise VideoProviderError(str(exc)) from exc
     raise VideoProviderError(f"Provider {provider} is not implemented.")

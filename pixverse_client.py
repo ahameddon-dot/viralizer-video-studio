@@ -13,45 +13,129 @@ class PixVerseError(RuntimeError):
     pass
 
 
+def _clean_content(value: Any, limit: int = 80) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip(" .:-")
+    text = re.sub(r"\b(?:Categories?|Viral Topic Rank|Total Audience|Estimated Remaining Views)\s*:[^.!?]*", "", text, flags=re.I)
+    return " ".join(text.split()[:limit]).strip(" ,;:-")
+
+
+def _visual_treatment(content: dict[str, Any]) -> tuple[str, str, str, str]:
+    text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "entity_type_label", "video_idea", "why_it_matters")).lower()
+    if any(word in text for word in ("match", "football", "soccer", "liverpool", "league", "tournament", "sport")):
+        return ("cinematic sports documentary", "a focused football player in a modern stadium tunnel leading toward the pitch", "the player tightens his boots, rises, and walks decisively toward the floodlit field as teammates move naturally behind him", "cool tunnel light transitioning into powerful white stadium floodlights with soft haze")
+    if any(word in text for word in ("iphone", "smartphone photography", "mobile photography", "camera tips", "photography")):
+        return ("premium mobile-photography commercial", "a skilled photographer holding an unbranded triple-lens smartphone with its rear cameras facing the viewer and its screen turned away", "the photographer changes position, steadies the phone with both hands, and frames a real subject while the phone screen remains completely hidden", "warm golden-hour side light with soft reflections across the camera lenses and natural city bokeh")
+    if any(word in text for word in ("game", "gaming", "playstation", "xbox", "console")):
+        return ("premium gaming-culture documentary", "a passionate gamer in a premium modern gaming room with a console and physical game cases", "the gamer places a game case beside the console, grips the controller, and leans toward the screen while fingers move naturally", "cool television light across the face with warm amber practical lights behind")
+    if any(word in text for word in ("ai", "software", "technology", "device", "platform", "chip")):
+        return ("premium technology documentary", "a product designer working beside a tangible prototype in a clean modern studio", "the designer turns the prototype in hand and studies its physical details while nearby equipment moves subtly", "soft window daylight with controlled cool edge reflections on the product")
+    if any(word in text for word in ("fashion", "silk", "beauty", "luxury", "style")):
+        return ("luxury fashion editorial", "a poised model wearing the featured material in an elegant minimal interior", "the model turns slowly as fabric folds and edges move naturally with the motion", "large diffused key light with a warm rim light revealing texture")
+    if any(word in text for word in ("business", "company", "market", "finance", "brand")):
+        return ("cinematic business editorial", "a decisive professional in a contemporary workspace with real products and working teams visible", "the professional reviews a physical prototype, then looks across the active workspace as colleagues move naturally", "soft daylight through tall windows balanced by realistic overhead fill")
+    return ("cinematic editorial documentary", "the main subject in a specific real-world environment connected to the story", "the subject performs one clear physical action that reveals the central change while background activity continues naturally", "directional natural light with practical sources creating depth and separation")
+
+
 def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
-    """Create a concise, duration-aware shot list for PixVerse."""
-    def clip(value: Any, word_limit: int) -> str:
-        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" .:-")
-        return " ".join(cleaned.split()[:word_limit]).rstrip(" ,;:")
-
-    duration = max(5, min(15, int(duration or 5)))
-    topic = clip(content.get("topic") or content.get("suggested_title") or content.get("hook"), 16)
-    title = clip(content.get("suggested_title") or content.get("hook") or topic, 18)
-    idea = clip(content.get("video_idea"), 20)
-    angle = clip(content.get("creator_angle"), 18)
-    cta = clip(content.get("cta"), 16)
-    why = clip(content.get("why_it_matters"), 18)
-
-    candidates = [
-        f"Introduce {topic or title} in a clear, realistic hero scene",
-        idea or f"Show the main people, product, place, or event behind {title or topic}",
-        angle or why or f"Show the most important visual details of {topic or title}",
-        cta or f"End with a warm, engaging moment that invites viewers to explore {topic or title}",
-    ]
-    unique_shots: list[str] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        shot = clip(candidate, 22)
-        normalized = re.sub(r"[^a-z0-9]+", " ", shot.lower()).strip()
-        if shot and normalized not in seen:
-            seen.add(normalized)
-            unique_shots.append(shot)
-
-    shot_count = 2 if duration <= 5 else 3 if duration < 10 else 4
-    while len(unique_shots) < shot_count:
-        unique_shots.append(f"Show another realistic visual detail connected to {topic or title}")
-    header = (
-        f"Create a coherent {duration}-second vertical video with natural motion, subtle background movement, "
-        "smooth transitions, realistic lighting, and no text."
+    """Compile research into duration-aware, filmable PixVerse direction."""
+    duration = max(5, min(60, int(duration or 5)))
+    topic = _clean_content(content.get("topic") or content.get("suggested_title") or content.get("hook"), 18)
+    style, subject, action, lighting = _visual_treatment(content)
+    mood = "urgent and competitive" if any(word in topic.lower() for word in ("match", "race", "battle", "launch")) else "confident, immersive, and emotionally engaging"
+    if duration > 15:
+        beat_count = {20: 4, 30: 5, 45: 7, 60: 9}.get(duration, max(4, round(duration / 7)))
+        purposes = ("visual hook", "story context", "main development", "important detail", "human impact", "wider consequence", "future implication", "emotional resolution", "strong closing image")
+        beat_actions = (
+            f"Establish {subject} with one immediate physical action that creates curiosity",
+            f"Reveal the wider environment while {action}",
+            "Show a second observable action that makes the central development visually clear",
+            "Move closer to one meaningful physical detail while surrounding activity continues naturally",
+            "Show a believable human reaction through posture, movement, and interaction rather than text",
+            "Widen the scene to reveal how the development affects the surrounding people or environment",
+            "Suggest the next consequence through a motivated change in action, activity, or atmosphere",
+            "Let the main subject pause within the changed environment for an emotional beat",
+            "End on one memorable physical image with clean composition and natural continuing motion",
+        )
+        scene_length = duration / beat_count
+        scenes = []
+        for index in range(beat_count):
+            camera = "slow controlled push-in" if index % 3 == 0 else "gentle lateral tracking" if index % 3 == 1 else "locked camera with purposeful subject motion"
+            scenes.append(
+                f"Scene {index + 1} - about {scene_length:.1f} seconds, {purposes[index]}: {beat_actions[index]}. "
+                f"Camera: {camera}. Lighting: {lighting}. Include restrained secondary and environmental motion."
+            )
+        continuity = f"Continuity: maintain the same subject identity, clothing, environment design, time of day, {lighting}, and {style} color language across connected scenes."
+        restrictions = "Do not generate readable text, numbers, statistics, rankings, captions, subtitles, charts, dashboards, interfaces, watermarks, or logos."
+        return f"Create a {duration}-second vertical {style} visual narrative about {topic}. {continuity}\n\n" + "\n\n".join(scenes) + f"\n\n{restrictions}"
+    if duration <= 5:
+        return (
+            f"Create one uninterrupted {duration}-second vertical {style} moment about {topic}. "
+            f"Show {subject}. {action.capitalize()}. Use one slow controlled push-in as the dominant camera movement. "
+            "Include subtle breathing, realistic fabric movement, shifting reflections, and restrained background activity. "
+            f"Lighting: {lighting}. The mood is {mood}. Keep anatomy, clothing, objects, environment, and subject identity stable throughout. "
+            "No cuts, transformations, readable text, numbers, charts, interfaces, captions, watermarks, or generated logos."
+        )
+    if duration <= 10:
+        return (
+            f"Create a continuous {duration}-second vertical {style} sequence about {topic}. Begin close on {subject}, then reveal the wider environment without a hard cut. "
+            f"First, {action}. Then let the subject respond with a second small, believable action that shows growing momentum. "
+            "Use a slow lateral track that settles into a gentle push-in; do not combine additional camera moves. Add natural body movement, restrained background motion, and changing reflections. "
+            f"Lighting: {lighting}. Maintain the same subject, clothing, location, color language, and light direction. No readable text, numbers, charts, captions, watermarks, or logos."
+        )
+    return (
+        f"Create a coherent {duration}-second vertical {style} story about {topic} in three connected visual beats. "
+        f"Open with {subject} already in motion. Core development: {action}. Conclude on a strong physical consequence in the same world, showing the subject pause and take in the changed environment. "
+        "Use motivated cuts only between the three beats, with one dominant slow push-in or tracking move per beat. Include realistic body mechanics, subtle environmental movement, and stable object placement. "
+        f"Lighting: {lighting}. Preserve subject identity, wardrobe, location details, and color palette across every beat. No readable text, numbers, rankings, charts, dashboards, captions, watermarks, or generated logos."
     )
-    shots = "\n".join(f"Shot {index}: {shot}." for index, shot in enumerate(unique_shots[:shot_count], 1))
-    return f"{header}\n\n{shots}"
 
+
+def build_narration_script(content: dict[str, Any], duration: int = 5) -> str:
+    """Write a spoken social-video hook instead of copying raw research fields."""
+    duration = max(5, min(60, int(duration or 5)))
+    topic = _clean_content(content.get("topic") or content.get("suggested_title"), 14)
+    hook = _clean_content(content.get("hook") or content.get("suggested_title"), 28)
+    idea = _clean_content(content.get("creator_angle") or content.get("video_idea"), 45)
+    why = _clean_content(content.get("why_it_matters"), 45)
+    category_text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "entity_type_label")).lower()
+    subject = _clean_content(str(content.get("topic") or topic).split(":", 1)[0], 5)
+    if any(word in category_text for word in ("match", "football", "soccer", "liverpool", "league", "sport")):
+        known_clubs = ("Liverpool", "Manchester United", "Manchester City", "Arsenal", "Chelsea", "Real Madrid", "Barcelona", "Bayern Munich", "Paris Saint-Germain", "Juventus", "Inter Miami")
+        subject = next((club for club in known_clubs if club.casefold() in category_text), subject.title())
+        possessive = f"{subject}'" if subject.lower().endswith("s") else f"{subject}'s"
+        short = f"{possessive} tactical edge: sharp movement, relentless pressure, and match-defining moments."
+        if duration <= 5:
+            return short
+        development = idea or why
+        text = " ".join(value for value in (short, development, why, _clean_content(content.get("cta"), 24)) if value)
+    elif any(word in category_text for word in ("iphone", "smartphone photography", "mobile photography", "camera tips", "photography")):
+        opening = "Your best camera may already be in your hand."
+        technique = "Step into clean natural light, lock your focus, and steady the phone before you press the shutter."
+        payoff = "Then simplify the frame, shift your angle, and let one clear subject tell the story."
+        close = "Small changes in light, composition, and timing can turn an everyday iPhone shot into an image people stop to see."
+        if duration <= 5:
+            text = "Better iPhone photos start with light, focus, and one steady frame."
+        elif duration <= 10:
+            text = f"{opening} Find clean light, steady your frame, and make one subject impossible to miss."
+        elif duration <= 20:
+            text = f"{opening} {technique} {payoff}"
+        else:
+            text = f"{opening} {technique} {payoff} {close}"
+    elif any(word in category_text for word in ("game", "gaming", "playstation", "xbox")):
+        text = " ".join(value for value in (f"{subject} is changing the game. Look closer at the move players will be talking about next.", idea, why, _clean_content(content.get("cta"), 24)) if value)
+    elif any(word in category_text for word in ("ai", "technology", "software", "platform", "device")):
+        text = " ".join(value for value in (f"{subject} is shifting the conversation. Here is the move that could change what happens next.", idea, why, _clean_content(content.get("cta"), 24)) if value)
+    else:
+        text = " ".join(value for value in (hook or topic, idea, why, _clean_content(content.get("cta"), 24)) if value).strip()
+    text = re.sub(r"\b(?:Introduction|Conclusion|Call to action)\b\s*\d*\.?", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    max_words = max(11, round(duration * 2.25))
+    words = text.split()
+    if len(words) > max_words:
+        text = " ".join(words[:max_words]).rstrip(" ,;:-")
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text
 
 def build_image_prompt(content: dict[str, Any]) -> str:
     """Turn the hidden MCP outline into a detailed square social-image prompt."""

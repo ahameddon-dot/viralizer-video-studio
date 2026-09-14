@@ -1,4 +1,4 @@
-import asyncio, io, os, shutil, subprocess, tempfile, uuid
+import asyncio, io, os, re, shutil, subprocess, tempfile, uuid
 from pathlib import Path
 from urllib.parse import urlparse
 import httpx
@@ -35,29 +35,63 @@ async def _speech(text, voice, path):
         raise MediaFinisherError(detail or "OpenAI could not generate the narration.") from exc
     except httpx.HTTPError as exc: raise MediaFinisherError(f"Could not connect to the speech service: {exc}") from exc
 
-def _ffmpeg(video, output, audio, logo):
+def _escape_drawtext(value):
+    return (value.replace("\\", "\\\\")
+                 .replace(":", "\\:")
+                 .replace("'", "\\'")
+                 .replace("%", "\\%")
+                 .replace(",", "\\,")
+                 .replace("[", "\\[")
+                 .replace("]", "\\]"))
+
+def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="bottom-center", overlay_color="white"):
     if not shutil.which("ffmpeg"): raise MediaFinisherError("FFmpeg is not installed on the server.")
     cmd=["ffmpeg","-y","-i",str(video)]
     if audio: cmd += ["-i",str(audio)]
     if logo: cmd += ["-i",str(logo)]
+    font_candidates=[Path("C:/Windows/Fonts/arial.ttf"),Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf")]
+    font_path=next((item for item in font_candidates if item.is_file()),None)
+    font_value=str(font_path).replace("\\", "/").replace(":", "\\:") if font_path else ""
+    font_setting=f"fontfile='{font_value}'" if font_path else "font='sans'"
+    filters=[]; video_input="[0:v]"
     if logo:
         index=2 if audio else 1
-        cmd += ["-filter_complex",f"[{index}:v]scale='min(220,iw)':'-1'[logo];[0:v][logo]overlay=W-w-28:28:format=auto[vout]","-map","[vout]"]
+        filters += [f"[{index}:v]scale='min(220,iw)':'-1'[logo]", f"{video_input}[logo]overlay=W-w-28:28:format=auto[vlogo]"]
+        video_input="[vlogo]"
+    if overlay_text:
+        positions={
+            "top-left":("28","28"), "top-center":("(w-text_w)/2","28"), "top-right":("w-text_w-28","28"),
+            "center":("(w-text_w)/2","(h-text_h)/2"),
+            "bottom-left":("28","h-text_h-28"), "bottom-center":("(w-text_w)/2","h-text_h-28"), "bottom-right":("w-text_w-28","h-text_h-28"),
+        }
+        x,y=positions.get(overlay_position,positions["bottom-center"])
+        safe_text=_escape_drawtext(overlay_text)
+        filters.append(f"{video_input}drawtext={font_setting}:text='{safe_text}':fontcolor={overlay_color}:fontsize=48:line_spacing=12:box=1:boxcolor=black@0.58:boxborderw=16:x={x}:y={y}[vtext]")
+        video_input="[vtext]"
+    if filters: cmd += ["-filter_complex",";".join(filters),"-map",video_input]
     else: cmd += ["-map","0:v:0"]
     cmd += (["-map","1:a:0","-af","apad","-shortest"] if audio else ["-map","0:a?","-shortest"])
     cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
-    if subprocess.run(cmd,capture_output=True,text=True).returncode: raise MediaFinisherError("Could not add speech and logo to the video.")
-
-async def finish_video(video_url, narration, voice, logo_bytes):
+    completed=subprocess.run(cmd,capture_output=True,text=True)
+    if completed.returncode: raise MediaFinisherError("Could not add the selected speech, logo, or text overlay to the video.")
+async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white"):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
     output=folder/f"viralizer-{uuid.uuid4().hex}.mp4"
     with tempfile.TemporaryDirectory(prefix="viralizer-finish-") as name:
-        temp=Path(name); video=temp/"source.mp4"; await _download(video_url,video); audio=logo=None
+        temp=Path(name); video=temp/"source.mp4"
+        if str(video_url).startswith('/api/finished-video/'):
+            filename=Path(str(video_url)).name
+            if not re.fullmatch(r'viralizer-[a-f0-9]{32}\.mp4',filename): raise MediaFinisherError("The generated video URL is invalid.")
+            local=folder/filename
+            if not local.is_file(): raise MediaFinisherError("The generated video file was not found.")
+            shutil.copy2(local,video)
+        else: await _download(video_url,video)
+        audio=logo=None
         if narration.strip(): audio=temp/"narration.mp3"; await _speech(narration.strip(),voice,audio)
         if logo_bytes:
             logo=temp/"logo.png"
             try:
                 with Image.open(io.BytesIO(logo_bytes)) as source: source.thumbnail((1000,1000),Image.Resampling.LANCZOS); source.convert("RGBA").save(logo,"PNG")
             except Exception as exc: raise MediaFinisherError("The logo could not be read as an image.") from exc
-        await asyncio.to_thread(_ffmpeg,video,output,audio,logo)
+        await asyncio.to_thread(_ffmpeg,video,output,audio,logo,overlay_text,overlay_position,overlay_color)
     return output
