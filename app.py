@@ -35,6 +35,7 @@ from production_controller import prepare_production, record_production
 from heygen_client import HeyGenClient, HeyGenError
 from heygen_director import build_heygen_script, build_presenter_direction
 from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
+from google_auth import GoogleAuthError, authorization_url as google_authorization_url, configured as google_configured, exchange_code as google_exchange_code, new_state as google_new_state, read_session as read_google_session, read_signed_payload as read_google_state, redirect_uri as google_redirect_uri, session_token as google_session_token, user_allowed as google_user_allowed
 from daily_trends import daily_trends
 from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, discover_global_sources, suggest_logos_for_content
 from mcp_outline_client import (
@@ -72,6 +73,7 @@ _viralizer_report_locks: dict[str, asyncio.Lock] = {}
 
 AUTH_COOKIE = "viralizer_access"
 ADMIN_COOKIE = "viralizer_admin_access"
+GOOGLE_STATE_COOKIE = "viralizer_google_state"
 
 
 def configured_password() -> str:
@@ -83,11 +85,13 @@ def access_token(password: str) -> str:
 
 
 def is_authenticated(request: Request) -> bool:
-    password = configured_password()
-    if not password:
-        return True
     supplied = request.cookies.get(AUTH_COOKIE, "")
-    return hmac.compare_digest(supplied, access_token(password))
+    if read_google_session(supplied):
+        return True
+    password = configured_password()
+    if password and hmac.compare_digest(supplied, access_token(password)):
+        return True
+    return not password and not google_configured()
 
 
 def configured_admin_password() -> str:
@@ -112,7 +116,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/health", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
     if request.url.path not in public_paths and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
@@ -124,7 +128,15 @@ async def require_password(request: Request, call_next):
 async def login_page(request: Request, error: str = ""):
     if is_authenticated(request):
         return RedirectResponse("/", status_code=303)
-    message = '<p class="error">Incorrect password. Please try again.</p>' if error else ""
+    errors = {
+        "password": "Incorrect password. Please try again.",
+        "google_state": "Google sign-in expired or could not be verified. Please try again.",
+        "google_denied": "Google sign-in was cancelled.",
+        "google_failed": "Google sign-in could not be completed. Please try again.",
+        "google_not_allowed": "This Google account is not approved for this workspace.",
+    }
+    message = f'<p class="error">{errors.get(error, "")}</p>' if error else ""
+    google_button = '<a class="google" href="/auth/google"><span>G</span> Continue with Google</a>' if google_configured() else '<p class="google-note">Google sign-in will appear after GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are added.</p>'
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Viralizer Studio · Sign in</title><style>
@@ -132,16 +144,50 @@ async def login_page(request: Request, error: str = ""):
 .card{{width:min(420px,calc(100% - 32px));padding:36px;border:1px solid #563483;border-radius:20px;background:rgba(19,13,30,.94);box-shadow:0 24px 80px #0008}}
 .mark{{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#8b3dff;font-size:24px;font-weight:800}}h1{{margin:20px 0 8px;font-size:30px}}p{{color:#bdb2d2;line-height:1.5}}
 label{{display:block;margin:24px 0 8px;font-weight:700}}input{{width:100%;padding:14px 16px;border:1px solid #56496a;border-radius:11px;background:#0d0915;color:#fff;font-size:17px;outline:none}}input:focus{{border-color:#a66cff;box-shadow:0 0 0 3px #8b3dff33}}
-button{{width:100%;margin-top:16px;padding:14px;border:0;border-radius:11px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-size:16px;font-weight:800;cursor:pointer}}.error{{color:#ff9aaf;margin:14px 0 0}}
-</style></head><body><main class="card"><div class="mark">V</div><h1>Viralizer Video Studio</h1><p>Enter the access password to continue.</p>{message}
-<form method="post" action="/login"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" autofocus required><button type="submit">Open studio</button></form></main></body></html>""")
+button{{width:100%;margin-top:16px;padding:14px;border:0;border-radius:11px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-size:16px;font-weight:800;cursor:pointer}}.google{{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;margin-top:18px;padding:13px;border:1px solid #625873;border-radius:11px;background:#fff;color:#17131d;font-size:16px;font-weight:800;text-decoration:none}}.google span{{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:#4285f4;font-size:20px}}.divider{{display:flex;align-items:center;gap:12px;margin:20px 0 0;color:#877d94;font-size:12px}}.divider:before,.divider:after{{content:"";height:1px;flex:1;background:#3d3449}}.google-note{{font-size:12px;color:#8f849d}}.error{{color:#ff9aaf;margin:14px 0 0}}
+</style></head><body><main class="card"><div class="mark">V</div><h1>Viralizer Video Studio</h1><p>Sign in with Google or use the workspace password.</p>{message}
+{google_button}<div class="divider">or use workspace password</div><form method="post" action="/login"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit">Open studio</button></form></main></body></html>""")
 
+
+@app.get("/auth/google")
+async def google_login(request: Request, next: str = "/"):
+    if not google_configured():
+        return RedirectResponse("/login?error=google_failed", status_code=303)
+    state = google_new_state(next)
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc)).split(",")[0].strip()
+    callback = google_redirect_uri(scheme, host)
+    response = RedirectResponse(google_authorization_url(callback, state), status_code=302)
+    response.set_cookie(GOOGLE_STATE_COOKIE, state, max_age=600, httponly=True, secure=scheme == "https", samesite="lax")
+    return response
+
+
+@app.get("/auth/google/callback")
+async def google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    expected_state = request.cookies.get(GOOGLE_STATE_COOKIE, "")
+    state_payload = read_google_state(state, max_age=600) if state and hmac.compare_digest(state, expected_state) else None
+    if error or not code:
+        return RedirectResponse("/login?error=google_denied", status_code=303)
+    if not state_payload:
+        return RedirectResponse("/login?error=google_state", status_code=303)
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc)).split(",")[0].strip()
+    try:
+        user = await google_exchange_code(code, google_redirect_uri(scheme, host))
+    except GoogleAuthError:
+        return RedirectResponse("/login?error=google_failed", status_code=303)
+    if not google_user_allowed(user):
+        return RedirectResponse("/login?error=google_not_allowed", status_code=303)
+    response = RedirectResponse(str(state_payload.get("next") or "/"), status_code=303)
+    response.set_cookie(AUTH_COOKIE, google_session_token(user), max_age=7 * 86400, httponly=True, secure=scheme == "https", samesite="lax")
+    response.delete_cookie(GOOGLE_STATE_COOKIE)
+    return response
 
 @app.post("/login")
 async def login(request: Request, password: str = Form(...)):
     expected = configured_password()
     if not expected or not hmac.compare_digest(password, expected):
-        return RedirectResponse("/login?error=1", status_code=303)
+        return RedirectResponse("/login?error=password", status_code=303)
     response = RedirectResponse("/", status_code=303)
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     response.set_cookie(
@@ -155,10 +201,11 @@ async def login(request: Request, password: str = Form(...)):
     return response
 
 
-@app.post("/logout")
+@app.api_route("/logout", methods=["GET", "POST"])
 async def logout():
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(AUTH_COOKIE)
+    response.delete_cookie(GOOGLE_STATE_COOKIE)
     return response
 
 
