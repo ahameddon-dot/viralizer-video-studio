@@ -36,7 +36,7 @@ from heygen_client import HeyGenClient, HeyGenError
 from heygen_director import build_heygen_script, build_presenter_direction
 from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
 from daily_trends import daily_trends
-from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, suggest_logos_for_content
+from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, discover_global_sources, suggest_logos_for_content
 from mcp_outline_client import (
     MCPOutlineError,
     get_full_report_from_mcp,
@@ -548,9 +548,17 @@ async def topic_from_mcp(request: TopicRequest):
 @app.get("/api/topics/hot")
 async def hot_topics():
     try:
-        return {"topics": await get_hot_topics_from_mcp()}
+        return {"topics": await get_hot_topics_from_mcp(), "source": "Viralizer MCP"}
     except MCPOutlineError as exc:
-        raise HTTPException(502, str(exc)) from exc
+        try:
+            topics = await discover_global_sources()
+        except Exception as fallback_exc:
+            raise HTTPException(502, str(exc)) from fallback_exc
+        return {
+            "topics": topics,
+            "source": "Worldwide public sources",
+            "notice": "Viralizer MCP was unavailable, so current public-source trends are shown.",
+        }
 
 
 @app.get("/api/taxonomy")
