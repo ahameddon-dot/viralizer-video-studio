@@ -20,6 +20,10 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("protectedKeys=new Set(['topic','suggested_title'", html)
         restore = html[html.index("async function restoreTopicFromUrl"):html.index("function restoreTransferredVideo")]
         self.assertNotIn("localStorage.removeItem('viralizer_video_studio_transfer')", restore)
+        self.assertIn("window.viralizerInitialization=initializeStudioPage()", html)
+        self.assertIn("if(window.viralizerInitialization)await window.viralizerInitialization", html)
+        self.assertIn("if(currentIdentity&&freshIdentity&&currentIdentity!==freshIdentity)return current", html)
+        self.assertIn("document.querySelector('#duration').value='5'", html)
 
 
 if __name__ == "__main__":
