@@ -108,7 +108,8 @@ def _content_text(content: dict[str, Any], user_prompt: str = "") -> str:
 
 
 GROUNDING_PROFILES: tuple[dict[str, Any], ...] = (
-    {"category":"Food / Confectionery","keywords":("chocolate","tasting","flavor","candy","confectionery","dessert","food review","recipe","cooking"),"style":"premium food commercial"},
+    {"category":"Food / Seafood","keywords":("prawn","prawns","shrimp","seafood","lobster","crab","shellfish"),"style":"premium seafood commercial"},
+    {"category":"Food / Confectionery","keywords":("chocolate","wonka","candy","confectionery","dessert","truffle","praline"),"style":"premium food commercial"},
     {"category":"Gaming","keywords":("gaming","game","playstation","xbox","moba","esports","console","hero","player"),"style":"premium gaming commercial"},
     {"category":"Automotive","keywords":("car","automotive","vehicle","motorcycle","driving","road","launch"),"style":"premium automotive commercial"},
     {"category":"Beauty / Product","keywords":("perfume","fragrance","beauty","cosmetic","skincare","makeup"),"style":"luxury beauty commercial"},
@@ -123,7 +124,7 @@ GROUNDING_PROFILES: tuple[dict[str, Any], ...] = (
 NON_VISUAL_TERMS = ("history", "significance", "fun fact", "trivia", "flavor description", "background information", "analysis")
 INTERACTION_TERMS = ("poll", "comments", "comment", "subscribe", "call to action", "cta", "like and share")
 VISUAL_TERMS = (
-    "chocolate", "assortment", "tasting", "break", "texture", "filling", "hand", "bottle", "perfume", "product",
+    "chocolate", "assortment", "tasting", "break", "texture", "filling", "prawn", "shrimp", "seafood", "shellfish", "pan", "tongs", "hand", "bottle", "perfume", "product",
     "car", "vehicle", "road", "wheel", "character", "hero", "game", "interface", "vinyl", "record", "person",
     "portrait", "phone", "computer", "chip", "office", "market", "city", "landscape", "water", "fire", "smoke",
 )
@@ -160,9 +161,12 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
     if any(term in lower for term in ("artificial intelligence", " ai ", "technology", "software", "chip", "platform")) and "stock market" not in lower and "stocks" not in lower:
         profile = next(item for item in GROUNDING_PROFILES if item["category"] == "Technology / Business")
     topic = _clean(content.get("topic") or content.get("suggested_title") or content.get("hook"), 22)
-    if profile["category"] == "Food / Confectionery":
-        core = "chocolate tasting and review" if "chocolate" in lower else topic or "food tasting and presentation"
-        intent = "taste, review and present the featured food varieties"
+    if profile["category"] == "Food / Seafood":
+        core = topic or "seafood cooking technique"
+        intent = "demonstrate one specific seafood cooking technique and present the finished result"
+    elif profile["category"] == "Food / Confectionery":
+        core = "chocolate tasting and review" if "chocolate" in lower else topic or "confectionery tasting and presentation"
+        intent = "taste, review and present the featured confectionery varieties"
     elif profile["category"] == "Gaming":
         core = topic or "gaming update"
         intent = "show the relevant game, player experience or gaming product update"
@@ -207,7 +211,9 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
 def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
     subject = grounding["core_subject"]
     category = grounding["category"]
-    if category == "Food / Confectionery":
+    if category == "Food / Seafood":
+        candidates = [f"one nearly cooked prawn sizzling in a premium pan as a chef turns it once with tongs", f"a chef glazing one prawn with herb butter in a controlled pan-cooking close-up", f"a finished prawn presented with its cooking surface and restrained garnish"]
+    elif category == "Food / Confectionery":
         if "chocolate" in grounding["source_content"].lower():
             candidates = ["an inviting chocolate assortment arranged on an elegant tasting surface", "a hand selecting one chocolate piece from a varied assortment", "a hand selecting and gently breaking one chocolate piece to reveal its detailed interior texture and filling", "different chocolate pieces presented through their contrasting shapes, textures and fillings"]
         else:
@@ -244,12 +250,14 @@ def _select_concept(candidates: list[str], grounding: dict[str, Any], duration: 
 
 ABSTRACT_TERMS = ("analysis", "review", "update", "growth", "success", "competition", "innovation", "performance", "popularity", "investment", "comparison", "trend", "storyline", "impact")
 PLACEHOLDER_ACTIONS = ("perform one action", "show the topic", "make the subject visible", "show relevant activity", "perform appropriate movement", "show a representative scene", "interact naturally", "one clear human action", "one physically believable action")
-PHYSICAL_VERBS = ("selects", "selecting", "breaks", "breaking", "lifts", "places", "picks up", "begins playing", "executes", "rebounds", "accelerates", "drives", "turns", "opens", "applies", "reviews", "tracks", "rotates", "faces", "steps", "raises", "moves", "holds", "walks", "demonstrates", "operates", "completes", "secures", "pivots", "brings", "breathes", "blinks", "shifts")
+PHYSICAL_VERBS = ("selects", "selecting", "breaks", "breaking", "lifts", "places", "picks up", "begins playing", "executes", "rebounds", "accelerates", "drives", "turn", "turns", "uses", "spoons", "opens", "applies", "reviews", "tracks", "rotates", "faces", "steps", "raises", "moves", "holds", "walks", "demonstrates", "operates", "completes", "secures", "pivots", "brings", "breathes", "blinks", "shifts")
 
 
 def _visual_action_candidates(grounding: dict[str, Any], concept: str, generation_type: str) -> list[str]:
     source = grounding["source_content"].lower()
     category = grounding["category"]
+    if category == "Food / Seafood":
+        return ["A chef uses tongs to turn one nearly cooked prawn once in the hot pan, spoons glossy herb butter over it, and lets it settle naturally.", "A chef turns one nearly cooked prawn once with tongs while butter sizzles around it."]
     if category == "Food / Confectionery":
         return ["A hand selects one chocolate piece and gently breaks it open to reveal the interior texture and filling.", "A hand lifts one tasting piece from the assortment and turns it slightly to reveal its texture."]
     if category == "Sports" and any(term in source for term in ("wrestling", "wwe", "wweraw", "wrestler")):
@@ -424,6 +432,13 @@ def _specialize_layers(layers: list[MotionLayer], text: str) -> list[MotionLayer
             MotionLayer("clothing and hair", "secondary", "SUBTLE", "respond naturally to body movement, inertia and gravity", "body attachment points", "attached_to wrestlers", "athlete movement"),
             MotionLayer("ring ropes and audience", "reactive", "MICRO", "show only restrained impact response and soft background activity", "ring posts and arena background", "reacts_to nearby movement", "ring action"),
         ]
+    if any(term in text for term in ("prawn", "prawns", "shrimp", "seafood", "shellfish")):
+        return [
+            MotionLayer("chef tongs and one prawn", "primary", "SUBTLE", "turn the nearly cooked prawn once with stable tong contact, then spoon herb butter over it", "prawn center and tong tips", "tongs maintain contact with prawn", "deliberate cooking action"),
+            MotionLayer("pan and supporting ingredients", "locked", "LOCKED", "remain stable in their established positions without duplication or shape change", "pan surface", "independent locked arrangement", "none"),
+            MotionLayer("butter and pan juices", "reactive", "MICRO", "sizzle and flow naturally around the prawn after the butter is added", "hot pan surface", "reacts_to added butter and heat", "heat"),
+            MotionLayer("steam and highlights", "reactive", "MICRO", "a small amount of steam rises while highlights shift subtly across the shell", "prawn and pan surface", "reacts_to heat and camera motion", "heat and controlled light"),
+        ]
     if "chocolate" in text:
         return [
             MotionLayer("hand and chocolate piece", "primary", "SUBTLE", "a hand naturally selects one piece and gently breaks it open to reveal the interior texture or filling", "finger contact and chocolate center", "hand holds chocolate at stable contact points", "deliberate tasting action"),
@@ -455,6 +470,8 @@ def _specialize_layers(layers: list[MotionLayer], text: str) -> list[MotionLayer
 
 def _negatives(scene: str, category: str = "", text: str = "") -> list[str]:
     common = ["no cuts", "no morphing", "no duplicated or disappearing subjects", "no flicker or abrupt camera movement", "no readable text, numbers, captions, watermarks or generated logos"]
+    if category == "Food / Seafood":
+        return common + ["no distorted hands or tongs", "no duplicated or malformed prawns", "no floating garnish", "no sudden raw-to-cooked transformation"]
     if category == "Food / Confectionery":
         return common + ["no distorted fingers", "no melting or deforming chocolate unless explicitly requested", "no duplicated chocolate pieces", "no floating crumbs"]
     if category == "Sports":
@@ -501,7 +518,7 @@ def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_
         concept_validation = _semantic_validate(selected, grounding, "visual_concept")
         concept_validation["repaired"] = True
     action_candidates, concrete_action, action_validation = _resolve_visual_action(grounding, selected, generation_type)
-    category_scene = {"Food / Confectionery":"PRODUCT", "Gaming":"GAMING", "Automotive":"AUTOMOTIVE", "Beauty / Product":"BEAUTY", "Finance / Business":"FINANCE", "Technology / Business":"TECH", "News":"NEWS", "UI / Interface":"UI_ANIMATION", "Sports":"ACTION"}
+    category_scene = {"Food / Seafood":"PRODUCT", "Food / Confectionery":"PRODUCT", "Gaming":"GAMING", "Automotive":"AUTOMOTIVE", "Beauty / Product":"BEAUTY", "Finance / Business":"FINANCE", "Technology / Business":"TECH", "News":"NEWS", "UI / Interface":"UI_ANIMATION", "Sports":"ACTION"}
     scene = category_scene.get(grounding["category"], classify_scene(content, user_prompt))
     text = grounding["source_content"].lower()
     layers = _specialize_layers(_generic_layers(scene), text)
@@ -578,6 +595,8 @@ def _natural_motion_sentence(layer: MotionLayer) -> str:
 
 
 def _preservation_language(plan: MotionPlan) -> str:
+    if plan.category == "Food / Seafood":
+        return "Maintain stable hand anatomy, tong geometry, prawn count, shell shape, pan arrangement, composition and lighting throughout."
     if plan.category == "Food / Confectionery":
         return "Maintain stable hand anatomy, chocolate shapes, materials, composition and lighting throughout."
     if plan.category == "Sports":
@@ -594,6 +613,8 @@ def _preservation_language(plan: MotionPlan) -> str:
 
 
 def _supporting_direction(plan: MotionPlan) -> str:
+    if plan.category == "Food / Seafood":
+        return "As herb butter reaches the hot pan, let it sizzle and flow naturally around the prawn while a small amount of steam rises. Keep the pan and surrounding cooking surface completely still."
     if plan.category == "Food / Confectionery":
         return "As the chocolate breaks, allow a few tiny crumbs to fall naturally under gravity while soft highlights shift subtly across the chocolate surface. Keep the remaining assortment completely still and fixed in its arrangement."
     if plan.category == "Sports":
@@ -614,6 +635,8 @@ def _supporting_direction(plan: MotionPlan) -> str:
 
 def _negative_language(plan: MotionPlan) -> str:
     shared = "No cuts, flicker, abrupt camera movement, readable text, captions, watermarks or generated logos."
+    if plan.category == "Food / Seafood":
+        return shared + " No distorted hands or tongs, duplicated or malformed prawns, floating garnish, shell deformation or sudden raw-to-cooked transformation."
     if plan.category == "Food / Confectionery":
         return shared + " No distorted fingers, duplicated or disappearing chocolate pieces, floating crumbs or unintended melting."
     if plan.category == "Sports":
@@ -645,6 +668,8 @@ def _explicit_primary_action(plan: MotionPlan) -> str:
     lower = action.lower()
     if plan.category == "Sports" and "takedown" in lower:
         return "One wrestler secures the opponent, pivots with controlled balance, and brings them onto the mat inside the arena ring in one believable takedown as the opponent reacts naturally"
+    if plan.category == "Food / Seafood":
+        return "A chef uses tongs to turn one nearly cooked prawn once in the hot pan, spoons glossy herb butter over it, and lets it settle naturally"
     if plan.category == "Food / Confectionery" and any(term in lower for term in ("tastes", "selects", "breaks")):
         return "A hand selects one chocolate piece, gently breaks it open, and reveals the interior texture and filling"
     if plan.category == "Beauty / Product" and any(term in lower for term in ("demonstrates", "interacts", "lifts", "turns")):
@@ -694,6 +719,7 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
         body = f"{opening}{layer_directions} {support} {plan.camera['direction']} {preservation}"
     else:
         setting = {
+            "Food / Seafood": "Stage a clean premium cooking close-up with one clearly defined nearly cooked prawn in a dark elegant pan, restrained herb butter, warm restaurant lighting, shallow depth of field and a softly blurred kitchen background.",
             "Food / Confectionery": "Stage an inviting assortment of richly detailed pieces on an elegant tasting surface with warm premium confectionery lighting, shallow depth of field and a softly blurred tasting environment.",
             "Sports": "Place the athletes inside a brightly lit professional arena with a clearly defined competition area and a softly active audience.",
             "Gaming": "Use a premium console gaming environment with controlled screen light and stable recognizable gaming objects.",
@@ -724,6 +750,8 @@ def build_shot_specification(plan: MotionPlan) -> dict[str, Any]:
     source = plan.source_content.lower()
     if plan.category == "Sports" and any(term in source for term in ("wrestling", "wwe", "wweraw", "wrestler")):
         return {"category":plan.category,"core_subject":plan.core_subject,"subjects":["two athletic professional wrestlers"],"environment":"brightly lit professional wrestling arena","location":"inside a clearly defined wrestling ring","important_objects":["ring ropes","wrestling mat"],"forbidden_objects":["soccer player","soccer ball","football goal","football pitch","football tunnel","football kit"],"start_state":"both wrestlers standing in contact at the beginning of a grapple, balanced on their feet","primary_action":"controlled grapple, pivot and takedown","camera":"ringside tracking view","composition":"vertical 9:16, both wrestlers fully readable with ring ropes and mat visible","lighting":"bright realistic arena lighting","style":plan.creative_style}
+    if plan.category == "Food / Seafood":
+        return {"category":plan.category,"core_subject":plan.core_subject,"subjects":["one natural chef hand with metal tongs","one nearly cooked prawn"],"environment":"premium seafood cooking setting","location":"inside a clean dark pan","important_objects":["single prawn","metal tongs","herb butter","pan juices"],"forbidden_objects":["chocolate","confectionery","candy","dessert","filling","wrapper"],"start_state":"one nearly cooked prawn resting in the hot pan as stable tongs make contact","primary_action":"turn the prawn once, spoon herb butter over it, and settle","camera":"one slow controlled macro push-in","composition":"vertical 9:16 premium seafood close-up","lighting":"warm controlled restaurant lighting","style":plan.creative_style}
     if plan.category == "Food / Confectionery":
         return {"category":plan.category,"core_subject":plan.core_subject,"subjects":["one natural hand","assorted chocolate pieces"],"environment":"premium confectionery tasting setting","location":"elegant tasting surface","important_objects":["chocolate assortment","opened chocolate filling","tiny crumbs"],"forbidden_objects":["computer","technology laboratory","prototype","engineering equipment","vehicle"],"start_state":"hand reaching toward an intact chocolate piece in the assortment","primary_action":"select, break and reveal the chocolate filling","camera":"controlled macro push-in","composition":"vertical 9:16 macro food composition","lighting":"warm premium confectionery lighting","style":plan.creative_style}
     if plan.category == "Automotive":

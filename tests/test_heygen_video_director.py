@@ -33,6 +33,14 @@ class HeyGenVideoDirectorTests(unittest.TestCase):
                 self.assertNotIn("visual_bible", payload)
                 self.assertNotIn("semantic_score", payload)
 
+    def test_prawn_seafood_does_not_inherit_chocolate_story(self):
+        plan = build_heygen_plan({"topic": "prawn: Seafood Cooking Techniques"}, 5)
+        self.assertEqual(plan["content_grounding"]["category"], "Food / Seafood")
+        rendered = str(plan).lower()
+        self.assertIn("prawn", rendered)
+        self.assertIn("tongs", rendered)
+        self.assertNotIn("chocolate", rendered)
+        self.assertNotIn("confectionery", rendered)
     def test_wrestling_never_selects_other_sports(self):
         plan = build_heygen_plan({"topic": "Professional wrestling match analysis"}, 15)
         rendered = str(plan).lower()

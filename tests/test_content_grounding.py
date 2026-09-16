@@ -34,6 +34,15 @@ class ContentGroundingRegressionTests(unittest.TestCase):
         self.assertNotIn("technology studio", plan.final_prompt.lower())
         self.assert_semantic_pass(plan)
 
+    def test_prawn_seafood_never_uses_chocolate_template(self):
+        plan = self.plan("prawn: Seafood Cooking Techniques", "Demonstrate a premium prawn cooking technique with tongs, pan heat and herb butter")
+        self.assertEqual(plan.category, "Food / Seafood")
+        self.assertIn("prawn", plan.final_prompt.lower())
+        self.assertIn("tongs", plan.final_prompt.lower())
+        self.assertIn("herb butter", plan.final_prompt.lower())
+        for forbidden in ("chocolate", "confectionery", "candy", "filling", "tasting surface"):
+            self.assertNotIn(forbidden, plan.final_prompt.lower())
+        self.assert_semantic_pass(plan)
     def test_sony_gaming_update(self):
         plan = self.plan("Sony gaming industry update", "PlayStation players and a new game experience")
         self.assertEqual(plan.category, "Gaming")
