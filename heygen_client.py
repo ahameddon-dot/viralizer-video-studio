@@ -25,6 +25,27 @@ class HeyGenClient:
     async def voices(self):
         async with httpx.AsyncClient(timeout=30) as c:r=await c.get(BASE+'/v2/voices',headers=self.headers)
         return await self._json(r)
+    async def agent_styles(self):
+        async with httpx.AsyncClient(timeout=30) as c:r=await c.get(BASE+'/v3/video-agents/styles',headers=self.headers)
+        return await self._json(r)
+    async def generate_agent(self,payload:dict[str,Any]):
+        async with httpx.AsyncClient(timeout=60) as c:r=await c.post(BASE+'/v3/video-agents',headers=self.headers,json=payload)
+        data=await self._json(r);session_id=data.get('session_id')
+        if not session_id:raise HeyGenError('HeyGen Video Agent did not return a session ID.')
+        return str(session_id)
+    async def agent_status(self,session_id:str):
+        async with httpx.AsyncClient(timeout=30) as c:r=await c.get(BASE+f'/v3/video-agents/{session_id}',headers=self.headers)
+        data=await self._json(r);state=str(data.get('status','')).lower();video_id=str(data.get('video_id') or '')
+        failed=state in {'failed','canceled','cancelled','stopped'}
+        complete=state in {'completed','complete','success','succeeded'} or bool(video_id)
+        result={'status':'failed' if failed else 'complete' if complete else 'processing','stage':state or 'processing','progress':data.get('progress'),'video_id':video_id or None,'result':data}
+        if video_id:
+            try:
+                rendered=await self.status(video_id)
+                result.update(status=rendered['status'],url=rendered.get('url'),thumbnail_url=rendered.get('thumbnail_url'),render_result=rendered.get('result'))
+            except HeyGenError:
+                pass
+        return result
     async def generate(self,script:str,avatar_id:str,voice_id:str,*,background:str='#0B1020',width:int=1080,height:int=1920):
         if not script.strip():raise HeyGenError('A narration script is required for a HeyGen presenter video.')
         avatar_id=(avatar_id or os.getenv('HEYGEN_AVATAR_ID','')).strip();voice_id=(voice_id or os.getenv('HEYGEN_VOICE_ID','')).strip()

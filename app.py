@@ -34,6 +34,7 @@ from long_video import start as start_long_video, status as long_video_status
 from production_controller import prepare_production, record_production
 from heygen_client import HeyGenClient, HeyGenError
 from heygen_director import build_heygen_script, build_presenter_direction
+from heygen_video_director import build_heygen_plan, compile_heygen_request
 from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
 from google_auth import GoogleAuthError, authorization_url as google_authorization_url, configured as google_configured, exchange_code as google_exchange_code, new_state as google_new_state, read_session as read_google_session, read_signed_payload as read_google_state, redirect_uri as google_redirect_uri, session_token as google_session_token, user_allowed as google_user_allowed
 from daily_trends import daily_trends
@@ -359,6 +360,12 @@ class GenerateRequest(BaseModel):
     avatar_id: str = ""
     voice_id: str = ""
     background: str = "#0B1020"
+    generation_type: str = "text_to_video"
+    debug_prompt: bool = False
+    visual_mode: str = "AUTO"
+    captions: bool = False
+    heygen_style_id: str = ""
+    brand_kit_id: str = ""
 
 
 class SaveVideoRequest(BaseModel):
@@ -687,14 +694,22 @@ async def heygen_voices():
         return {"voices": data.get("voices") or data.get("items") or []}
     except HeyGenError as exc:
         raise HTTPException(502, str(exc)) from exc
+@app.get("/api/heygen/styles")
+async def heygen_styles():
+    try:
+        data = await HeyGenClient().agent_styles()
+        styles = data if isinstance(data, list) else data.get("styles") or data.get("items") or []
+        return {"styles": styles}
+    except HeyGenError as exc:
+        raise HTTPException(502, str(exc)) from exc
 @app.post("/api/video/generate")
 async def generate_video(request: GenerateRequest):
     selected_provider = request.provider
     if selected_provider == "auto":
         routing_text = " ".join(str(request.content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
         presenter_intent = any(word in routing_text for word in ("presenter", "spokesperson", "talking", "host", "explainer", "news anchor"))
-        selected_provider = "hybrid" if presenter_intent and all(os.getenv(name, "").strip() for name in ("HEYGEN_API_KEY", "HEYGEN_AVATAR_ID", "HEYGEN_VOICE_ID")) and bool(os.getenv("PIXVERSE_API_KEY_RUNTIME", "").strip() or os.getenv("PIXVERSE_API_KEY", "").strip()) else "pixverse"
-    production = prepare_production(request.content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality)
+        selected_provider = "heygen" if presenter_intent and bool(os.getenv("HEYGEN_API_KEY", "").strip()) else "pixverse"
+    production = prepare_production(request.content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
     prompt = production["prompt"]
     if not prompt:
         raise HTTPException(422, "The selected content did not produce a usable video direction.")
@@ -722,6 +737,11 @@ async def generate_video(request: GenerateRequest):
             avatar_id=request.avatar_id,
             voice_id=request.voice_id,
             background=request.background,
+            aspect_ratio=request.aspect_ratio,
+            visual_mode=request.visual_mode,
+            captions=request.captions,
+            style_id=request.heygen_style_id,
+            brand_kit_id=request.brand_kit_id,
         )
         production.update(job_id=job_id, provider=selected_provider, status="processing")
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
@@ -758,7 +778,7 @@ async def generate_image_video(
     }
     role_counts = {role: len(files) for role, files in role_uploads.items() if files}
     role_direction = "; ".join(f"{count} {role} reference{'s' if count != 1 else ''}" for role, count in role_counts.items())
-    video_prompt = (prompt or build_video_prompt(content, duration)).strip()
+    video_prompt = (prompt or build_video_prompt(content, duration, generation_type="image_to_video", quality_mode=True)).strip()
     if role_direction:
         video_prompt += f" References: {role_direction}. Preserve their exact identity and design."
     video_prompt += " Text is allowed only if requested." if allow_text else " No text."
@@ -844,13 +864,24 @@ async def video_logo_suggestions(request: LogoSuggestionRequest):
 
 @app.get("/api/video/providers")
 async def video_providers():
-    providers = provider_catalog()
-    providers.append({"id": "hybrid", "name": "Hybrid", "description": "HeyGen presenter with PixVerse content visuals", "enabled": True, "configured": bool(os.getenv("HEYGEN_API_KEY", "").strip() and (os.getenv("PIXVERSE_API_KEY_RUNTIME", "").strip() or os.getenv("PIXVERSE_API_KEY", "").strip()))})
-    return {"providers": providers}
+    return {"providers": provider_catalog()}
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
-    return {"prompt": build_video_prompt(request.content, request.duration), "narration": build_narration_script(request.content, request.duration), "heygen_script": build_heygen_script(request.content, request.duration), "heygen_direction": build_presenter_direction(request.content, request.duration)}
-
+    prompt_result = build_video_prompt(
+        request.content,
+        request.duration,
+        generation_type=request.generation_type,
+        quality_mode=request.quality_mode,
+        user_prompt=request.prompt or "",
+        include_debug=request.debug_prompt,
+    )
+    prompt, motion_debug = prompt_result if request.debug_prompt else (prompt_result, None)
+    heygen_plan = build_heygen_plan(request.content, request.duration, visual_mode=request.visual_mode, aspect_ratio=request.aspect_ratio, captions=request.captions, user_direction=request.prompt or "")
+    heygen_payload = compile_heygen_request(heygen_plan, avatar_id=request.avatar_id, voice_id=request.voice_id, style_id=request.heygen_style_id, brand_kit_id=request.brand_kit_id)
+    response = {"prompt": prompt, "narration": build_narration_script(request.content, request.duration), "heygen_script": heygen_plan["script"], "heygen_direction": heygen_plan["compiled_prompt"], "heygen_plan": heygen_plan, "heygen_request": heygen_payload}
+    if motion_debug is not None:
+        response["motion_director"] = motion_debug
+    return response
 
 @app.get("/api/video/{provider}/{job_id}")
 async def video_status(provider: str, job_id: str):
@@ -946,6 +977,16 @@ async def finished_video(filename: str):
         media_type="video/mp4",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+@app.get("/api/video/reference/{job_id}/{scene_index}")
+async def video_reference_image(job_id: str, scene_index: int):
+    if not re.fullmatch(r"long-[a-f0-9]{32}", job_id) or scene_index < 0 or scene_index > 20:
+        raise HTTPException(404, "Reference image not found.")
+    filename = f"reference-{job_id}-{scene_index}.png"
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+    if not path.is_file():
+        raise HTTPException(404, "Reference image not found.")
+    return FileResponse(path, media_type="image/png", headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 def growth_http_error(exc: PixVerseGrowthError) -> HTTPException:
     status_code = {

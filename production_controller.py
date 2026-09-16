@@ -25,20 +25,14 @@ def shot_count(duration: int) -> int:
     return 8
 
 
-def prepare_production(content: dict[str, Any], duration: int, user_prompt: str, *, quality_mode: bool, reference_available: bool = False, aspect_ratio: str = "9:16", quality: str = "720p") -> dict[str, Any]:
+def prepare_production(content: dict[str, Any], duration: int, user_prompt: str, *, quality_mode: bool, reference_available: bool = False, aspect_ratio: str = "9:16", quality: str = "720p", generation_type: str = "text_to_video") -> dict[str, Any]:
     route = choose_generation_route(content, reference_available=reference_available)
-    base = (user_prompt or build_video_prompt(content, duration)).strip()
+    # The reviewed text is the final PixVerse prompt. When absent, compile it once
+    # through Motion Director; do not silently add a second prompt template later.
+    base = (user_prompt or build_video_prompt(content, duration, generation_type=generation_type, quality_mode=quality_mode)).strip()
     category = str(content.get("category") or content.get("entity_type_label") or "General")
-    if quality_mode:
-        prompt = (
-            f"{base}\n\nProduction constraints: Create {shot_count(duration)} intentional visual beat(s) at most. "
-            "Include one clean hero composition suitable for a social preview and keep useful negative space for later graphics. "
-            "Use one controlled camera move per beat, physically believable motion, stable subject identity and stable object geometry. "
-            "Do not render important text, numbers, interfaces, captions, or logos inside the footage; Viralizer adds exact graphics afterward."
-        )
-        style = "premium"
-    else:
-        prompt, style = base, "fast"
+    prompt = base
+    style = "premium" if quality_mode else "fast"
     return {
         "quality_mode": quality_mode,
         "generation_mode": route.mode if quality_mode else "text_to_video",

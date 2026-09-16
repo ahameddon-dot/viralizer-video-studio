@@ -1,8 +1,9 @@
-import asyncio, os, re, shutil, subprocess, uuid
+import asyncio, json, os, re, shutil, subprocess, uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import httpx
-from pixverse_client import PixVerseClient
+from pixverse_client import PixVerseClient, build_video_prompt
 from openai_image_client import OpenAIImageError, generate_instagram_image
 from quality_pipeline import build_plan, repair_prompt, score_reference, score_video
 
@@ -16,8 +17,13 @@ def durations(total):
     return {20:[5,5,5,5],30:[10,5,5,5,5],45:[8,8,8,8,8,5],60:[10,10,10,10,5,5,5,5]}[total]
 
 MODEL_NEGATIVE = "readable text, letters, words, numbers, captions, subtitles, title cards, labels, signs, posters, newspapers, charts, graphs, dashboards, phone UI, visible app interface, keyboard letters, brand names, fake logos, watermarks, pseudo-text, malformed glyphs, scrambled typography, distorted hands, extra fingers, missing fingers, warped phones, duplicated objects, flicker, unstable camera, inconsistent clothing, abrupt transformation"
+def _persist_generation_trace(folder:Path,entry:dict[str,Any])->None:
+    trace_file=folder/'generation-trace.jsonl'
+    record={'timestamp':datetime.now(timezone.utc).isoformat(),**entry}
+    with trace_file.open('a',encoding='utf-8') as stream:
+        stream.write(json.dumps(record,ensure_ascii=True)+'\n')
 
-def prompts(content,total):
+def prompts(content,total,creative_prompt=""):
     topic=clip(content.get('topic') or content.get('suggested_title') or content.get('hook'),20)
     context=' '.join(str(content.get(key) or '') for key in ('topic','category','entity_type_label')).lower()
     if any(word in context for word in ('iphone','smartphone photography','mobile photography','camera tips','photography')):
@@ -40,7 +46,9 @@ def prompts(content,total):
     result=[]
     for i,length in enumerate(durations(total)):
         purpose=PURPOSES[min(i,len(PURPOSES)-1)]; action=actions[min(i,len(actions)-1)]; camera=('slow controlled push-in' if i%3==0 else 'gentle lateral tracking' if i%3==1 else 'locked camera with purposeful subject motion')
-        prompt=(f"Create one uninterrupted {length}-second vertical {style} clip for a visual story about {topic}. Purpose: {purpose}. Show {profile}. The subject {action}. Camera: one {camera}, no additional camera moves. Include realistic breathing, hand and fabric motion, subtle environmental activity, and stable object geometry. Lighting: {light}. Preserve the exact subject, clothing, object, location language, and color palette for continuity with adjacent clips. Keep every surface free of readable writing. No visible screen content, text, numbers, signs, labels, captions, interfaces, watermarks, or generated logos.")
+        shot_content=dict(content)
+        shot_content["video_idea"]=f"{creative_prompt} {purpose}: {action}. Keep continuity with adjacent scenes.".strip()
+        prompt=build_video_prompt(shot_content,length,generation_type="text_to_video",quality_mode=False)
         result.append((length,prompt))
     return result
 async def _poll(client,video_id):
@@ -66,18 +74,35 @@ def _combine(clips,output):
 
 async def _quality_shot(client,shot,quality,folder,job_id,index,job):
     reference_bytes=None; reference_score=None; reference_retries=0; route=shot['route']
+    preflight=shot.get('preflight_consistency') or {"status":"FAIL","reason":"Missing shot consistency validation"}
+    job.update(current_job_id=job_id,generation_mode=route,core_subject=shot.get('shot_specification',{}).get('core_subject'),visual_concept=shot.get('motion_debug',{}).get('selected_visual_concept'),shot_specification=shot.get('shot_specification'),reference_image_prompt=shot.get('reference_prompt'),reference_prompt_consistency=preflight,final_pixverse_prompt=shot.get('motion_prompt'))
+    job.setdefault('generation_trace',[]).append({'job_id':job_id,'scene_index':index,'core_subject':job.get('core_subject'),'category':shot.get('shot_specification',{}).get('category'),'visual_concept':job.get('visual_concept'),'concrete_action':shot.get('motion_debug',{}).get('concrete_visual_action'),'generation_mode':route,'shot_specification':shot.get('shot_specification'),'reference_image_prompt':shot.get('reference_prompt'),'reference_prompt_consistency':preflight,'final_pixverse_prompt':shot.get('motion_prompt')})
+    if route=='image_to_video' and preflight.get('status')!='PASS':
+        route='text_to_video';job['generation_mode']='text_to_video';job['reference_semantic_validation']={'status':'FAIL','reason':'Reference prompt and motion prompt failed canonical shot preflight; routed to text-to-video.'}
     if route=='image_to_video':
         job['stage']=f'Preparing reference frame {index+1} of {job["scenes_total"]}'
         try:
             reference_bytes=await generate_instagram_image({},shot['reference_prompt'],purpose='pixverse')
-            reference_score=await score_reference(reference_bytes)
-            if reference_score.get('available') and float(reference_score.get('overall_quality_score',0))<85:
+            reference_path=folder/f"reference-{job_id}-{index}.png"
+            reference_path.write_bytes(reference_bytes)
+            job['reference_image_path']=str(reference_path)
+            job['reference_image_url']=f"/api/video/reference/{job_id}/{index}"
+            reference_score=await score_reference(reference_bytes,shot.get('shot_specification'))
+            job['reference_semantic_validation']={'status':reference_score.get('semantic_validation_status','FAIL') if reference_score.get('available') else 'UNAVAILABLE','semantic_alignment_score':reference_score.get('semantic_alignment_score'),'detected_subjects':reference_score.get('detected_subjects',[]),'conflicting_objects':reference_score.get('conflicting_objects',[]),'reason':reference_score.get('failure_reason','')}
+            if reference_score.get('available') and (float(reference_score.get('overall_quality_score',0))<85 or job['reference_semantic_validation']['status']!='PASS'):
                 reference_retries=1
-                repaired=repair_prompt(shot['reference_prompt'],str(reference_score.get('failure_reason') or 'composition'))
+                repaired=repair_prompt(shot['reference_prompt'],str(reference_score.get('failure_reason') or 'semantic mismatch'))
                 reference_bytes=await generate_instagram_image({},repaired,purpose='pixverse')
-                reference_score=await score_reference(reference_bytes)
+                reference_score=await score_reference(reference_bytes,shot.get('shot_specification'))
+                job['reference_semantic_validation']={'status':reference_score.get('semantic_validation_status','FAIL') if reference_score.get('available') else 'UNAVAILABLE','semantic_alignment_score':reference_score.get('semantic_alignment_score'),'detected_subjects':reference_score.get('detected_subjects',[]),'conflicting_objects':reference_score.get('conflicting_objects',[]),'reason':reference_score.get('failure_reason','')}
+            reference_path.write_bytes(reference_bytes)
         except OpenAIImageError:
             route='text_to_video';reference_bytes=None;reference_score={'available':False,'status':'unavailable'}
+    if route=='image_to_video' and job.get('reference_semantic_validation',{}).get('status')!='PASS':
+        route='text_to_video'
+        job['generation_mode']='text_to_video'
+        job['reference_fallback_reason']='Reference image was not pixel-validated; using text-to-video instead of risking an unrelated start frame.'
+        job['generation_trace'][-1].update(generation_mode='text_to_video',reference_fallback_reason=job['reference_fallback_reason'])
     best=None; best_score=-1; retries=0; failure=''
     for attempt in range(2):
         job['stage']=f'Generating scene {index+1} of {job["scenes_total"]}' if attempt==0 else f'Improving scene {index+1} of {job["scenes_total"]}'
@@ -85,8 +110,17 @@ async def _quality_shot(client,shot,quality,folder,job_id,index,job):
         active_prompt=base_prompt if attempt==0 else repair_prompt(base_prompt,failure)
         if route=='image_to_video' and reference_bytes:
             image_id=await client.upload_image(image_bytes=reference_bytes,filename=f'{job_id}-reference-{index}.png',content_type='image/png')
+            job['reference_image_id']=image_id
+            request_payload={'mode':'image_to_video','image_id':image_id,'prompt':active_prompt,'duration':shot['duration'],'quality':quality,'model':'v6'}
+            job['pixverse_request_payload']=request_payload
+            job['generation_trace'][-1].update(reference_image_id=image_id,reference_image_path=job.get('reference_image_path'),reference_semantic_validation=job.get('reference_semantic_validation'),pixverse_request_payload=request_payload)
+            _persist_generation_trace(folder,job['generation_trace'][-1])
             video_id=await client.generate_from_image(image_id,active_prompt,duration=shot['duration'],quality=quality)
         else:
+            request_payload={'mode':'text_to_video','prompt':active_prompt,'duration':shot['duration'],'quality':quality,'model':'v6','negative_prompt':MODEL_NEGATIVE}
+            job['pixverse_request_payload']=request_payload
+            job['generation_trace'][-1].update(pixverse_request_payload=request_payload)
+            _persist_generation_trace(folder,job['generation_trace'][-1])
             video_id=await client.generate(active_prompt,duration=shot['duration'],quality=quality,negative_prompt=MODEL_NEGATIVE)
         url=await _poll(client,video_id); path=folder/f'{job_id}-scene-{index}-attempt-{attempt}.mp4';await _download(url,path)
         job['stage']=f'Checking scene {index+1} of {job["scenes_total"]}'
@@ -109,11 +143,11 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
     try:
         client=PixVerseClient()
         if quality_mode:
-            planned=build_plan(content,total); plan=planned['shots'];job.update(scenes_total=len(plan),visual_bible=planned['visual_bible'],generation_route=planned['route'],stage='Creating visual direction')
+            planned=build_plan(content,total,creative_prompt=(production or {}).get("prompt","")); plan=planned['shots'];job.update(scenes_total=len(plan),visual_bible=planned['visual_bible'],generation_route=planned['route'],stage='Creating visual direction')
             for index,shot in enumerate(plan):
                 clip_paths.append(await _quality_shot(client,shot,quality,folder,job_id,index,job));job['scenes_complete']=index+1
         else:
-            plan=prompts(content,total);job.update(scenes_total=len(plan),stage='Preparing scenes')
+            plan=prompts(content,total,creative_prompt=(production or {}).get("prompt",""));job.update(scenes_total=len(plan),stage='Preparing scenes')
             for index,(length,prompt) in enumerate(plan):
                 job['stage']=f'Generating scene {index+1} of {len(plan)}';video_id=await client.generate(prompt,duration=length,quality=quality,negative_prompt=MODEL_NEGATIVE);url=await _poll(client,video_id);path=folder/f'{job_id}-scene-{index}.mp4';await _download(url,path);clip_paths.append(path);job['scenes_complete']=index+1
         job['stage']='Rendering final video';output=folder/f'viralizer-{uuid.uuid4().hex}.mp4'

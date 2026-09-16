@@ -5,6 +5,7 @@ import httpx
 
 from pixverse_client import PixVerseClient, PixVerseError
 from heygen_client import HeyGenClient, HeyGenError
+from heygen_video_director import build_heygen_plan, compile_heygen_request
 
 
 class VideoProviderError(RuntimeError):
@@ -101,6 +102,11 @@ async def generate_video(
     avatar_id: str = "",
     voice_id: str = "",
     background: str = "#0B1020",
+    aspect_ratio: str = "9:16",
+    visual_mode: str = "AUTO",
+    captions: bool = False,
+    style_id: str = "",
+    brand_kit_id: str = "",
 ) -> str:
     _require_provider(provider)
     if provider == "pixverse":
@@ -138,7 +144,14 @@ async def generate_video(
 
     if provider == "heygen":
         try:
-            return await HeyGenClient().generate(narration,avatar_id,voice_id,background=background)
+            plan=build_heygen_plan(content,duration,aspect_ratio=aspect_ratio,visual_mode=visual_mode,captions=captions)
+            if prompt.strip():
+                plan["compiled_prompt"]=prompt.strip()
+            if narration.strip() and narration.strip() not in plan["compiled_prompt"]:
+                plan["script"]=narration.strip()
+                plan["compiled_prompt"] += "\n\nApproved narration script: "+narration.strip()
+            payload=compile_heygen_request(plan,avatar_id=avatar_id,voice_id=voice_id,style_id=style_id,brand_kit_id=brand_kit_id)
+            return await HeyGenClient().generate_agent(payload)
         except HeyGenError as exc:
             raise VideoProviderError(str(exc)) from exc
     raise VideoProviderError(f"Provider {provider} is not implemented.")
@@ -174,7 +187,7 @@ async def video_status(provider: str, job_id: str) -> dict[str, Any]:
 
     if provider == "heygen":
         try:
-            return await HeyGenClient().status(job_id)
+            return await HeyGenClient().agent_status(job_id)
         except HeyGenError as exc:
             raise VideoProviderError(str(exc)) from exc
     raise VideoProviderError(f"Provider {provider} is not implemented.")

@@ -17,7 +17,7 @@ class GenerationRoute:
 
 def choose_generation_route(content: dict[str, Any], *, reference_available: bool = False, production_style: str = "premium") -> GenerationRoute:
     text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "entity_type_label", "brand", "company", "product", "video_idea")).lower()
-    identity = 90 if any(word in text for word in ("person", "celebrity", "athlete", "player", "founder")) else 25
+    identity = 90 if any(word in text for word in ("person", "celebrity", "athlete", "player", "wrestler", "wrestling", "founder")) else 25
     brand = 92 if any(content.get(key) for key in ("brand", "company", "product")) else 65 if any(word in text for word in ("iphone", "sony", "playstation", "nvidia", "liverpool")) else 20
     product = 90 if any(word in text for word in ("iphone", "phone", "product", "console", "camera", "car", "device")) else 25
     composition = 82 if production_style in {"premium", "epic"} else 55

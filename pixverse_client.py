@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from motion_director import build_motion_directed_prompt
+
 
 PIXVERSE_BASE_URL = "https://app-api.pixverse.ai/openapi/v2"
 
@@ -36,7 +38,7 @@ def _visual_treatment(content: dict[str, Any]) -> tuple[str, str, str, str]:
     return ("cinematic editorial documentary", "the main subject in a specific real-world environment connected to the story", "the subject performs one clear physical action that reveals the central change while background activity continues naturally", "directional natural light with practical sources creating depth and separation")
 
 
-def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
+def _legacy_build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
     """Compile research into duration-aware, filmable PixVerse direction."""
     duration = max(5, min(60, int(duration or 5)))
     topic = _clean_content(content.get("topic") or content.get("suggested_title") or content.get("hook"), 18)
@@ -89,6 +91,25 @@ def build_video_prompt(content: dict[str, Any], duration: int = 5) -> str:
         f"Lighting: {lighting}. Preserve subject identity, wardrobe, location details, and color palette across every beat. No readable text, numbers, rankings, charts, dashboards, captions, watermarks, or generated logos."
     )
 
+
+def build_video_prompt(
+    content: dict[str, Any],
+    duration: int = 5,
+    *,
+    generation_type: str = "text_to_video",
+    quality_mode: bool = True,
+    user_prompt: str = "",
+    include_debug: bool = False,
+) -> str | tuple[str, dict[str, Any]]:
+    """Build the editable PixVerse prompt through the shared Motion Director."""
+    prompt, debug = build_motion_directed_prompt(
+        content,
+        duration,
+        generation_type=generation_type,
+        quality_mode=quality_mode,
+        user_prompt=user_prompt,
+    )
+    return (prompt, debug) if include_debug else prompt
 
 def build_narration_script(content: dict[str, Any], duration: int = 5) -> str:
     """Write a spoken social-video hook instead of copying raw research fields."""
