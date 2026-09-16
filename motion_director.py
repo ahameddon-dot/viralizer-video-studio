@@ -236,7 +236,7 @@ def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
         else:
             candidates = [f"athletes completing one decisive match moment directly connected to {subject}", f"one controlled piece of competitive action in the relevant sports environment for {subject}"]
     else:
-        candidates = [f"one recognizable real-world moment directly representing {subject}", f"one clear human action that makes {subject} visible", f"one material detail and environment strongly associated with {subject}"]
+        candidates = [f"one recognizable real-world scene directly representing {subject}", f"a person handling one recognizable real-world object associated with {subject}", f"one material detail in an authentic environment strongly associated with {subject}"]
     return candidates
 
 

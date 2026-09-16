@@ -13,6 +13,9 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("prawn", result["prompt"].lower())
         self.assertNotIn("nvidia", result["prompt"].lower())
         self.assertNotIn("chocolate", result["prompt"].lower())
+        china = asyncio.run(prepare_exact_video_topic(TopicRequest(topic="china: Chinese cuisine and food culture")))
+        self.assertIn("Chinese cuisine", china["prompt"])
+        self.assertNotIn("nvidia", china["prompt"].lower())
 
     def test_transferred_report_wins_before_url_fallback(self):
         html = (Path(__file__).parents[1] / "static" / "full_studio.html").read_text(encoding="utf-8")
