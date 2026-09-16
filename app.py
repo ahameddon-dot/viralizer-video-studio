@@ -846,11 +846,17 @@ async def generate_image_video(
 @app.post("/api/video/prepare-topic")
 async def prepare_exact_video_topic(request: TopicRequest):
     selected_topic = " ".join(request.topic.split())
-    try:
-        outline = await outline_with_fallback(selected_topic)
-    except MCPOutlineError as exc:
-        raise HTTPException(502, str(exc)) from exc
-    outline["topic"] = selected_topic
+    if not selected_topic:
+        raise HTTPException(422, "Choose a topic first.")
+    # Refresh restoration must be immediate and deterministic. The discovery page
+    # already fetched the full MCP report before transfer; calling MCP again here
+    # caused cold-start delays and could return an unrelated cached report.
+    outline = {
+        "topic": selected_topic,
+        "suggested_title": selected_topic,
+        "video_idea": f"Create a focused video about {selected_topic}.",
+        "why_it_matters": f"Show the most useful and visually meaningful aspect of {selected_topic}.",
+    }
     prompt = build_video_prompt(outline, 5)
     return {"selected_topic": selected_topic, "outline": outline, "prompt": prompt, "narration": build_narration_script(outline, 5), "transfer_version": 2}
 
