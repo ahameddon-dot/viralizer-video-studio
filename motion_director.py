@@ -111,7 +111,8 @@ GROUNDING_PROFILES: tuple[dict[str, Any], ...] = (
     {"category":"Food / Seafood","keywords":("prawn","prawns","shrimp","seafood","lobster","crab","shellfish"),"style":"premium seafood commercial"},
     {"category":"Food / Confectionery","keywords":("chocolate","wonka","candy","confectionery","dessert","truffle","praline"),"style":"premium food commercial"},
     {"category":"Gaming","keywords":("gaming","game","playstation","xbox","moba","esports","console","hero","player"),"style":"premium gaming commercial"},
-    {"category":"Automotive","keywords":("car","automotive","vehicle","motorcycle","driving","road","launch"),"style":"premium automotive commercial"},
+    {"category":"Automotive","keywords":("car","automotive","vehicle","motorcycle","driving","road"),"style":"premium automotive commercial"},
+    {"category":"Travel","keywords":("travel","tourism","destination","hotel","resort","holiday","vacation","tourist"),"style":"premium travel editorial"},
     {"category":"Beauty / Product","keywords":("perfume","fragrance","beauty","cosmetic","skincare","makeup"),"style":"luxury beauty commercial"},
     {"category":"Finance / Business","keywords":("stock market","stocks","trading","finance","banking","earnings","investment","investor"),"style":"financial editorial"},
     {"category":"Technology / Business","keywords":("artificial intelligence"," ai ","technology","software","chip","platform","startup","tech company"),"style":"technology business editorial"},
@@ -141,6 +142,19 @@ def _source_content(content: dict[str, Any], user_prompt: str = "") -> str:
     return ". ".join(ordered)
 
 
+def _declared_category(content: dict[str, Any]) -> str:
+    category = _clean(content.get("category"), 20)
+    # Discovery categories may include a query suffix such as
+    # "Travel (news OR launch OR review OR trend)". Those query words are not
+    # content semantics and must never influence Motion Director classification.
+    category = re.sub(r"\s*\([^)]*\)\s*$", "", category).strip().lower()
+    if category.startswith(("travel", "tourism")):
+        return "Travel"
+    if category.startswith(("automotive", "car", "vehicle")):
+        return "Automotive"
+    return ""
+
+
 def _terms_present(text: str, terms: tuple[str, ...]) -> list[str]:
     lower = f" {text.lower()} "
     return [term for term in terms if term in lower]
@@ -154,6 +168,11 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
         hits = [term for term in profile["keywords"] if term in lower]
         scored.append((len(hits), profile, hits))
     score, profile, category_hits = max(scored, key=lambda item: item[0])
+    declared_category = _declared_category(content)
+    if declared_category:
+        profile = next(item for item in GROUNDING_PROFILES if item["category"] == declared_category)
+        category_hits = [declared_category.lower()]
+        score = max(score, 1)
     if not score:
         profile = {"category":"General / Editorial","style":"realistic editorial"}
         category_hits = []
@@ -173,6 +192,9 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
     elif profile["category"] == "Automotive":
         core = topic or "vehicle launch"
         intent = "present the vehicle and its defining real-world movement"
+    elif profile["category"] == "Travel":
+        core = topic or "travel destination story"
+        intent = "show the named destination and the authentic visitor experience described by the story"
     elif profile["category"] == "Beauty / Product":
         core = topic or "beauty product review"
         intent = "present and review the featured beauty product"
@@ -222,6 +244,8 @@ def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
         candidates = [f"a player interacting with the relevant gaming experience for {subject}", f"a recognizable game-world or console moment centered on {subject}", f"a gaming setup with one clear player action representing {subject}"]
     elif category == "Automotive":
         candidates = [f"the featured vehicle from {subject} moving through a relevant real road environment", f"a clean exterior vehicle reveal centered on {subject}", f"a controlled detail-to-hero view of the vehicle in {subject}"]
+    elif category == "Travel":
+        candidates = [f"an authentic destination showcase directly representing {subject}", f"a visitor discovering one recognizable destination experience from {subject}", f"a grounded travel-exhibition moment connecting visitors with the destination in {subject}"]
     elif category == "Beauty / Product":
         candidates = [f"the featured beauty product from {subject} presented with stable geometry and material detail", f"a hand naturally demonstrates the product in {subject}", f"a macro product reveal showing material, packaging and application context for {subject}"]
     elif category == "Finance / Business":
@@ -270,6 +294,8 @@ def _visual_action_candidates(grounding: dict[str, Any], concept: str, generatio
         return ["A hand gently lifts and turns the featured perfume bottle so controlled highlights move across its glass without changing its shape.", "A hand places the featured beauty product into a clean hero position and releases it naturally."]
     if category == "Automotive":
         return ["The featured performance car accelerates smoothly along a controlled road while the camera tracks alongside.", "The vehicle rounds one gentle road curve as its wheels rotate consistently with its speed."]
+    if category == "Travel":
+        return ["A person walks through the travel showcase, pauses at the Kerala destination display, and watches vivid backwater and cultural imagery unfold.", "A traveler steps toward the destination exhibit and studies its backwater, coastal and cultural visuals."]
     if category == "Finance / Business":
         return ["A financial professional reviews changing market activity on an unreadable display, then makes one focused note while colleagues move subtly behind.", "An investor studies the market display and points to one changing trend while the camera moves closer."]
     if category == "Technology / Business":
@@ -309,6 +335,7 @@ UNSUPPORTED_BY_CATEGORY = {
     "Food / Confectionery": ("technology engineer", "product designer", "prototype", "ai laboratory", "technology studio", "engineering equipment"),
     "Gaming": ("chocolate tasting", "perfume bottle", "stock trader"),
     "Automotive": ("chocolate tasting", "beauty serum", "game character"),
+    "Travel": ("featured car", "performance car", "vehicle accelerates", "wheel rotation", "gaming setup", "chocolate tasting"),
     "Beauty / Product": ("technology engineer", "stock trader", "gaming setup"),
     "Finance / Business": ("chocolate assortment", "perfume application", "game hero"),
 }
@@ -518,7 +545,7 @@ def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_
         concept_validation = _semantic_validate(selected, grounding, "visual_concept")
         concept_validation["repaired"] = True
     action_candidates, concrete_action, action_validation = _resolve_visual_action(grounding, selected, generation_type)
-    category_scene = {"Food / Seafood":"PRODUCT", "Food / Confectionery":"PRODUCT", "Gaming":"GAMING", "Automotive":"AUTOMOTIVE", "Beauty / Product":"BEAUTY", "Finance / Business":"FINANCE", "Technology / Business":"TECH", "News":"NEWS", "UI / Interface":"UI_ANIMATION", "Sports":"ACTION"}
+    category_scene = {"Food / Seafood":"PRODUCT", "Food / Confectionery":"PRODUCT", "Gaming":"GAMING", "Automotive":"AUTOMOTIVE", "Travel":"ENVIRONMENT", "Beauty / Product":"BEAUTY", "Finance / Business":"FINANCE", "Technology / Business":"TECH", "News":"NEWS", "UI / Interface":"UI_ANIMATION", "Sports":"ACTION"}
     scene = category_scene.get(grounding["category"], classify_scene(content, user_prompt))
     text = grounding["source_content"].lower()
     layers = _specialize_layers(_generic_layers(scene), text)
@@ -727,6 +754,7 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
             "Finance / Business": "Use a credible financial workplace with all screen and document content kept unreadable for later overlays.",
             "Beauty / Product": "Use a refined beauty-review setting with controlled material highlights and stable product geometry.",
             "Automotive": "Use a relevant real road or launch environment with stable vehicle design and physically consistent reflections.",
+            "Travel": "Use an authentic travel-showcase environment that clearly represents the named destination through recognizable landscape, culture and visitor experience, with no unrelated products or vehicles.",
         }.get(plan.category, "Use a real-world environment directly supported by the source content.")
         body = (
             f"Create one uninterrupted {plan.duration}-second vertical 9:16 {plan.creative_style} shot centered on {plan.core_subject}. "

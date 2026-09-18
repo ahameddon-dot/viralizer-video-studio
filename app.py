@@ -61,6 +61,8 @@ from release_dashboard import (
     rollback_preview,
 )
 from release_actions import ReleaseActionError, publish_beta, rollback_production
+from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
+from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 
 
 ROOT = Path(__file__).resolve().parent
@@ -117,8 +119,20 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
-    if request.url.path not in public_paths and not is_authenticated(request):
+    public_paths = {"/login", "/creatorthon/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
+    public_login_assets = {
+        "/static/viralizer-intro.css",
+        "/static/viralizer-intro.js",
+        "/static/viralizer-original-logo.png",
+        "/static/final/viralizer-logo-mark.svg",
+    }
+    if request.url.path.startswith("/creatorthon") or request.url.path.startswith("/api/creatorthon"):
+        google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+        if request.url.path not in public_paths and not google_user:
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Google sign-in required"}, status_code=401)
+            return RedirectResponse("/creatorthon/login", status_code=303)
+    if request.url.path not in public_paths and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
@@ -143,10 +157,10 @@ async def login_page(request: Request, error: str = ""):
 <title>Viralizer Studio · Sign in</title><style>
 *{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#29154b,#090611 65%);color:#fff;font-family:Inter,Arial,sans-serif}}
 .card{{width:min(420px,calc(100% - 32px));padding:36px;border:1px solid #563483;border-radius:20px;background:rgba(19,13,30,.94);box-shadow:0 24px 80px #0008}}
-.mark{{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:13px;background:#8b3dff;font-size:24px;font-weight:800}}h1{{margin:20px 0 8px;font-size:30px}}p{{color:#bdb2d2;line-height:1.5}}
+.mark{{display:block;width:210px;max-width:72%;height:auto;object-fit:contain}}h1{{margin:20px 0 8px;font-size:30px}}p{{color:#bdb2d2;line-height:1.5}}
 label{{display:block;margin:24px 0 8px;font-weight:700}}input{{width:100%;padding:14px 16px;border:1px solid #56496a;border-radius:11px;background:#0d0915;color:#fff;font-size:17px;outline:none}}input:focus{{border-color:#a66cff;box-shadow:0 0 0 3px #8b3dff33}}
 button{{width:100%;margin-top:16px;padding:14px;border:0;border-radius:11px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-size:16px;font-weight:800;cursor:pointer}}.google{{display:flex;align-items:center;justify-content:center;gap:11px;width:100%;margin-top:18px;padding:13px;border:1px solid #625873;border-radius:11px;background:#fff;color:#17131d;font-size:16px;font-weight:800;text-decoration:none}}.google span{{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:#4285f4;font-size:20px}}.divider{{display:flex;align-items:center;gap:12px;margin:20px 0 0;color:#877d94;font-size:12px}}.divider:before,.divider:after{{content:"";height:1px;flex:1;background:#3d3449}}.google-note{{font-size:12px;color:#8f849d}}.error{{color:#ff9aaf;margin:14px 0 0}}
-</style></head><body><main class="card"><div class="mark">V</div><h1>Viralizer Video Studio</h1><p>Sign in with Google or use the workspace password.</p>{message}
+</style></head><body><main class="card"><img class="mark" src="/static/viralizer-original-logo.png" alt="Viralizer"><h1>Viralizer Video Studio</h1><p>Sign in with Google or use the workspace password.</p>{message}
 {google_button}<div class="divider">or use workspace password</div><form method="post" action="/login"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required><button type="submit">Open studio</button></form></main></body></html>""")
 
 
@@ -402,6 +416,48 @@ class CategoryIntelligenceRequest(BaseModel):
     reputation: str = Field(default="", max_length=80)
 
 
+class CreatorthonProfileRequest(BaseModel):
+    full_name: str = Field(min_length=1, max_length=120)
+    company: str = Field(default="", max_length=160)
+    role: str = Field(default="", max_length=120)
+    socials: dict[str, str] = Field(default_factory=dict)
+    interests: list[str] = Field(default_factory=list, max_length=4)
+    onboarding_complete: bool = False
+
+
+class CreatorthonTopicsRequest(BaseModel):
+    interests: list[str] = Field(min_length=1, max_length=4)
+
+
+class CreatorthonProjectRequest(BaseModel):
+    topic: dict[str, Any]
+
+
+class CreatorthonProjectUpdateRequest(BaseModel):
+    provider: str = Field(default="", max_length=40)
+    job_id: str = Field(default="", max_length=160)
+    video_url: str = Field(default="", max_length=1000)
+    status: str = Field(default="", max_length=40)
+
+
+class CreatorthonFinishRequest(BaseModel):
+    video_url: str = Field(min_length=4, max_length=2000)
+    narration: str = Field(default="", max_length=4096)
+    voice: str = Field(default="coral", max_length=40)
+
+
+class CreatorthonHashtagRequest(BaseModel):
+    topic: dict[str, Any]
+
+
+class CreatorthonPublishRequest(BaseModel):
+    project_id: str = Field(min_length=8, max_length=64)
+    video_url: str = Field(min_length=4, max_length=2000)
+    caption: str = Field(default="", max_length=3000)
+    hashtags: list[str] = Field(default_factory=list, max_length=30)
+    platforms: list[str] = Field(default_factory=list, max_length=3)
+
+
 class DailyDiscoveryRequest(BaseModel):
     category: str = Field(default="ALL", max_length=80)
     keyword: str = Field(default="", max_length=120)
@@ -522,6 +578,116 @@ async def index():
         ROOT / "static" / "pixel_ui.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
+
+
+@app.get("/creatorthon/login", response_class=HTMLResponse)
+async def creatorthon_login(request: Request):
+    if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon", status_code=303)
+    google_ready = google_configured()
+    action = '<a class="google" href="/auth/google?next=/creatorthon"><b>G</b> Continue with Google</a>' if google_ready else '<p class="warning">Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_SESSION_SECRET to this service.</p>'
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Viralizer Creatorthon</title><link rel="preload" href="/static/viralizer-original-logo.png" as="image"><link rel="stylesheet" href="/static/viralizer-intro.css?v=5"><style>
+*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 18% 12%,#32135f,#080914 46%);color:#fff;font-family:Inter,system-ui,sans-serif}}main.card{{width:min(460px,calc(100% - 32px));padding:38px;border:1px solid #4b326e;border-radius:22px;background:#111324ee;box-shadow:0 30px 90px #0009}}.mark{{display:block;width:230px;max-width:78%;height:auto;object-fit:contain}}h1{{font-size:32px;letter-spacing:-.04em;margin:22px 0 10px}}p{{color:#adb4cf;line-height:1.6}}.google{{margin-top:25px;min-height:52px;border-radius:12px;background:#fff;color:#171824;text-decoration:none;font-weight:850;display:flex;align-items:center;justify-content:center;gap:11px}}.google b{{color:#4285f4;font-size:20px}}.warning{{padding:13px;border:1px solid #774755;border-radius:11px;background:#321722;color:#ffbeca;font-size:13px}}</style></head><body class="intro-active"><main class="card"><img class="mark" src="/static/viralizer-original-logo.png" alt="Viralizer"><h1>Viralizer Creatorthon</h1><p>Choose your interests, discover relevant worldwide topics, and turn one into a finished video through a simple guided journey.</p>{action}</main><script src="/static/viralizer-intro.js?v=5" defer></script></body></html>""")
+
+
+@app.get("/creatorthon")
+async def creatorthon(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon/login", status_code=303)
+    return FileResponse(ROOT / "static" / "creatorthon.html", headers={"Cache-Control": "no-store"})
+
+
+def creatorthon_user(request: Request) -> dict[str, Any]:
+    user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if not user:
+        raise HTTPException(401, "Google sign-in required.")
+    return user
+
+
+@app.get("/api/creatorthon/profile")
+async def creatorthon_profile(request: Request):
+    user = creatorthon_user(request)
+    return {"profile": get_profile(ROOT, user), "projects": list_projects(ROOT, str(user.get("sub", "")))}
+
+
+@app.put("/api/creatorthon/profile")
+async def update_creatorthon_profile(request: Request, payload: CreatorthonProfileRequest):
+    user = creatorthon_user(request)
+    if payload.onboarding_complete and not payload.interests:
+        raise HTTPException(422, "Select at least one interest.")
+    return {"profile": save_profile(ROOT, user, payload.model_dump())}
+
+
+@app.post("/api/creatorthon/topics")
+async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest):
+    creatorthon_user(request)
+    interests = list(dict.fromkeys(value.strip() for value in payload.interests if value.strip()))[:4]
+    if not interests:
+        raise HTTPException(422, "Select at least one interest.")
+    queries: list[str] = []
+    for interest in interests:
+        queries.extend(build_category_discovery_queries(interest, "", "", "Everything", "")[:2])
+    try:
+        topics = await discover_category_topics(queries, 24)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Could not discover worldwide topics: {exc}") from exc
+    topics = annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything")
+    return {"topics": topics, "count": len(topics), "source": "Worldwide public news sources"}
+
+
+@app.post("/api/creatorthon/projects")
+async def new_creatorthon_project(request: Request, payload: CreatorthonProjectRequest):
+    user = creatorthon_user(request)
+    if not str(payload.topic.get("topic") or payload.topic.get("title") or "").strip():
+        raise HTTPException(422, "Choose a valid topic.")
+    return create_project(ROOT, str(user.get("sub", "")), payload.topic)
+
+
+@app.patch("/api/creatorthon/projects/{project_id}")
+async def patch_creatorthon_project(request: Request, project_id: str, payload: CreatorthonProjectUpdateRequest):
+    user = creatorthon_user(request)
+    result = update_project(ROOT, str(user.get("sub", "")), project_id, payload.model_dump(exclude_unset=True))
+    if not result:
+        raise HTTPException(404, "Creatorthon project not found.")
+    return result
+
+
+@app.get("/api/creatorthon/publishing/status")
+async def creatorthon_publishing_status(request: Request):
+    creatorthon_user(request)
+    return {"platforms": publishing_status(), "mandatory_hashtag": MANDATORY_HASHTAG}
+
+
+@app.post("/api/creatorthon/hashtags")
+async def creatorthon_hashtags(request: Request, payload: CreatorthonHashtagRequest):
+    creatorthon_user(request)
+    return {"hashtags": build_hashtags(payload.topic), "mandatory_hashtag": MANDATORY_HASHTAG}
+
+
+@app.post("/api/creatorthon/publish")
+async def publish_creatorthon_video(request: Request, payload: CreatorthonPublishRequest):
+    user = creatorthon_user(request)
+    project = update_project(ROOT, str(user.get("sub", "")), payload.project_id, {})
+    if not project:
+        raise HTTPException(404, "Creatorthon project not found.")
+    match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", payload.video_url)
+    if not match:
+        raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
+    video_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
+    if not video_path.is_file():
+        raise HTTPException(404, "The completed video could not be found.")
+    hashtags = list(dict.fromkeys(value.strip() for value in payload.hashtags if value.strip()))
+    if MANDATORY_HASHTAG.lower() not in {value.lower() for value in hashtags}:
+        hashtags.insert(0, MANDATORY_HASHTAG)
+    try:
+        result = await publish_all(video_path, payload.video_url, payload.caption, hashtags, payload.platforms)
+    except SocialPublishError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    update_project(
+        ROOT, str(user.get("sub", "")), payload.project_id,
+        {"status": "published" if result["all_published"] else "publish-partial"},
+    )
+    return {**result, "hashtags": hashtags}
 
 
 @app.get("/legacy")
@@ -966,6 +1132,18 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
         raise HTTPException(422, "Add narration, a logo, or a text overlay.")
     try:
         output = await finish_video(video_url, narration, voice, logo_bytes, combined_overlay, overlay_position, overlay_color)
+    except MediaFinisherError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"url": f"/api/finished-video/{output.name}"}
+
+
+@app.post("/api/creatorthon/finish")
+async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishRequest):
+    creatorthon_user(request)
+    # Creatorthon branding is server-enforced. The client cannot omit or move it.
+    logo_bytes = (ROOT / "static" / "viralizer-original-logo.png").read_bytes()
+    try:
+        output = await finish_video(payload.video_url, payload.narration, payload.voice, logo_bytes)
     except MediaFinisherError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}

@@ -71,6 +71,25 @@ class ContentGroundingRegressionTests(unittest.TestCase):
         self.assertIn("vehicle", plan.final_prompt.lower())
         self.assert_semantic_pass(plan)
 
+    def test_travel_discovery_query_suffix_never_becomes_automotive(self):
+        plan = build_motion_plan(
+            {
+                "topic": "Kerala Showcases Diverse Tourism Offerings at Travel Meet in Dubai",
+                "category": "Travel (news OR launch OR review OR trend)",
+                "summary": "Kerala presents its backwaters, culture and destination experiences at a Dubai travel exhibition.",
+            },
+            10,
+            generation_type="text_to_video",
+            quality_mode=True,
+        )
+        self.assertEqual(plan.category, "Travel")
+        self.assertEqual(plan.scene_type, "ENVIRONMENT")
+        self.assertIn("kerala", plan.final_prompt.lower())
+        self.assertIn("travel", plan.final_prompt.lower())
+        for forbidden in ("featured car", "performance car", "vehicle accelerates", "wheel rotation"):
+            self.assertNotIn(forbidden, plan.final_prompt.lower())
+        self.assert_semantic_pass(plan)
+
     def test_stock_market_update(self):
         plan = self.plan("Stock market update", "Investors react to trading and earnings movement")
         self.assertEqual(plan.category, "Finance / Business")

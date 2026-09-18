@@ -10,6 +10,9 @@ sample_output.mp4
 data/finished_videos/
 data/production/
 server-*.log
+creatorthon-server*.log
+data/creatorthon.sqlite3*
+static/viralizer-original-source.png
 visual-regression/*-current.png
 visual-regression/diff.png
 visual-regression/live-*.png
