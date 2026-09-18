@@ -111,7 +111,7 @@ async def generate_video(
     _require_provider(provider)
     if provider == "pixverse":
         try:
-            return str(await PixVerseClient().generate(prompt, duration=duration, quality=quality))
+            return str(await PixVerseClient().generate(prompt, duration=duration, quality=quality, aspect_ratio=aspect_ratio))
         except PixVerseError as exc:
             raise VideoProviderError(str(exc)) from exc
 

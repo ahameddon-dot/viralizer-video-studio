@@ -72,7 +72,7 @@ def _combine(clips,output):
     listing.unlink(missing_ok=True)
     if result.returncode: raise RuntimeError('Could not combine the generated scenes.')
 
-async def _quality_shot(client,shot,quality,folder,job_id,index,job):
+async def _quality_shot(client,shot,quality,folder,job_id,index,job,aspect_ratio="9:16"):
     reference_bytes=None; reference_score=None; reference_retries=0; route=shot['route']
     preflight=shot.get('preflight_consistency') or {"status":"FAIL","reason":"Missing shot consistency validation"}
     job.update(current_job_id=job_id,generation_mode=route,core_subject=shot.get('shot_specification',{}).get('core_subject'),visual_concept=shot.get('motion_debug',{}).get('selected_visual_concept'),shot_specification=shot.get('shot_specification'),reference_image_prompt=shot.get('reference_prompt'),reference_prompt_consistency=preflight,final_pixverse_prompt=shot.get('motion_prompt'))
@@ -121,7 +121,7 @@ async def _quality_shot(client,shot,quality,folder,job_id,index,job):
             job['pixverse_request_payload']=request_payload
             job['generation_trace'][-1].update(pixverse_request_payload=request_payload)
             _persist_generation_trace(folder,job['generation_trace'][-1])
-            video_id=await client.generate(active_prompt,duration=shot['duration'],quality=quality,negative_prompt=MODEL_NEGATIVE)
+            video_id=await client.generate(active_prompt,duration=shot['duration'],quality=quality,negative_prompt=MODEL_NEGATIVE,aspect_ratio=aspect_ratio)
         url=await _poll(client,video_id); path=folder/f'{job_id}-scene-{index}-attempt-{attempt}.mp4';await _download(url,path)
         job['stage']=f'Checking scene {index+1} of {job["scenes_total"]}'
         qc=await score_video(path); score=float(qc.get('overall_quality_score',100 if not qc.get('available') else 0))
@@ -141,15 +141,15 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
     folder=Path(os.getenv('APP_DATA_DIR',str(Path(__file__).parent/'data')))/'finished_videos';folder.mkdir(parents=True,exist_ok=True)
     clip_paths=[]
     try:
-        client=PixVerseClient()
+        client=PixVerseClient();aspect_ratio=(production or {}).get('aspect_ratio','9:16')
         if quality_mode:
             planned=build_plan(content,total,creative_prompt=(production or {}).get("prompt","")); plan=planned['shots'];job.update(scenes_total=len(plan),visual_bible=planned['visual_bible'],generation_route=planned['route'],stage='Creating visual direction')
             for index,shot in enumerate(plan):
-                clip_paths.append(await _quality_shot(client,shot,quality,folder,job_id,index,job));job['scenes_complete']=index+1
+                clip_paths.append(await _quality_shot(client,shot,quality,folder,job_id,index,job,aspect_ratio));job['scenes_complete']=index+1
         else:
             plan=prompts(content,total,creative_prompt=(production or {}).get("prompt",""));job.update(scenes_total=len(plan),stage='Preparing scenes')
             for index,(length,prompt) in enumerate(plan):
-                job['stage']=f'Generating scene {index+1} of {len(plan)}';video_id=await client.generate(prompt,duration=length,quality=quality,negative_prompt=MODEL_NEGATIVE);url=await _poll(client,video_id);path=folder/f'{job_id}-scene-{index}.mp4';await _download(url,path);clip_paths.append(path);job['scenes_complete']=index+1
+                job['stage']=f'Generating scene {index+1} of {len(plan)}';video_id=await client.generate(prompt,duration=length,quality=quality,negative_prompt=MODEL_NEGATIVE,aspect_ratio=aspect_ratio);url=await _poll(client,video_id);path=folder/f'{job_id}-scene-{index}.mp4';await _download(url,path);clip_paths.append(path);job['scenes_complete']=index+1
         job['stage']='Rendering final video';output=folder/f'viralizer-{uuid.uuid4().hex}.mp4'
         if len(clip_paths)==1: shutil.copyfile(clip_paths[0],output)
         else: await asyncio.to_thread(_combine,clip_paths,output)
