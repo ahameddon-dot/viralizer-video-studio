@@ -17,10 +17,11 @@
   const root = document.createElement('div');
   root.className = 'viralizer-intro';
   root.setAttribute('role', 'presentation');
-  root.innerHTML = `<video class="viralizer-intro-video" muted playsinline preload="auto" aria-hidden="true"><source src="/static/viralizer-login-intro.mp4?v=1" type="video/mp4"></video><div class="viralizer-intro-shade" aria-hidden="true"></div><div class="viralizer-intro-loader" aria-hidden="true"><span></span></div><button class="viralizer-intro-skip" type="button" aria-label="Skip Viralizer introduction">Skip intro</button>`;
+  root.innerHTML = `<video class="viralizer-intro-video" muted playsinline preload="auto" aria-hidden="true"><source src="/static/viralizer-login-intro.mp4?v=1" type="video/mp4"></video><div class="viralizer-intro-shade" aria-hidden="true"></div><div class="viralizer-intro-loader" aria-hidden="true"><span></span></div><button class="viralizer-intro-sound" type="button" aria-label="Turn intro sound on">🔊 Sound on</button><button class="viralizer-intro-skip" type="button" aria-label="Skip Viralizer introduction">Skip intro</button>`;
   document.body.prepend(root);
   const video = root.querySelector('.viralizer-intro-video');
   const skip = root.querySelector('.viralizer-intro-skip');
+  const sound = root.querySelector('.viralizer-intro-sound');
   const loader = root.querySelector('.viralizer-intro-loader');
   const finish = (quick = false) => {
     if (finished) return;
@@ -40,8 +41,13 @@
   video.addEventListener('canplay', showVideo, { once: true });
   video.addEventListener('ended', () => finish(false), { once: true });
   video.addEventListener('error', () => finish(true), { once: true });
-  skip.addEventListener('click', () => finish(true));
-  skipTimer = setTimeout(() => skip.classList.add('is-visible'), 2000);
+  sound.addEventListener('click', () => {
+    video.muted = !video.muted;
+    sound.textContent = video.muted ? '🔊 Sound on' : '🔇 Sound off';
+    sound.setAttribute('aria-label', video.muted ? 'Turn intro sound on' : 'Turn intro sound off');
+    if (video.paused) video.play().catch(() => {});
+  });
+  skip.addEventListener('click', () => finish(true));  skipTimer = setTimeout(() => skip.classList.add('is-visible'), 2000);
   fallbackTimer = setTimeout(() => finish(true), 14000);
   const playback = video.play();
   if (playback && typeof playback.catch === 'function') playback.catch(() => finish(true));

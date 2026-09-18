@@ -1,6 +1,7 @@
 import unittest
 
 from motion_director import build_motion_plan
+from pixverse_client import build_video_prompt
 
 
 WONKA = {
@@ -68,5 +69,17 @@ class PixVerseLanguageCompilerTests(unittest.TestCase):
             self.assertNotIn("documentary shot centered on professional wrestling match", plan.final_prompt.lower())
             self.assertLessEqual(plan.final_prompt.lower().count("anatomy distortion"), 1)
             self.assertLessEqual(plan.final_prompt.lower().count("duplicated"), 1)
+    def test_all_social_aspect_ratios_replace_vertical_default(self):
+        expected = {
+            "9:16": "vertical 9:16",
+            "16:9": "landscape 16:9",
+            "3:4": "portrait 3:4",
+            "1:1": "square 1:1",
+        }
+        for ratio, label in expected.items():
+            prompt = build_video_prompt(WONKA, 5, aspect_ratio=ratio).lower()
+            self.assertIn(label, prompt)
+            if ratio != "9:16":
+                self.assertNotIn("vertical 9:16", prompt)
 if __name__ == "__main__":
     unittest.main()

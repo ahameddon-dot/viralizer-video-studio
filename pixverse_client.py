@@ -100,6 +100,7 @@ def build_video_prompt(
     quality_mode: bool = True,
     user_prompt: str = "",
     include_debug: bool = False,
+    aspect_ratio: str = "9:16",
 ) -> str | tuple[str, dict[str, Any]]:
     """Build the editable PixVerse prompt through the shared Motion Director."""
     prompt, debug = build_motion_directed_prompt(
@@ -109,8 +110,15 @@ def build_video_prompt(
         quality_mode=quality_mode,
         user_prompt=user_prompt,
     )
+    aspect_labels = {
+        "9:16": "vertical 9:16",
+        "16:9": "landscape 16:9",
+        "3:4": "portrait 3:4",
+        "1:1": "square 1:1",
+    }
+    selected_aspect = aspect_labels.get(aspect_ratio, aspect_labels["9:16"])
+    prompt = re.sub(r"\bvertical\s+9:16\b", selected_aspect, prompt, count=1, flags=re.I)
     return (prompt, debug) if include_debug else prompt
-
 def build_narration_script(content: dict[str, Any], duration: int = 5) -> str:
     """Write a spoken social-video hook instead of copying raw research fields."""
     duration = max(5, min(60, int(duration or 5)))
