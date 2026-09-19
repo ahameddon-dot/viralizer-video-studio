@@ -63,7 +63,7 @@ from release_dashboard import (
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
-from website_to_video import WebsiteAnalysisError, analyze_website
+from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 
 
 ROOT = Path(__file__).resolve().parent
@@ -1092,6 +1092,17 @@ async def video_logo_suggestions(request: LogoSuggestionRequest):
         raise HTTPException(502, "Could not look up logo suggestions.") from exc
     return {"logos": logos}
 
+@app.get("/api/site-logo")
+async def site_logo(url: str):
+    try:
+        image, content_type = await fetch_public_image(url)
+    except WebsiteAnalysisError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "The website logo could not be fetched.") from exc
+    return Response(content=image, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/api/video/providers")
 async def video_providers():
     return {"providers": provider_catalog()}
@@ -1178,24 +1189,35 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
     logo_url = logo_url.strip()
     if logo_bytes is None and logo_url:
         parsed_logo = httpx.URL(logo_url)
-        allowed_logo_hosts = {"www.google.com", "commons.wikimedia.org", "upload.wikimedia.org"}
-        if parsed_logo.scheme != "https" or parsed_logo.host not in allowed_logo_hosts:
-            raise HTTPException(422, "Select a verified Viralizer logo or upload your own.")
-        try:
-            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                logo_response = await client.get(logo_url)
-                logo_response.raise_for_status()
-            final_logo_host = str(logo_response.url.host or "")
-            trusted_google_favicon = bool(re.fullmatch(r"t\d+\.gstatic\.com", final_logo_host)) and logo_response.url.path == "/faviconV2"
-            if final_logo_host not in allowed_logo_hosts and not trusted_google_favicon:
-                raise HTTPException(422, "The logo source redirected to an unsupported website.")
-            if len(logo_response.content) > 10 * 1024 * 1024:
-                raise HTTPException(422, "Suggested logo must be smaller than 10 MB.")
-            logo_bytes = logo_response.content
-        except HTTPException:
-            raise
-        except httpx.HTTPError as exc:
-            raise HTTPException(502, "Could not retrieve the selected logo.") from exc
+        if logo_url.startswith("/api/site-logo?"):
+            source_logo = str(parsed_logo.params.get("url") or "")
+            if not source_logo:
+                raise HTTPException(422, "The selected website logo is invalid.")
+            try:
+                logo_bytes, _ = await fetch_public_image(source_logo)
+            except WebsiteAnalysisError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except httpx.HTTPError as exc:
+                raise HTTPException(502, "Could not retrieve the selected website logo.") from exc
+        else:
+            allowed_logo_hosts = {"www.google.com", "commons.wikimedia.org", "upload.wikimedia.org"}
+            if parsed_logo.scheme != "https" or parsed_logo.host not in allowed_logo_hosts:
+                raise HTTPException(422, "Select a verified Viralizer logo or upload your own.")
+            try:
+                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                    logo_response = await client.get(logo_url)
+                    logo_response.raise_for_status()
+                final_logo_host = str(logo_response.url.host or "")
+                trusted_google_favicon = bool(re.fullmatch(r"t\d+\.gstatic\.com", final_logo_host)) and logo_response.url.path == "/faviconV2"
+                if final_logo_host not in allowed_logo_hosts and not trusted_google_favicon:
+                    raise HTTPException(422, "The logo source redirected to an unsupported website.")
+                if len(logo_response.content) > 10 * 1024 * 1024:
+                    raise HTTPException(422, "Suggested logo must be smaller than 10 MB.")
+                logo_bytes = logo_response.content
+            except HTTPException:
+                raise
+            except httpx.HTTPError as exc:
+                raise HTTPException(502, "Could not retrieve the selected logo.") from exc
     if not narration and not logo_bytes and not combined_overlay:
         raise HTTPException(422, "Add narration, a logo, or a text overlay.")
     try:

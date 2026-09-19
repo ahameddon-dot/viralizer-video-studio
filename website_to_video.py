@@ -40,6 +40,7 @@ class Page:
     paragraphs: list[str] = field(default_factory=list)
     links: list[tuple[str, str]] = field(default_factory=list)
     article_type: str = ""
+    logo_url: str = ""
 
 
 def _clean(value: Any, limit: int = 500) -> str:
@@ -71,6 +72,16 @@ class PageParser(HTMLParser):
             self._tag = tag
             self._parts = []
             self._href = attrs_dict.get("href", "") if tag == "a" else ""
+        if tag == "link" and not self.page.logo_url:
+            rel = attrs_dict.get("rel", "").lower()
+            href = attrs_dict.get("href", "")
+            if href and ("icon" in rel or "apple-touch-icon" in rel):
+                self.page.logo_url = urljoin(self.base_url, href)
+        if tag == "img" and not self.page.logo_url:
+            src = attrs_dict.get("src", "")
+            identity = " ".join((attrs_dict.get("alt", ""), attrs_dict.get("class", ""), attrs_dict.get("id", ""), src)).lower()
+            if src and "logo" in identity:
+                self.page.logo_url = urljoin(self.base_url, src)
         if tag == "meta":
             key = (attrs_dict.get("property") or attrs_dict.get("name") or attrs_dict.get("itemprop") or "").lower()
             value = _clean(attrs_dict.get("content"), 1000)
@@ -213,6 +224,35 @@ async def _fetch_public(value: str) -> tuple[str, str]:
     raise WebsiteAnalysisError("The website redirected too many times.")
 
 
+async def fetch_public_image(value: str, max_bytes: int = 10 * 1024 * 1024) -> tuple[bytes, str]:
+    current = await _validate_public_url(value)
+    headers = {"User-Agent": "ViralizerLogoFetcher/1.0 (+https://viralizer.ai)", "Accept": "image/png,image/jpeg,image/webp"}
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False, headers=headers) as client:
+        for _ in range(5):
+            response = await client.get(current)
+            stream = response.extensions.get("network_stream")
+            if stream is not None:
+                peer = stream.get_extra_info("server_addr")
+                if peer and not ipaddress.ip_address(peer[0]).is_global:
+                    raise WebsiteAnalysisError("The logo resolved to a private or reserved network address.")
+            if response.status_code in {301, 302, 303, 307, 308}:
+                target = response.headers.get("location")
+                if not target:
+                    raise WebsiteAnalysisError("The logo returned an invalid redirect.")
+                current = await _validate_public_url(urljoin(current, target))
+                continue
+            if response.status_code >= 400:
+                raise WebsiteAnalysisError(f"The logo returned HTTP {response.status_code}.")
+            content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+            if content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+                raise WebsiteAnalysisError("The logo URL did not return a supported image.")
+            raw = response.content
+            if not raw or len(raw) > max_bytes:
+                raise WebsiteAnalysisError("The logo image is empty or larger than 10 MB.")
+            return raw, content_type
+    raise WebsiteAnalysisError("The logo redirected too many times.")
+
+
 def _same_site(a: str, b: str) -> bool:
     left = (urlparse(a).hostname or "").removeprefix("www.")
     right = (urlparse(b).hostname or "").removeprefix("www.")
@@ -342,6 +382,7 @@ async def analyze_website(url: str) -> dict[str, Any]:
         "source_type": source_type,
         "source_site": site_name,
         "source_url": selected.url,
+        "source_logo_url": selected.logo_url or home.logo_url,
         "source_urls": [selected.url],
         "published_at": selected.published_at,
     }
@@ -349,6 +390,7 @@ async def analyze_website(url: str) -> dict[str, Any]:
         "source_type": source_type,
         "site_name": site_name,
         "source_url": selected.url,
+        "source_logo_url": selected.logo_url or home.logo_url,
         "selected": {
             "title": title,
             "summary": summary,

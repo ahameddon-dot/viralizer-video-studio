@@ -24,12 +24,13 @@ class WebsiteToVideoTests(unittest.TestCase):
         html = """
         <html><head><title>Acme Cloud Platform</title>
         <meta name="description" content="Workflow software for growing teams."></head>
-        <body><h1>One platform for modern operations</h1>
+        <body><img src="/assets/acme-logo.png" alt="Acme logo"><h1>One platform for modern operations</h1>
         <h2>Automate approvals</h2><p>Acme helps teams organize work and reduce repetitive tasks.</p></body></html>
         """
         page = parse_page("https://acme.example/", html)
         self.assertFalse(_looks_like_news(page))
         self.assertIn("Workflow software", page.description)
+        self.assertEqual(page.logo_url, "https://acme.example/assets/acme-logo.png")
 
     def test_article_paths_outscore_navigation(self):
         article = _news_score("https://example.com/news/2026/09/launch-story", "Company launches a major new product worldwide", 4)

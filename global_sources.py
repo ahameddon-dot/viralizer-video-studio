@@ -502,14 +502,14 @@ async def suggest_logos_for_content(content: dict[str, Any]) -> list[dict[str, A
                 "relation": "Verified source website",
                 "confidence": 96,
                 "official_domain": source_host,
-                "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{source_host}&sz=256",
+                "logo_url": f"/api/site-logo?url={quote(str(content.get('source_logo_url') or f'https://{source_host}/favicon.ico'), safe='')}",
             }]
     results = []
     seen = set()
     for entity in entities:
         url = str(entity.get("logo_url") or "")
         name = str(entity.get("name") or "").strip()
-        if not name or not url.startswith("https://") or url in seen:
+        if not name or not (url.startswith("https://") or url.startswith("/api/site-logo?")) or url in seen:
             continue
         seen.add(url)
         results.append({
