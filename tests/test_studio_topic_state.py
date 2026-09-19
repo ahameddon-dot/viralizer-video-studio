@@ -17,9 +17,9 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("Chinese cuisine", china["prompt"])
         self.assertNotIn("nvidia", china["prompt"].lower())
 
-    def test_transferred_report_wins_before_url_fallback(self):
+    def test_current_url_topic_wins_before_transferred_report(self):
         html = (Path(__file__).parents[1] / "static" / "full_studio.html").read_text(encoding="utf-8")
-        self.assertIn("if(restoreTransferredVideo())return;if(await restoreTopicFromUrl())return", html)
+        self.assertIn("if(await restoreTopicFromUrl())return;if(restoreTransferredVideo())return", html)
         self.assertIn("protectedKeys=new Set(['topic','suggested_title'", html)
         restore = html[html.index("async function restoreTopicFromUrl"):html.index("function restoreTransferredVideo")]
         self.assertNotIn("localStorage.removeItem('viralizer_video_studio_transfer')", restore)
@@ -28,6 +28,9 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("if(currentIdentity&&freshIdentity&&currentIdentity!==freshIdentity)return current", html)
         self.assertIn("requestedDuration=String(prepared.duration||5)", html)
         self.assertIn("preparedAspectRatio=prepared.aspect_ratio||'9:16'", html)
+        self.assertIn("immediateTopicVideo(selectedTopic)", restore)
+        self.assertIn("currentTopic!==selectedTopic", restore)
+        self.assertIn("viralizer_prepared_topic_v2", html)
 
 
 if __name__ == "__main__":

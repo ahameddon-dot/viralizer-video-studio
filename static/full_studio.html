@@ -518,13 +518,27 @@
       const outline=prepared.outline;topic.value=prepared.selected_topic;applyOutline(outline,true);updateCreationFormat('video');prompt.value=prepared.prompt;preparedAspectRatio=prepared.aspect_ratio||'9:16';const durationSelect=document.querySelector('#duration'),requestedDuration=String(prepared.duration||5);durationSelect.value=[...durationSelect.options].some(option=>option.value===requestedDuration)?requestedDuration:'5';pendingVideoMode='text';videoPromptReview.hidden=false;confirmVideoButton.hidden=false;videoFinishing.hidden=false;videoNarration.value=prepared.narration||'';status.textContent=`${prepared.selected_topic} is ready. Review its prompt, speech, logo, and text overlay, then confirm generation.`;creationEditor.scrollIntoView({behavior:'smooth',block:'start'});window.viralizerTransferRestored=true;
     }
     function validPreparedVideo(prepared,selectedTopic){return prepared?.transfer_version===2&&prepared.selected_topic===selectedTopic&&prepared.outline?.topic===selectedTopic&&Boolean(prepared.prompt)}
+    function immediateTopicVideo(selectedTopic){
+      const cleanTopic=String(selectedTopic||'').trim(),outline={topic:cleanTopic,suggested_title:cleanTopic,video_idea:`Create a focused video about ${cleanTopic}.`,why_it_matters:`Show the clearest, most visually meaningful part of ${cleanTopic}.`};
+      return {transfer_version:2,selected_topic:cleanTopic,outline,prompt:`Create one coherent 5-second vertical 9:16 video centered only on ${cleanTopic}. Show an immediately recognizable subject and one clear, physically achievable action in a relevant environment. Use a slow controlled camera move, natural cause-and-effect motion, stable identity and geometry, and finish on a clean hero frame. No unrelated brands or subjects, cuts, flicker, malformed anatomy, duplicated objects, readable generated text, captions, watermarks, or generated logos.`,narration:`Here is what matters about ${cleanTopic}.`,duration:5,aspect_ratio:'9:16'};
+    }
+    function topicPreparationKey(selectedTopic){return `viralizer_prepared_topic_v2:${selectedTopic}`}
     async function restoreTopicFromUrl(){
-      const selectedTopic=new URLSearchParams(location.search).get('topic')?.trim();if(!selectedTopic)return false;status.textContent=`Loading the exact Viralizer report for ${selectedTopic}...`;const prepared=await fetch('/api/video/prepare-topic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:selectedTopic})}).then(json);if(!validPreparedVideo(prepared,selectedTopic))throw new Error('The returned report did not match the selected topic. Nothing was loaded.');displayPreparedVideo(prepared);return true;
+      const selectedTopic=new URLSearchParams(location.search).get('topic')?.trim();if(!selectedTopic)return false;
+      let prepared=null;try{prepared=JSON.parse(sessionStorage.getItem(topicPreparationKey(selectedTopic))||'null')}catch(error){}
+      displayPreparedVideo(validPreparedVideo(prepared,selectedTopic)?prepared:immediateTopicVideo(selectedTopic));
+      status.textContent=`${selectedTopic} is ready now. Improving the prompt in the background...`;
+      fetch('/api/video/prepare-topic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:selectedTopic})}).then(json).then(fresh=>{
+        const currentTopic=new URLSearchParams(location.search).get('topic')?.trim();if(currentTopic!==selectedTopic||!validPreparedVideo(fresh,selectedTopic))return;
+        try{sessionStorage.setItem(topicPreparationKey(selectedTopic),JSON.stringify(fresh))}catch(error){}
+        displayPreparedVideo(fresh);
+      }).catch(error=>{if(new URLSearchParams(location.search).get('topic')?.trim()===selectedTopic)status.textContent=`${selectedTopic} is ready. The quick prompt is shown because the detailed refresh is taking longer.`});
+      return true;
     }
     function restoreTransferredVideo(){
       let transfer=null;try{transfer=JSON.parse(localStorage.getItem('viralizer_video_studio_transfer')||'null')}catch(error){}localStorage.removeItem('viralizer_video_studio_transfer');if(!transfer?.selected_topic||!validPreparedVideo(transfer,transfer.selected_topic))return false;displayPreparedVideo(transfer);return true;
     }
-    async function initializeStudioPage(){prompt.value='';imagePrompt.value='';if(new URLSearchParams(location.search).has('topic'))content.value='{}';try{if(restoreTransferredVideo())return;if(await restoreTopicFromUrl())return;const discoveryHashes=new Set(['#hotView','#topicIntelligenceView','#viralizerView','#ideaSmithView','#regionalView','#bettingView']);if(discoveryHashes.has(location.hash)){showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();return}selectWorkspace('studio')}catch(error){status.textContent=error.message}}
+    async function initializeStudioPage(){prompt.value='';imagePrompt.value='';if(new URLSearchParams(location.search).has('topic'))content.value='{}';try{if(await restoreTopicFromUrl())return;if(restoreTransferredVideo())return;const discoveryHashes=new Set(['#hotView','#topicIntelligenceView','#viralizerView','#ideaSmithView','#regionalView','#bettingView']);if(discoveryHashes.has(location.hash)){showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();return}selectWorkspace('studio')}catch(error){status.textContent=error.message}}
     window.viralizerInitialization=initializeStudioPage();  </script>
 </main></div></section></div><script>
 async function openCurrentFeature(){
