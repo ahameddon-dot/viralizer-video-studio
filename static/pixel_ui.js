@@ -184,7 +184,7 @@ async function analyzeSiteUrl(){
 }
 function openSiteUrlInStudio(){
   if(!siteUrlAnalysis)return;const selected=(siteUrlAnalysis.content_options||[])[siteUrlAnalysis.selected_option||0],outline={...(selected?.content||siteUrlAnalysis.content),source_url:selected?.url||siteUrlAnalysis.source_url,source_urls:[selected?.url||siteUrlAnalysis.source_url]};const prompt=$('#siteUrlPrompt').value.trim(),narration=$('#siteUrlNarration').value.trim();if(!prompt){$('#siteUrlStatus').textContent='Select content with a prepared prompt first.';return}
-  const transfer={transfer_version:2,selected_topic:outline.topic,outline,prompt,narration,duration:siteUrlAnalysis.duration,aspect_ratio:siteUrlAnalysis.aspect_ratio};localStorage.setItem('viralizer_video_studio_transfer',JSON.stringify(transfer));location.href='/studio#studio';
+  const transfer={transfer_version:2,selected_topic:outline.topic,outline,prompt,narration,duration:siteUrlAnalysis.duration,aspect_ratio:siteUrlAnalysis.aspect_ratio};localStorage.setItem('viralizer_studio_state_version','website-transfer-v3');Object.keys(sessionStorage).filter(key=>key.startsWith('viralizer_prepared_topic_')).forEach(key=>sessionStorage.removeItem(key));localStorage.setItem('viralizer_video_studio_transfer',JSON.stringify(transfer));location.href='/studio#studio';
 }
 setupSiteUrlWorkspace();
 function setupExactSidebar(){

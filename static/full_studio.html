@@ -539,7 +539,11 @@
     function restoreTransferredVideo(){
       let transfer=null;try{transfer=JSON.parse(localStorage.getItem('viralizer_video_studio_transfer')||'null')}catch(error){}localStorage.removeItem('viralizer_video_studio_transfer');if(!transfer?.selected_topic||!validPreparedVideo(transfer,transfer.selected_topic))return false;displayPreparedVideo(transfer);return true;
     }
-    async function initializeStudioPage(){prompt.value='';imagePrompt.value='';if(new URLSearchParams(location.search).has('topic'))content.value='{}';try{if(await restoreTopicFromUrl())return;if(restoreTransferredVideo())return;const discoveryHashes=new Set(['#hotView','#topicIntelligenceView','#viralizerView','#ideaSmithView','#regionalView','#bettingView']);if(discoveryHashes.has(location.hash)){showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();return}selectWorkspace('studio')}catch(error){status.textContent=error.message}}
+    const studioStateVersion='website-transfer-v3';
+    function clearLegacyStudioState(){
+      if(localStorage.getItem('viralizer_studio_state_version')===studioStateVersion)return;localStorage.removeItem('viralizer_video_studio_transfer');Object.keys(sessionStorage).filter(key=>key.startsWith('viralizer_prepared_topic_')).forEach(key=>sessionStorage.removeItem(key));localStorage.setItem('viralizer_studio_state_version',studioStateVersion);
+    }
+    async function initializeStudioPage(){clearLegacyStudioState();prompt.setAttribute('autocomplete','off');prompt.value='';imagePrompt.value='';if(new URLSearchParams(location.search).has('topic'))content.value='{}';try{if(await restoreTopicFromUrl())return;if(restoreTransferredVideo())return;const discoveryHashes=new Set(['#hotView','#topicIntelligenceView','#viralizerView','#ideaSmithView','#regionalView','#bettingView']);if(discoveryHashes.has(location.hash)){showDailyFetching('Checking for today’s saved trend report...');initializeDailyDiscovery();return}selectWorkspace('studio')}catch(error){status.textContent=error.message}}
     window.viralizerInitialization=initializeStudioPage();  </script>
 </main></div></section></div><script>
 async function openCurrentFeature(){
