@@ -63,6 +63,7 @@ from release_dashboard import (
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
+from website_to_video import WebsiteAnalysisError, analyze_website
 
 
 ROOT = Path(__file__).resolve().parent
@@ -406,6 +407,12 @@ class TopicRequest(BaseModel):
 
 class IdeaSmithRequest(BaseModel):
     topic: str = Field(default="", max_length=500)
+
+
+class SiteUrlVideoRequest(BaseModel):
+    url: str = Field(min_length=4, max_length=2000)
+    duration: int = Field(default=10, ge=5, le=60)
+    aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|3:4|1:1)$")
 
 
 class CategoryIntelligenceRequest(BaseModel):
@@ -765,6 +772,28 @@ async def topic_from_mcp(request: TopicRequest):
         return await outline_with_fallback(request.topic.strip())
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/site-url/analyze")
+async def analyze_site_url(request: SiteUrlVideoRequest):
+    try:
+        analysis = await analyze_website(request.url)
+    except WebsiteAnalysisError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "The public website could not be read right now.") from exc
+    content = analysis["content"]
+    analysis["prompt"] = build_video_prompt(
+        content,
+        request.duration,
+        quality_mode=True,
+        aspect_ratio=request.aspect_ratio,
+    )
+    analysis["narration"] = build_narration_script(content, request.duration)
+    analysis["duration"] = request.duration
+    analysis["aspect_ratio"] = request.aspect_ratio
+    analysis["transfer_version"] = 2
+    return analysis
 
 
 @app.get("/api/topics/hot")

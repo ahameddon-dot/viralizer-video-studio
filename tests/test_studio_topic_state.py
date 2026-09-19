@@ -26,7 +26,8 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("window.viralizerInitialization=initializeStudioPage()", html)
         self.assertIn("if(window.viralizerInitialization)await window.viralizerInitialization", html)
         self.assertIn("if(currentIdentity&&freshIdentity&&currentIdentity!==freshIdentity)return current", html)
-        self.assertIn("document.querySelector('#duration').value='5'", html)
+        self.assertIn("requestedDuration=String(prepared.duration||5)", html)
+        self.assertIn("preparedAspectRatio=prepared.aspect_ratio||'9:16'", html)
 
 
 if __name__ == "__main__":
