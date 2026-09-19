@@ -407,7 +407,7 @@
     function updateAssetCounts(){[[personImages,'personImagesCount','Identity, clothing, pose'],[productImages,'productImagesCount','Shape, packaging, details'],[adImages,'adImagesCount','Composition, colors, campaign style'],[logoImages,'logoImagesCount','Authentic brand mark']].forEach(([input,id,fallback])=>document.querySelector(`#${id}`).textContent=input.files.length?`${input.files.length} image${input.files.length===1?'':'s'} selected`:fallback);const total=uploadedAssetCount();if(total>12)status.textContent=`${total} reference images selected. Please remove ${total-12}; the maximum is 12.`}
     [personImages,productImages,adImages,logoImages].forEach(input=>input.onchange=updateAssetCounts);
     videoLogo.onchange=()=>{if(videoLogo.files[0]){selectedSuggestedLogoUrl='';document.querySelectorAll('input[name="suggestedVideoLogo"]').forEach(input=>input.checked=!input.value);videoLogoSuggestionNote.textContent='Your uploaded logo will be used at the top-right.'}};
-    fetch('/api/topic/sample').then(r=>r.json()).then(applyOutline);
+    fetch('/api/topic/sample').then(r=>r.json()).then(sample=>{if(!window.viralizerTransferRestored&&!window.viralizerPreparedVideo&&!new URLSearchParams(location.search).has('topic'))applyOutline(sample)});
     async function chooseHotTopic(item){
       document.querySelectorAll('.topic-card').forEach(x=>x.disabled=true); mcpStatus.textContent='Waiting for Viralizer’s full report. The app will retry automatically if needed...';showViralizerLoading(item.topic);
       try{

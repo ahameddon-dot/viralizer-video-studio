@@ -36,6 +36,8 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("studioStateVersion='website-transfer-v3'", html)
         self.assertIn("key.startsWith('viralizer_prepared_topic_')", html)
         self.assertIn("clearLegacyStudioState();prompt.setAttribute('autocomplete','off')", html)
+        self.assertNotIn("then(applyOutline)", html)
+        self.assertIn("!window.viralizerTransferRestored&&!window.viralizerPreparedVideo", html)
 
 
 if __name__ == "__main__":
