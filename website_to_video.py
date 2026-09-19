@@ -227,8 +227,15 @@ def _news_score(url: str, title: str, index: int) -> int:
     score += 25 if re.search(r"/20\d{2}/(?:0?[1-9]|1[0-2])/", path) else 0
     score += 18 if len(title) >= 35 else 0
     score += 12 if path.count("/") >= 3 else 0
+    navigation_title = title.strip().lower()
     if any(term in path for term in ("/tag/", "/author/", "/category/", "/privacy", "/contact", "/login")):
         score -= 80
+    if navigation_title.startswith("skip to ") or any(term in navigation_title for term in ("news brasil", "news mundo", "privacy policy", "sign in")):
+        score -= 100
+    if path.rstrip("/") in {"", "/news", "/world", "/latest", "/breaking-news"}:
+        score -= 45
+    if len([segment for segment in path.split("/") if segment]) <= 2 and not re.search(r"\d", path):
+        score -= 25
     return score
 
 
@@ -266,7 +273,7 @@ async def analyze_website(url: str) -> dict[str, Any]:
             if score >= 55:
                 candidates.append((score, clean_link, title))
         candidates.sort(reverse=True)
-        candidates = candidates[:5]
+        candidates = candidates[:8]
 
         async def inspect(candidate: tuple[int, str, str]) -> tuple[int, Page] | None:
             score, link, title = candidate
@@ -284,14 +291,25 @@ async def analyze_website(url: str) -> dict[str, Any]:
             inspected.sort(key=lambda item: item[0], reverse=True)
             selected = inspected[0][1]
             alternatives = [
-                {"title": page.title, "url": page.url, "published_at": page.published_at}
-                for _, page in inspected[1:4]
+                {"title": page.title, "url": page.url, "published_at": page.published_at, "summary": _summary(page)}
+                for _, page in inspected[1:8]
             ]
 
     source_type = "news" if is_news else "company"
     site_name = selected.site_name or home.site_name or (urlparse(final_url).hostname or "").removeprefix("www.")
     title = selected.title or (selected.headings[0] if selected.headings else site_name)
     summary = _summary(selected) or _summary(home)
+    if not is_news:
+        seen_angles = {title.lower()}
+        alternatives = []
+        for heading in home.headings:
+            clean_heading = _clean(heading, 180)
+            if len(clean_heading) < 12 or clean_heading.lower() in seen_angles:
+                continue
+            seen_angles.add(clean_heading.lower())
+            alternatives.append({"title": clean_heading, "url": home.url, "published_at": "", "summary": summary})
+            if len(alternatives) >= 7:
+                break
     if is_news:
         idea = (
             f"Turn the verified article into a concise visual news explainer. Open with the central development, "

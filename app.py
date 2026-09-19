@@ -790,6 +790,33 @@ async def analyze_site_url(request: SiteUrlVideoRequest):
         aspect_ratio=request.aspect_ratio,
     )
     analysis["narration"] = build_narration_script(content, request.duration)
+    raw_options = [analysis["selected"], *analysis.get("alternatives", [])]
+    content_options = []
+    for index, option in enumerate(raw_options):
+        option_content = dict(content)
+        option_title = str(option.get("title") or content["topic"]).strip()
+        option_summary = str(option.get("summary") or content.get("summary") or "").strip()
+        option_url = str(option.get("url") or analysis["source_url"]).strip()
+        option_content.update({
+            "topic": option_title,
+            "suggested_title": option_title,
+            "summary": option_summary,
+            "why_it_matters": option_summary,
+            "source_url": option_url,
+            "source_urls": [option_url],
+            "published_at": option.get("published_at", ""),
+        })
+        content_options.append({
+            "id": f"website-option-{index + 1}",
+            "title": option_title,
+            "summary": option_summary,
+            "url": option_url,
+            "published_at": option.get("published_at", ""),
+            "content": option_content,
+            "prompt": build_video_prompt(option_content, request.duration, quality_mode=True, aspect_ratio=request.aspect_ratio),
+            "narration": build_narration_script(option_content, request.duration),
+        })
+    analysis["content_options"] = content_options
     analysis["duration"] = request.duration
     analysis["aspect_ratio"] = request.aspect_ratio
     analysis["transfer_version"] = 2
