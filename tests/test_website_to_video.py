@@ -39,7 +39,7 @@ class WebsiteToVideoTests(unittest.TestCase):
 
     def test_url_normalization_rejects_unsafe_forms(self):
         self.assertEqual(normalize_url("example.com"), "https://example.com/")
-        for value in ("file:///etc/passwd", "ftp://example.com/file", "https://user:pass@example.com"):
+        for value in ("file:///etc/passwd", "ftp://example.com/file", "https://user:pass@example.com", "https://example.com:99999/story"):
             with self.assertRaises(WebsiteAnalysisError):
                 normalize_url(value)
 

@@ -170,7 +170,11 @@ def normalize_url(value: str) -> str:
         raise WebsiteAnalysisError("Use a valid public HTTP or HTTPS website URL.")
     if parsed.username or parsed.password:
         raise WebsiteAnalysisError("Website URLs containing credentials are not supported.")
-    if parsed.port not in {None, 80, 443}:
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise WebsiteAnalysisError("The website URL contains an invalid port.") from exc
+    if port not in {None, 80, 443}:
         raise WebsiteAnalysisError("Only standard website ports are supported.")
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", parsed.query, ""))
 
@@ -220,7 +224,11 @@ async def _fetch_public(value: str) -> tuple[str, str]:
             raw = response.content
             if len(raw) > MAX_PAGE_BYTES:
                 raw = raw[:MAX_PAGE_BYTES]
-            return str(response.url), raw.decode(response.encoding or "utf-8", errors="replace")
+            declared = response.encoding or "utf-8"
+            decoded = raw.decode("utf-8", errors="replace")
+            if decoded.count("�") > 3 and declared.lower() not in {"utf-8", "utf8"}:
+                decoded = raw.decode(declared, errors="replace")
+            return str(response.url), decoded
     raise WebsiteAnalysisError("The website redirected too many times.")
 
 
