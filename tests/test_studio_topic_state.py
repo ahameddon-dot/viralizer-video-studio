@@ -31,6 +31,8 @@ class StudioTopicStateTests(unittest.TestCase):
         self.assertIn("immediateTopicVideo(selectedTopic)", restore)
         self.assertIn("currentTopic!==selectedTopic", restore)
         self.assertIn("viralizer_prepared_topic_v2", html)
+        self.assertIn("window.viralizerPreparedVideo=prepared", html)
+        self.assertIn("window.viralizerPreparedVideo&&isVideoFormat", html)
 
 
 if __name__ == "__main__":

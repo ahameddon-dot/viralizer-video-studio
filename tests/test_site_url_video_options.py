@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from app import SiteUrlVideoRequest, analyze_site_url
+from global_sources import suggest_logos_for_content
 
 
 class SiteUrlVideoOptionTests(unittest.TestCase):
@@ -32,6 +33,18 @@ class SiteUrlVideoOptionTests(unittest.TestCase):
         self.assertTrue(all(option["prompt"] for option in result["content_options"]))
         self.assertTrue(all(option["narration"] for option in result["content_options"]))
         self.assertEqual(result["aspect_ratio"], "16:9")
+
+    def test_company_site_uses_verified_source_logo_not_category_brand(self):
+        content = {
+            "topic": "Predictive AI for Viral Content | Intuition Intelligence",
+            "summary": "Intuition Intelligence develops predictive AI for viral content.",
+            "source_type": "company",
+            "source_site": "Intuition Intelligence",
+            "source_url": "https://intuition-intelligence.com/",
+        }
+        logos = asyncio.run(suggest_logos_for_content(content))
+        self.assertEqual(logos[0]["name"], "Intuition Intelligence")
+        self.assertNotIn("nvidia", str(logos).lower())
 
 
 if __name__ == "__main__":

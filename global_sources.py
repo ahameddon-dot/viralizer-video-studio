@@ -491,10 +491,19 @@ async def suggest_logos_for_content(content: dict[str, Any]) -> list[dict[str, A
     # Recompute relevance from the current content instead of trusting entity
     # metadata that may belong to an earlier transferred topic.
     entities = _sports_logo_entities(title, "") or _key_company_entities(title, summary, str(content.get("entity_type_label") or "")) or _sports_logo_entities(title, summary)
-    if not entities and title:
-        item = {"topic": title, "summary": summary}
-        await enrich_topic_entities([item])
-        entities = list(item.get("resolved_entities") or [])
+    if not entities:
+        source_url = str(content.get("source_url") or "").strip()
+        source_site = " ".join(str(content.get("source_site") or "").split())
+        source_host = (urlparse(source_url).hostname or "").removeprefix("www.") if source_url else ""
+        if source_host and source_site:
+            entities = [{
+                "name": source_site,
+                "kind": "Website brand",
+                "relation": "Verified source website",
+                "confidence": 96,
+                "official_domain": source_host,
+                "logo_url": f"https://www.google.com/s2/favicons?domain_url=https://{source_host}&sz=256",
+            }]
     results = []
     seen = set()
     for entity in entities:
