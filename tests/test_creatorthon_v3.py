@@ -32,6 +32,14 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("/static/viralizer-original-logo.png", page)
         self.assertIn("@media(max-width:850px)", page)
 
+    def test_v3_supports_custom_prompts_hidden_configuration_and_video_results(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("Create your own prompt", page)
+        self.assertIn('id="settings" class="settings" hidden', page)
+        self.assertIn("state.useOwnPrompt?custom", page)
+        self.assertIn("d.video_url||d.url||d.output_url", page)
+        self.assertIn("['complete','completed','success','succeeded']", page)
+
 
 if __name__ == "__main__":
     unittest.main()
