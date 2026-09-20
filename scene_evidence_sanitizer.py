@@ -29,7 +29,7 @@ def _replacement_for(element: str) -> str:
         return "ambient gallery lighting"
     if value.strip(" .") in {"empty", "spacious", "empty and spacious"}:
         return "empty negative space"
-    return "neutral background"
+    return "restrained source-supported context with clean overlay-safe negative space"
 
 
 def _replace(text: Any, element: str, replacement: str) -> str:

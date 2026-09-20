@@ -109,6 +109,25 @@ class SceneEvidenceSanitizerTests(unittest.TestCase):
         self.assertFalse(preflight["meaning_bearing_unsupported_elements"])
         self.assertFalse(preflight["fabricated_event_elements"])
 
+    def test_generic_unsupported_detail_preserves_source_context(self):
+        story = {"key_visual_facts": ["Arsenal players on a football pitch"]}
+        plan = {"core_visual_subject": "Arsenal players", "must_show": ["players", "football pitch"]}
+        shot = {
+            "shot_id": "S1", "purpose": "CONTEXT", "visual_subject": "Arsenal players",
+            "visual_description": "Arsenal players on a football pitch beside an unsupported decorative crest sculpture.",
+            "action": "CONTEXT_REVEAL: players continue moving on the pitch.",
+            "environment": "football pitch beside an unsupported decorative crest sculpture",
+            "composition": "players remain the focal subject", "foreground": "players",
+            "background": "unsupported decorative crest sculpture", "important_objects": [],
+            "must_show": ["players", "football pitch"],
+            "before_viewer_understands": "Players are visible.",
+            "after_viewer_understands": "The story concerns Arsenal on the pitch.",
+        }
+        result = sanitize_storyboard(story, plan, {"storyboard": [shot]})
+        rendered = str(result["storyboard"][0]).lower()
+        self.assertIn("source-supported context", rendered)
+        self.assertNotIn("neutral background", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

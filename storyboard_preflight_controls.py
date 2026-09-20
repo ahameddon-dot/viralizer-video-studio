@@ -57,7 +57,7 @@ def _person_action_control(shots: list[dict[str, Any]], representation: dict[str
         shots[-1]["camera"] = "Steady close-up on the same hands and relevant action objects after the action completes."
         shots[-1]["composition"] = f"Close view of the source-supported result: {expected_result or result_object(contract)}"
         shots[-1]["foreground"] = expected_result or result_object(contract)
-        shots[-1]["background"] = "neutral background"
+        shots[-1]["background"] = "restrained source-supported background with clean negative space"
         shots[-1]["must_show"] = list(dict.fromkeys((shots[-1].get("must_show") or []) + ([expected_result] if expected_result else [])))
         if expected_result:
             shots[-1]["start_frame"] = f"Post-action result state: {expected_result}"

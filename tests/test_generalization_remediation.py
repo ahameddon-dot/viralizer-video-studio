@@ -106,6 +106,24 @@ class GeneralizationRemediationTests(unittest.TestCase):
         self.assertTrue(all(item["route"] == CONTROLLED_OVERLAY_TEXT for item in result["routes"]))
         self.assertNotIn("2023", result["storyboard"][0]["visual_description"])
 
+    def test_sports_editorial_label_does_not_invent_interface_or_neutral_background(self):
+        shots = [{
+            "shot_id": "S1",
+            "visual_description": "Arsenal players move across the source-supported football pitch with a contextual label 'Arsenal'.",
+            "action": "Players continue the match action.",
+            "environment": "source-supported football pitch",
+            "composition": "players framed against the pitch with room for a label",
+            "foreground": "players",
+            "background": "restrained stadium context",
+            "must_avoid": [],
+        }]
+        result = route_generated_text(shots, [])
+        rendered = str(result["storyboard"][0]).lower()
+        self.assertIn("source-supported football pitch", rendered)
+        self.assertIn("overlay-safe negative space", rendered)
+        self.assertNotIn("product or interface region", rendered)
+        self.assertNotIn("neutral background", rendered)
+
     def test_verified_source_ui_text_is_preserved_as_source_pixels(self):
         shots = [{"shot_id": "S1", "visual_description": "Preserve 'Settings' on the interface.", "action": "", "environment": "", "composition": "", "foreground": "", "background": "", "must_avoid": []}]
         media = [{"url": "https://publisher.example/interface.png", "description": "Settings interface", "context_verified": True}]

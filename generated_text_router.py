@@ -37,14 +37,15 @@ def _candidates(text: str) -> list[str]:
     return list(dict.fromkeys(_clean(item, 160) for item in found if _clean(item)))
 
 
-def _remove_generated_text_request(text: str, candidates: list[str]) -> str:
+def _remove_generated_text_request(text: str, candidates: list[str], *, interface_context: bool = False) -> str:
     revised = text
     for value in sorted(candidates, key=len, reverse=True):
-        replacement = (
-            "a reserved timeline overlay position"
-            if re.fullmatch(r"(?:19|20)\d{2}|\d+(?:\.\d+)?%", value)
-            else "a supported product or interface region with a reserved deterministic label area"
-        )
+        if re.fullmatch(r"(?:19|20)\d{2}|\d+(?:\.\d+)?%", value):
+            replacement = "a reserved timeline overlay position"
+        elif interface_context:
+            replacement = "a supported interface region with a reserved deterministic label area"
+        else:
+            replacement = "clean overlay-safe negative space inside the source-supported environment"
         revised = re.sub(rf"[\"'“”]?{re.escape(value)}[\"'“”]?", replacement, revised, flags=re.I)
     revised = re.sub(r"\b(?:readable|prominent|visible)\s+(?:headline|timeline label|date|label|annotation|caption|statistic|number|interface text|screen text)\b", "clean overlay-safe negative space", revised, flags=re.I)
     revised = re.sub(r"\b(?:dynamically\s+)?morphs?\b", "transitions cleanly", revised, flags=re.I)
@@ -63,6 +64,11 @@ def route_generated_text(storyboard: list[dict[str, Any]], source_media: list[di
     routes: list[dict[str, Any]] = []
     for shot in shots:
         shot_id = str(shot.get("shot_id") or "")
+        combined_visual_context = " ".join(
+            str(shot.get(field) or "")
+            for field in ("visual_description", "action", "environment", "composition", "foreground", "background")
+        )
+        interface_context = bool(re.search(r"\b(?:interface|screen|display|app|dashboard|infotainment|device UI)\b", combined_visual_context, re.I))
         shot_candidates: list[str] = []
         for field in ("visual_description", "action", "environment", "composition", "foreground", "background"):
             shot_candidates.extend(_candidates(str(shot.get(field) or "")))
@@ -80,7 +86,9 @@ def route_generated_text(storyboard: list[dict[str, Any]], source_media: list[di
         overlay_values = [item["text"] for item in routes if item["shot_id"] == shot_id and item["route"] == CONTROLLED_OVERLAY_TEXT]
         if overlay_values:
             for field in ("visual_description", "action", "environment", "composition", "foreground", "background"):
-                shot[field] = _remove_generated_text_request(str(shot.get(field) or ""), overlay_values)
+                shot[field] = _remove_generated_text_request(
+                    str(shot.get(field) or ""), overlay_values, interface_context=interface_context
+                )
             shot["controlled_overlay_safe_region"] = "Reserve a clean, stable region with low visual activity for deterministic text compositing."
             shot["controlled_overlay_text"] = overlay_values
             shot["must_avoid"] = list(dict.fromkeys((shot.get("must_avoid") or []) + ["AI-generated letters, words, dates, numbers, captions, or logos"]))
