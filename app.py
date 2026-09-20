@@ -149,7 +149,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -162,7 +162,12 @@ async def require_password(request: Request, call_next):
         if request.url.path not in public_paths and not google_user:
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "Google sign-in required"}, status_code=401)
-            login_path = "/creatorthon-v2/login" if request.url.path.startswith("/creatorthon-v2") else "/creatorthon/login"
+            if request.url.path.startswith("/creatorthon-v3"):
+                login_path = "/creatorthon-v3/login"
+            elif request.url.path.startswith("/creatorthon-v2"):
+                login_path = "/creatorthon-v2/login"
+            else:
+                login_path = "/creatorthon/login"
             return RedirectResponse(login_path, status_code=303)
     if request.url.path not in public_paths and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
@@ -657,6 +662,26 @@ async def creatorthon_v2(request: Request):
         return RedirectResponse("/creatorthon-v2/login", status_code=303)
     return FileResponse(
         ROOT / "static" / "creatorthon-v2.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/creatorthon-v3/login", response_class=HTMLResponse)
+async def creatorthon_v3_login(request: Request):
+    if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3", status_code=303)
+    google_ready = google_configured()
+    action = '<a class="google" href="/auth/google?next=/creatorthon-v3"><b>G</b><span>Login or sign up with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet.</p>'
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Creatorthon V3 · Viralizer</title><style>
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#f5f5f7;color:#121216;font-family:Inter,system-ui,sans-serif}}body{{display:grid;place-items:center;padding:24px}}main{{width:min(520px,100%);padding:46px;border:1px solid #e1e1e6;border-radius:30px;background:#fff;box-shadow:0 30px 90px #1111}}img{{width:188px;height:auto}}.tag{{display:inline-block;margin-top:45px;padding:8px 12px;border-radius:99px;background:#f0e7ff;color:#7425d7;font-size:12px;font-weight:850}}h1{{font-size:clamp(42px,8vw,64px);line-height:.98;letter-spacing:-.06em;margin:18px 0}}p{{color:#6d6c73;line-height:1.6}}.google{{display:flex;align-items:center;justify-content:center;gap:12px;min-height:64px;margin-top:32px;border-radius:18px;background:#111;color:#fff;text-decoration:none;font-weight:850}}.google b{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#4285f4;font-size:20px}}.warning{{padding:14px;border-radius:14px;background:#fff1f2;color:#a82035}}</style></head><body><main><img src="/static/viralizer-original-logo.png" alt="Viralizer"><span class="tag">CREATORTHON V3</span><h1>Start Viral Content Creation</h1><p>Choose what matters to you, discover timely topics, and create with the right video engine.</p>{action}</main></body></html>""")
+
+
+@app.get("/creatorthon-v3")
+async def creatorthon_v3(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3/login", status_code=303)
+    return FileResponse(
+        ROOT / "static" / "creatorthon-v3.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
 
