@@ -496,7 +496,7 @@
           await wait(5000); status.textContent=qualityMode.checked?'Checking production progress...':`${providerName} is generating your video...`;
           const current=await fetch(`/api/video/${encodeURIComponent(job.provider)}/${encodeURIComponent(job.job_id)}`).then(json);if(current.stage)status.textContent=current.stage;if(developerMode&&current.shot_specification){motionDebugOutput.textContent=JSON.stringify(current,null,2);if(current.reference_image_url){motionDebugReference.src=current.reference_image_url+'?v='+Date.now();motionDebugReference.hidden=false}}
           if(current.status==='complete'&&current.url){await showFinishedVideo(current.url,current.best_available?'Best available result is ready.':'Your quality-checked video is ready.',Boolean(current.presenter_audio||current.provider==='heygen'));return}
-          if(current.status==='failed')throw new Error(`${providerName} could not generate this video. Try adjusting the prompt or provider settings.`);
+          if(current.status==='failed')throw new Error(current.error||current.detail||current.result?.error||`${providerName} could not generate this video. Try adjusting the prompt or provider settings.`);
         }
         throw new Error('Generation is still running. Please try checking again shortly.');
       } catch(error){status.textContent=error.message} finally{confirmVideoButton.disabled=false}

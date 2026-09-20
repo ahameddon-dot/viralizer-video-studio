@@ -166,7 +166,12 @@ async def video_status(provider: str, job_id: str) -> dict[str, Any]:
             raise VideoProviderError(str(exc)) from exc
         raw_status = result.get("status")
         state = "complete" if raw_status == 1 else "failed" if raw_status in (7, 8) else "processing"
-        return {"status": state, "url": result.get("url"), "result": result}
+        return {
+            "status": state,
+            "url": result.get("url"),
+            "error": result.get("error") or result.get("error_message") or result.get("message"),
+            "result": result,
+        }
 
     if provider == "runway":
         headers = {
