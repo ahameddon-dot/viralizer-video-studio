@@ -68,6 +68,27 @@ from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public
 from article_intelligence import prepare_article_intelligence
 
 
+async def prepare_article_intelligence_safely(
+    content: dict[str, Any], duration: int, aspect_ratio: str
+) -> dict[str, Any]:
+    """Keep prompt preparation usable when a live publisher edge case fails."""
+    try:
+        return await prepare_article_intelligence(content, duration, aspect_ratio)
+    except Exception as exc:
+        fallback = dict(content)
+        fallback["article_intelligence"] = {
+            "version": 3,
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+            "extraction_state": "failed",
+            "extraction_note": "The full story pipeline could not complete; available discovery metadata was used.",
+            "analysis_model": "safe-discovery-metadata-fallback",
+            "approved_for_media_generation": False,
+            "fallback_reason": f"{type(exc).__name__}: {str(exc)[:240]}",
+        }
+        return fallback
+
+
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
@@ -952,7 +973,7 @@ async def heygen_styles():
         raise HTTPException(502, str(exc)) from exc
 @app.post("/api/video/generate")
 async def generate_video(request: GenerateRequest):
-    content = await prepare_article_intelligence(request.content, request.duration, request.aspect_ratio)
+    content = await prepare_article_intelligence_safely(request.content, request.duration, request.aspect_ratio)
     selected_provider = request.provider
     if selected_provider == "auto":
         routing_text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
@@ -1133,7 +1154,7 @@ async def video_providers():
     return {"providers": provider_catalog()}
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
-    content = await prepare_article_intelligence(request.content, request.duration, request.aspect_ratio)
+    content = await prepare_article_intelligence_safely(request.content, request.duration, request.aspect_ratio)
     prompt_result = build_video_prompt(
         content,
         request.duration,
