@@ -36,7 +36,7 @@ class CreatorthonV3Tests(unittest.TestCase):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn("Create your own prompt", page)
         self.assertIn('id="settings" class="settings" hidden', page)
-        self.assertIn("state.useOwnPrompt?custom", page)
+        self.assertIn("state.useOwnPrompt?(custom+configurationSuffix())", page)
         self.assertIn("d.video_url||d.url||d.output_url", page)
         self.assertIn("['complete','completed','success','succeeded']", page)
 
@@ -46,6 +46,16 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("✓ Selected", page)
         self.assertIn("state.categories.includes(n)?' on'", page)
         self.assertIn("aria-pressed", page)
+
+    def test_alternate_ideas_compile_separately_and_configuration_rewrites_working_prompt(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("Alternate ideas", page)
+        self.assertIn("function alternateConcepts()", page)
+        self.assertIn("async function selectAlternateIdea", page)
+        self.assertIn("state.alternatePrepared=await compilePrompt", page)
+        self.assertIn("function rewriteConfiguredPrompt()", page)
+        self.assertIn("content:state.activeContent||state.topic", page)
+        self.assertIn("prompt:selectedPrompt", page)
 
 
 if __name__ == "__main__":
