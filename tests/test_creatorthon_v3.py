@@ -32,11 +32,14 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("/static/viralizer-original-logo.png", page)
         self.assertIn("@media(max-width:850px)", page)
 
-    def test_v3_supports_custom_prompts_hidden_configuration_and_video_results(self):
+    def test_v3_uses_confirmation_gates_and_shows_video_results(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
-        self.assertIn("Create your own prompt", page)
+        self.assertNotIn('id="ownPromptButton"', page)
         self.assertIn('id="settings" class="settings" hidden', page)
-        self.assertIn("state.useOwnPrompt?(custom+configurationSuffix())", page)
+        self.assertIn("Confirm configuration", page)
+        self.assertIn("Review before generation", page)
+        self.assertIn("Confirm &amp; generate", page)
+        self.assertIn("if(state.generationLocked)return", page)
         self.assertIn("d.video_url||d.url||d.output_url", page)
         self.assertIn("['complete','completed','success','succeeded']", page)
 
@@ -55,7 +58,15 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("state.alternatePrepared=await compilePrompt", page)
         self.assertIn("function rewriteConfiguredPrompt()", page)
         self.assertIn("content:state.activeContent||state.topic", page)
-        self.assertIn("prompt:selectedPrompt", page)
+        self.assertIn("prompt:state.workingPrepared?.prompt", page)
+
+    def test_configuration_defaults_do_not_modify_prompt_until_confirmed(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("No preference", page)
+        self.assertIn("state.confirmedConfig=readDraftConfig()", page)
+        self.assertIn("function configurationSuffix()", page)
+        self.assertNotIn('value="Premium editorial setting"', page)
+        self.assertIn('<select id="face"><option value="">No preference</option>', page)
 
 
 if __name__ == "__main__":
