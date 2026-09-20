@@ -317,16 +317,21 @@ class PixVerseClient:
         duration: int = 5,
         quality: str = "720p",
         model: str = "v6",
+        negative_prompt: str = "",
+        motion_mode: str = "normal",
+        seed: int = 0,
     ) -> int:
         payload = {
             "duration": duration,
             "img_id": image_id,
             "model": model,
-            "motion_mode": "normal",
+            "motion_mode": motion_mode,
             "prompt": prompt,
             "quality": quality,
-            "seed": 0,
+            "seed": seed,
         }
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
@@ -340,4 +345,41 @@ class PixVerseClient:
         video_id = result.get("video_id")
         if video_id is None:
             raise PixVerseError("PixVerse did not return a video id.")
+        return int(video_id)
+
+    async def generate_fusion(
+        self,
+        image_references: list[dict[str, Any]],
+        prompt: str,
+        *,
+        aspect_ratio: str = "9:16",
+        duration: int = 8,
+        quality: str = "720p",
+        model: str = "v6",
+        seed: int = 0,
+    ) -> int:
+        if not image_references:
+            raise PixVerseError("PixVerse Fusion requires at least one image reference.")
+        payload = {
+            "image_references": image_references,
+            "prompt": prompt,
+            "model": model,
+            "duration": duration,
+            "quality": quality,
+            "aspect_ratio": aspect_ratio,
+            "seed": seed,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}/video/fusion/generate",
+                    headers={**self._headers(unique_request=True), "Content-Type": "application/json"},
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not start PixVerse Fusion generation: {exc}") from exc
+        result = self._unwrap(response)
+        video_id = result.get("video_id")
+        if video_id is None:
+            raise PixVerseError("PixVerse Fusion did not return a video id.")
         return int(video_id)

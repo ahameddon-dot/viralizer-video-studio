@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -64,6 +65,7 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
+from article_intelligence import prepare_article_intelligence
 
 
 ROOT = Path(__file__).resolve().parent
@@ -120,7 +122,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/creatorthon/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -133,7 +135,8 @@ async def require_password(request: Request, call_next):
         if request.url.path not in public_paths and not google_user:
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "Google sign-in required"}, status_code=401)
-            return RedirectResponse("/creatorthon/login", status_code=303)
+            login_path = "/creatorthon-v2/login" if request.url.path.startswith("/creatorthon-v2") else "/creatorthon/login"
+            return RedirectResponse(login_path, status_code=303)
     if request.url.path not in public_paths and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
@@ -453,6 +456,7 @@ class CreatorthonFinishRequest(BaseModel):
     video_url: str = Field(min_length=4, max_length=2000)
     narration: str = Field(default="", max_length=4096)
     voice: str = Field(default="coral", max_length=40)
+    official_logo_data: str = Field(default="", max_length=14_000_000)
 
 
 class CreatorthonHashtagRequest(BaseModel):
@@ -604,6 +608,26 @@ async def creatorthon(request: Request):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
         return RedirectResponse("/creatorthon/login", status_code=303)
     return FileResponse(ROOT / "static" / "creatorthon.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/creatorthon-v2/login", response_class=HTMLResponse)
+async def creatorthon_v2_login(request: Request):
+    if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v2", status_code=303)
+    google_ready = google_configured()
+    action = '<a class="google" href="/auth/google?next=/creatorthon-v2"><b>G</b><span>Continue with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet. Add the Google credentials to this service.</p>'
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Viralizer Creatorthon</title><style>
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#fff;color:#0b0b0d;font-family:Inter,Arial,sans-serif}}body{{display:grid;place-items:center;padding:28px}}main{{width:min(520px,100%)}}.brand{{display:flex;justify-content:center;margin-bottom:64px}}.brand img{{width:210px;height:auto}}.progress{{height:5px;border-radius:99px;background:#ececf0;overflow:hidden;margin-bottom:76px}}.progress:before{{content:"";display:block;width:24%;height:100%;border-radius:inherit;background:#8b2cff}}h1{{font-size:clamp(38px,8vw,58px);line-height:1.02;letter-spacing:-.055em;margin:0 0 18px}}p{{font-size:17px;line-height:1.55;color:#67666d;margin:0}}.google{{display:flex;align-items:center;justify-content:center;gap:12px;min-height:64px;margin-top:38px;border-radius:999px;background:#0b0b0d;color:#fff;text-decoration:none;font-size:17px;font-weight:800}}.google b{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#4285f4;font-size:19px}}.note{{font-size:12px;color:#9b9aa1;text-align:center;margin-top:18px}}.warning{{margin-top:28px;padding:16px;border-radius:14px;background:#fff1f2;color:#a82035;font-size:14px}}</style></head><body><main><div class="brand"><img src="/static/viralizer-original-logo.png" alt="Viralizer"></div><div class="progress"></div><h1>Create content people stop for.</h1><p>Discover a timely idea, direct the video, add your voice and branding, then publish—all in one guided journey.</p>{action}<p class="note">Secure Google sign-in · Your existing Viralizer account is used</p></main></body></html>""")
+
+
+@app.get("/creatorthon-v2")
+async def creatorthon_v2(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v2/login", status_code=303)
+    return FileResponse(
+        ROOT / "static" / "creatorthon-v2.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 def creatorthon_user(request: Request) -> dict[str, Any]:
@@ -928,25 +952,26 @@ async def heygen_styles():
         raise HTTPException(502, str(exc)) from exc
 @app.post("/api/video/generate")
 async def generate_video(request: GenerateRequest):
+    content = await prepare_article_intelligence(request.content, request.duration, request.aspect_ratio)
     selected_provider = request.provider
     if selected_provider == "auto":
-        routing_text = " ".join(str(request.content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
+        routing_text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
         presenter_intent = any(word in routing_text for word in ("presenter", "spokesperson", "talking", "host", "explainer", "news anchor"))
         selected_provider = "heygen" if presenter_intent and request.aspect_ratio in {"9:16", "16:9"} and bool(os.getenv("HEYGEN_API_KEY", "").strip()) else "pixverse"
-    production = prepare_production(request.content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
+    production = prepare_production(content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
     prompt = production["prompt"]
     if not prompt:
         raise HTTPException(422, "The selected content did not produce a usable video direction.")
     if selected_provider == "hybrid":
-        script = request.narration or build_heygen_script(request.content, request.duration)
-        job_id = start_hybrid_video(request.content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, request.quality_mode)
-        production.update(job_id=job_id, provider="hybrid", status="processing", generation_mode="hybrid", motion_prompt=build_presenter_direction(request.content, request.duration))
+        script = request.narration or build_heygen_script(content, request.duration)
+        job_id = start_hybrid_video(content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, request.quality_mode)
+        production.update(job_id=job_id, provider="hybrid", status="processing", generation_mode="hybrid", motion_prompt=build_presenter_direction(content, request.duration))
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
         return {"job_id": job_id, "provider": "hybrid", "status": "processing", "prompt": prompt, "quality_mode": request.quality_mode, "stage": "Planning presenter and content visuals"}
     if selected_provider == "pixverse" and (request.duration > 15 or request.quality_mode):
         if selected_provider != "pixverse":
             raise HTTPException(422, "Long multi-clip videos currently require PixVerse.")
-        job_id = start_long_video(request.content, request.duration, request.quality, quality_mode=request.quality_mode, production=production)
+        job_id = start_long_video(content, request.duration, request.quality, quality_mode=request.quality_mode, production=production)
         production.update(job_id=job_id, provider="viralizer", status="processing")
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
         return {"job_id": job_id, "provider": "viralizer", "status": "processing", "prompt": prompt, "multi_clip": True, "quality_mode": request.quality_mode, "stage": "Preparing scenes"}
@@ -954,10 +979,10 @@ async def generate_video(request: GenerateRequest):
         job_id = await generate_with_provider(
             selected_provider,
             prompt,
-            content=request.content,
+            content=content,
             duration=request.duration,
             quality=request.quality,
-            narration=request.narration or (build_heygen_script(request.content, request.duration) if selected_provider == "heygen" else build_narration_script(request.content, request.duration)),
+            narration=request.narration or (build_heygen_script(content, request.duration) if selected_provider == "heygen" else build_narration_script(content, request.duration)),
             avatar_id=request.avatar_id,
             voice_id=request.voice_id,
             background=request.background,
@@ -1108,8 +1133,9 @@ async def video_providers():
     return {"providers": provider_catalog()}
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
+    content = await prepare_article_intelligence(request.content, request.duration, request.aspect_ratio)
     prompt_result = build_video_prompt(
-        request.content,
+        content,
         request.duration,
         generation_type=request.generation_type,
         quality_mode=request.quality_mode,
@@ -1127,9 +1153,9 @@ async def video_prompt(request: GenerateRequest):
             "16:9": "Use landscape-safe composition with essential subjects inside the central 86% and clean lower-third space.",
         }
         prompt = f"{prompt} Delivery target: {platform}, {request.aspect_ratio}. {safe_areas.get(request.aspect_ratio, safe_areas['9:16'])} Do not render platform logos or platform interface elements."
-    heygen_plan = build_heygen_plan(request.content, request.duration, visual_mode=request.visual_mode, aspect_ratio=request.aspect_ratio, captions=request.captions, user_direction=request.prompt or "")
+    heygen_plan = build_heygen_plan(content, request.duration, visual_mode=request.visual_mode, aspect_ratio=request.aspect_ratio, captions=request.captions, user_direction=request.prompt or "")
     heygen_payload = compile_heygen_request(heygen_plan, avatar_id=request.avatar_id, voice_id=request.voice_id, style_id=request.heygen_style_id, brand_kit_id=request.brand_kit_id)
-    response = {"prompt": prompt, "narration": build_narration_script(request.content, request.duration), "heygen_script": heygen_plan["script"], "heygen_direction": heygen_plan["compiled_prompt"], "heygen_plan": heygen_plan, "heygen_request": heygen_payload}
+    response = {"prompt": prompt, "narration": build_narration_script(content, request.duration), "heygen_script": heygen_plan["script"], "heygen_direction": heygen_plan["compiled_prompt"], "heygen_plan": heygen_plan, "heygen_request": heygen_payload, "content": content, "article_intelligence": content.get("article_intelligence", {})}
     if motion_debug is not None:
         response["motion_director"] = motion_debug
     return response
@@ -1232,8 +1258,19 @@ async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishR
     creatorthon_user(request)
     # Creatorthon branding is server-enforced. The client cannot omit or move it.
     logo_bytes = (ROOT / "static" / "viralizer-original-logo.png").read_bytes()
+    official_logo_bytes = None
+    if payload.official_logo_data:
+        match = re.fullmatch(r"data:image/(?:png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\r\n]+)", payload.official_logo_data)
+        if not match:
+            raise HTTPException(422, "Official logo must be a PNG, JPG, JPEG, or WebP image.")
+        try:
+            official_logo_bytes = base64.b64decode(match.group(1), validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise HTTPException(422, "Official logo data is invalid.") from exc
+        if len(official_logo_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(422, "Official logo must be smaller than 10 MB.")
     try:
-        output = await finish_video(payload.video_url, payload.narration, payload.voice, logo_bytes)
+        output = await finish_video(payload.video_url, payload.narration, payload.voice, logo_bytes, secondary_logo_bytes=official_logo_bytes)
     except MediaFinisherError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}

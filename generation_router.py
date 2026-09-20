@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from provider_capability_routing import ProviderModeObservation, capability_route, classify_shot_capabilities
+
 
 @dataclass(frozen=True)
 class GenerationRoute:
@@ -30,3 +32,13 @@ def choose_generation_route(content: dict[str, Any], *, reference_available: boo
     confidence = .86 if not reference_available else .76
     reason = "No suitable reference is available; use tightly directed text-to-video." if not reference_available else "The shot is generic enough for text-to-video."
     return GenerationRoute("text_to_video", confidence, reason, scores)
+
+
+def choose_provider_mode(
+    shot: dict[str, Any],
+    observations: list[ProviderModeObservation],
+    *,
+    fusion_supported: bool,
+) -> dict[str, Any]:
+    """Route by demonstrated provider capability without changing the approved shot."""
+    return capability_route(shot, observations, fusion_supported=fusion_supported)

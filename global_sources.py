@@ -886,12 +886,17 @@ def record(
     title: str, category: str, source: str, url: str, published: datetime, engagement: int,
     summary: str = "", image_url: str = "",
 ) -> dict[str, Any]:
+    host = (urlparse(url).hostname or "").lower()
+    publisher_url = url if url and "news.google." not in host else ""
     return {
         "topic": " ".join(str(title).split()),
         "category": category,
         "published_at": published.isoformat(),
         "summary": " ".join(str(summary).split())[:1000],
         "source_urls": [url] if url else [],
+        "discovery_url": url,
+        "canonical_url": publisher_url,
+        "publisher_domain": (urlparse(publisher_url).hostname or "").removeprefix("www."),
         "mentions": 1,
         "source_platforms": [source],
         "source_engagement": {source: engagement},

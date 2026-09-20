@@ -81,6 +81,21 @@ class MotionPlan:
     action_validation: dict[str, Any] = field(default_factory=dict)
     creative_style: str = ""
     semantic_validation: dict[str, Any] = field(default_factory=dict)
+    core_message: str = ""
+    core_visual_subject: str = ""
+    visual_message: str = ""
+    visual_hook: str = ""
+    visual_story_plan: dict[str, Any] = field(default_factory=dict)
+    current_story_beat: str = ""
+    factual_boundaries: list[str] = field(default_factory=list)
+    must_show: list[str] = field(default_factory=list)
+    must_avoid: list[str] = field(default_factory=list)
+    unsupported_visuals: list[str] = field(default_factory=list)
+    hero_payoff: str = ""
+    approved_storyboard_shot: dict[str, Any] = field(default_factory=dict)
+    reference_frame_plan: dict[str, Any] = field(default_factory=dict)
+    action_outcome_contract: dict[str, Any] = field(default_factory=dict)
+    result_state_reference: dict[str, Any] = field(default_factory=dict)
     final_prompt: str = ""
 
     def debug(self) -> dict[str, Any]:
@@ -102,7 +117,7 @@ def _clean(value: Any, limit: int = 60) -> str:
 
 def _content_text(content: dict[str, Any], user_prompt: str = "") -> str:
     values = [user_prompt]
-    for key in ("topic", "suggested_title", "hook", "category", "entity_type_label", "video_idea", "creator_angle", "why_it_matters", "product", "brand", "company"):
+    for key in ("topic", "suggested_title", "hook", "category", "entity_type_label", "summary", "core_message", "visual_message", "current_story_beat", "video_idea", "creator_angle", "why_it_matters", "product", "brand", "company"):
         values.append(str(content.get(key) or ""))
     return " ".join(values).lower()
 
@@ -133,7 +148,7 @@ VISUAL_TERMS = (
 
 def _source_content(content: dict[str, Any], user_prompt: str = "") -> str:
     ordered = []
-    for key in ("topic", "suggested_title", "hook", "video_idea", "creator_angle", "why_it_matters", "category", "entity_type_label", "brand", "company", "product", "location"):
+    for key in ("topic", "suggested_title", "hook", "summary", "core_message", "visual_message", "current_story_beat", "video_idea", "creator_angle", "why_it_matters", "category", "entity_type_label", "brand", "company", "product", "location"):
         value = _clean(content.get(key), 180)
         if value and value not in ordered:
             ordered.append(value)
@@ -152,6 +167,10 @@ def _declared_category(content: dict[str, Any]) -> str:
         return "Travel"
     if category.startswith(("automotive", "car", "vehicle")):
         return "Automotive"
+    for profile in GROUNDING_PROFILES:
+        canonical = profile["category"]
+        if category == canonical.lower() or category.startswith(canonical.lower() + " "):
+            return canonical
     return ""
 
 
@@ -179,8 +198,17 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
     # Technology plus investment describes a technology business unless the subject is explicitly the stock market.
     if any(term in lower for term in ("artificial intelligence", " ai ", "technology", "software", "chip", "platform")) and "stock market" not in lower and "stocks" not in lower:
         profile = next(item for item in GROUNDING_PROFILES if item["category"] == "Technology / Business")
-    topic = _clean(content.get("topic") or content.get("suggested_title") or content.get("hook"), 22)
-    if profile["category"] == "Food / Seafood":
+    story = content.get("story_understanding") if isinstance(content.get("story_understanding"), dict) else {}
+    visual_plan = content.get("visual_story_plan") if isinstance(content.get("visual_story_plan"), dict) else {}
+    storyboard_shot = content.get("approved_storyboard_shot") if isinstance(content.get("approved_storyboard_shot"), dict) else {}
+    reference_frame_plan = content.get("reference_frame_plan") if isinstance(content.get("reference_frame_plan"), dict) else {}
+    authoritative_plan = bool(_clean(visual_plan.get("core_visual_subject"), 40) and visual_plan.get("story_beats") and visual_plan.get("visual_message"))
+    subjects = story.get("main_subjects") if isinstance(story.get("main_subjects"), list) else []
+    topic = _clean(subjects[0] if subjects else content.get("topic") or content.get("suggested_title") or content.get("hook"), 22)
+    if authoritative_plan:
+        core = _clean(visual_plan.get("core_visual_subject"), 40)
+        intent = _clean(story.get("core_message") or visual_plan.get("visual_message"), 80)
+    elif profile["category"] == "Food / Seafood":
         core = topic or "seafood cooking technique"
         intent = "demonstrate one specific seafood cooking technique and present the finished result"
     elif profile["category"] == "Food / Confectionery":
@@ -227,12 +255,24 @@ def _ground_content(content: dict[str, Any], duration: int, user_prompt: str = "
     numbers = list(dict.fromkeys(re.findall(r"(?<!\w)(?:[$£€₹]?\d[\d,.]*%?)(?!\w)", source)))
     exact_text = list(dict.fromkeys(re.findall(r"[\"“]([^\"”]{2,80})[\"”]", source)))
     secondary = list(dict.fromkeys(category_hits + visual))[:8]
-    return {"source_content":source,"core_subject":core,"secondary_subjects":secondary,"content_intent":intent,"category":profile["category"],"creative_style":profile["style"],"visualizable_information":visual,"non_visual_information":non_visual,"interaction_information":interaction,"brand_entities":brands,"people_entities":[],"products":products,"locations":locations,"important_exact_text":exact_text,"important_numbers":numbers,"duration":duration}
+    if story.get("core_message"):
+        intent = _clean(story["core_message"], 60)
+    must_avoid = list(dict.fromkeys((visual_plan.get("must_avoid") or []) + (story.get("unsupported_visuals") or content.get("unsupported_visuals") or [])))
+    shot_avoid = storyboard_shot.get("must_avoid") if isinstance(storyboard_shot.get("must_avoid"), list) else []
+    must_avoid = list(dict.fromkeys(must_avoid + shot_avoid))
+    return {"source_content":source,"core_subject":core,"core_visual_subject":_clean(visual_plan.get("core_visual_subject"),40),"authoritative_story_plan":authoritative_plan,"secondary_subjects":secondary,"content_intent":intent,"category":profile["category"],"creative_style":_clean(visual_plan.get("visual_style"),25) or profile["style"],"visualizable_information":visual,"non_visual_information":non_visual,"interaction_information":interaction,"brand_entities":brands,"people_entities":[],"products":products,"locations":locations,"important_exact_text":exact_text,"important_numbers":numbers,"duration":duration,"story_understanding":story,"visual_story_plan":visual_plan,"current_story_beat":_clean(storyboard_shot.get("visual_description") or content.get("current_story_beat"),180),"core_message":_clean(story.get("core_message") or content.get("core_message"),140),"visual_message":_clean(visual_plan.get("visual_message"),140),"visual_hook":_clean(visual_plan.get("visual_hook"),120),"factual_boundaries":story.get("factual_boundaries") or content.get("factual_boundaries") or [],"must_show":storyboard_shot.get("must_show") or visual_plan.get("must_show") or [],"must_avoid":must_avoid,"unsupported_visuals":story.get("unsupported_visuals") or content.get("unsupported_visuals") or [],"hero_payoff":_clean(visual_plan.get("hero_payoff"),120),"approved_storyboard_shot":storyboard_shot,"reference_frame_plan":reference_frame_plan,"action_outcome_contract":storyboard_shot.get("action_outcome_contract") or visual_plan.get("action_outcome_contract") or story.get("action_outcome_contract") or {},"result_state_reference":reference_frame_plan.get("result_state_reference") or {}}
 
 
 def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
     subject = grounding["core_subject"]
     category = grounding["category"]
+    visual_plan = grounding.get("visual_story_plan") or {}
+    planned = [grounding.get("current_story_beat"), visual_plan.get("visual_hook")]
+    planned.extend(item.get("visual") for item in visual_plan.get("story_beats", []) if isinstance(item, dict))
+    planned.append(visual_plan.get("hero_payoff"))
+    planned = list(dict.fromkeys(_clean(item, 80) for item in planned if _clean(item, 80)))
+    if planned:
+        return planned
     if category == "Food / Seafood":
         candidates = [f"one nearly cooked prawn sizzling in a premium pan as a chef turns it once with tongs", f"a chef glazing one prawn with herb butter in a controlled pan-cooking close-up", f"a finished prawn presented with its cooking surface and restrained garnish"]
     elif category == "Food / Confectionery":
@@ -265,6 +305,10 @@ def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
 
 
 def _select_concept(candidates: list[str], grounding: dict[str, Any], duration: int) -> str:
+    if grounding.get("current_story_beat"):
+        return grounding["current_story_beat"]
+    if grounding.get("visual_story_plan"):
+        return candidates[0]
     # Short clips favor one reliable physical action over broad exposition.
     action_terms = ("break", "break", "takedown", "takedown", "executes", "select", "interacting", "moving", "demonstrates", "using", "state change", "action")
     if duration <= 5:
@@ -274,12 +318,31 @@ def _select_concept(candidates: list[str], grounding: dict[str, Any], duration: 
 
 ABSTRACT_TERMS = ("analysis", "review", "update", "growth", "success", "competition", "innovation", "performance", "popularity", "investment", "comparison", "trend", "storyline", "impact")
 PLACEHOLDER_ACTIONS = ("perform one action", "show the topic", "make the subject visible", "show relevant activity", "perform appropriate movement", "show a representative scene", "interact naturally", "one clear human action", "one physically believable action")
-PHYSICAL_VERBS = ("selects", "selecting", "breaks", "breaking", "lifts", "places", "picks up", "begins playing", "executes", "rebounds", "accelerates", "drives", "turn", "turns", "uses", "spoons", "opens", "applies", "reviews", "tracks", "rotates", "faces", "steps", "raises", "moves", "holds", "walks", "demonstrates", "operates", "completes", "secures", "pivots", "brings", "breathes", "blinks", "shifts")
+PHYSICAL_VERBS = ("selects", "selecting", "breaks", "breaking", "lifts", "places", "picks up", "begins playing", "executes", "rebounds", "accelerates", "drives", "turn", "turns", "uses", "spoons", "opens", "applies", "reviews", "tracks", "rotates", "faces", "steps", "raises", "moves", "holds", "walks", "demonstrates", "operates", "completes", "secures", "pivots", "brings", "breathes", "blinks", "shifts", "reveal", "reveals", "travels", "settle", "settles", "widens", "pulls back", "pushes in", "fade", "fades", "follow", "follows", "flows", "pours", "responds", "transforms", "assembles", "appears", "slides", "resolves", "crosses", "punch", "punches", "deliver", "delivers", "perform", "performs", "prepare", "prepares", "test", "tests", "inspect", "inspects", "coordinate", "coordinates", "display", "displays", "transition", "transitions", "establish", "establishes", "show", "shows", "highlight", "highlights", "present", "presents", "integrate", "integrates", "change", "changes", "update", "updates", "work", "works", "handle", "handles")
+
+
+def _story_beat_motion(grounding: dict[str, Any], beat: str) -> str:
+    """Translate the approved WHAT into motion without selecting new semantics."""
+    subject = grounding["core_subject"]
+    shot = grounding.get("approved_storyboard_shot") or {}
+    if shot.get("action"):
+        return _clean(shot["action"], 180)
+    lower = beat.lower()
+    if any(term in lower for term in ("fabric", "silk", "silhouette", "strapless", "neckline", "close")):
+        return f"The camera travels slowly from the lower material details toward the defining silhouette of {subject} as soft light shifts across the surface, then settles on the complete form"
+    if any(term in lower for term in ("gallery", "exhibition", "auction", "display", "hero")):
+        return f"The camera pulls back slowly from one detail of {subject} as the source-supported display environment appears, then settles with the subject central"
+    if any(term in lower for term in ("rotate", "turning", "turns")):
+        return f"Keep {subject} central as it turns slowly through one controlled movement, while light and reflections respond consistently, then settle into a stable view"
+    return f"Use one controlled motion sequence to reveal the sourced moment with {subject} central as material, light, and environmental reactions follow naturally, then settle clearly"
 
 
 def _visual_action_candidates(grounding: dict[str, Any], concept: str, generation_type: str) -> list[str]:
     source = grounding["source_content"].lower()
     category = grounding["category"]
+    if grounding.get("authoritative_story_plan"):
+        beat = grounding.get("current_story_beat") or concept
+        return [_story_beat_motion(grounding, beat)]
     if category == "Food / Seafood":
         return ["A chef uses tongs to turn one nearly cooked prawn once in the hot pan, spoons glossy herb butter over it, and lets it settle naturally.", "A chef turns one nearly cooked prawn once with tongs while butter sizzles around it."]
     if category == "Food / Confectionery":
@@ -314,15 +377,20 @@ def _visual_action_candidates(grounding: dict[str, Any], concept: str, generatio
 def _validate_visual_action(action: str, grounding: dict[str, Any]) -> dict[str, Any]:
     lower = action.lower()
     unresolved = [phrase for phrase in PLACEHOLDER_ACTIONS if phrase in lower]
-    has_actor = any(term in lower for term in ("hand", "person", "player", "wrestler", "opponent", "car", "vehicle", "professional", "user", "subject", "hero", "record", "investor", "team member"))
+    subject_tokens = [token for token in re.findall(r"[a-z0-9]+", grounding.get("core_subject", "").lower()) if len(token) > 3]
+    has_actor = any(term in lower for term in ("hand", "person", "player", "wrestler", "opponent", "car", "vehicle", "professional", "user", "subject", "hero", "record", "investor", "team member", "object", "camera", "fabric", "machine", "dress", "product", "environment")) or any(token in lower for token in subject_tokens)
     has_verb = any(verb in lower for verb in PHYSICAL_VERBS)
-    has_context = any(term in lower for term in ("surface", "setup", "ring", "road", "display", "working context", "interface", "composition", "bottle", "chocolate", "filling", "city", "studio", "environment", "pose"))
+    has_context = any(term in lower for term in ("surface", "setup", "ring", "road", "display", "working context", "interface", "composition", "bottle", "chocolate", "filling", "city", "studio", "environment", "pose", "silhouette", "material", "gallery", "light", "view", "frame"))
     passed = has_actor and has_verb and has_context and not unresolved
     return {"status":"PASS" if passed else "FAIL","has_actor":has_actor,"has_physical_action":has_verb,"has_environment_or_target":has_context,"unresolved_phrases":unresolved}
 
 
 def _resolve_visual_action(grounding: dict[str, Any], concept: str, generation_type: str) -> tuple[list[str], str, dict[str, Any]]:
     candidates = _visual_action_candidates(grounding, concept, generation_type)
+    if grounding.get("authoritative_story_plan") and candidates and not any(phrase in candidates[0].lower() for phrase in PLACEHOLDER_ACTIONS):
+        validation = _validate_visual_action(candidates[0], grounding)
+        validation["upstream_story_plan"] = True
+        return candidates, candidates[0], validation
     for action in candidates:
         validation = _validate_visual_action(action, grounding)
         if validation["status"] == "PASS":
@@ -344,10 +412,62 @@ UNSUPPORTED_BY_CATEGORY = {
 def _semantic_validate(text: str, grounding: dict[str, Any], stage: str) -> dict[str, Any]:
     lower = text.lower()
     unsupported = [term for term in UNSUPPORTED_BY_CATEGORY.get(grounding["category"], ()) if term in lower]
-    core_tokens = [word for word in re.findall(r"[a-z0-9]+", grounding["core_subject"].lower()) if len(word) > 3]
+    raw_core_tokens = re.findall(r"[A-Za-z0-9]+", grounding["core_subject"])
+    core_tokens = [word.lower() for word in raw_core_tokens if len(word) > 3 or (len(word) >= 2 and word.isupper())]
     relevant = any(token in lower for token in core_tokens) or any(item in lower for item in grounding["visualizable_information"])
     passed = not unsupported and relevant
     return {"stage":stage,"status":"PASS" if passed else "FAIL","unsupported_concepts":unsupported,"core_subject_present":relevant,"repaired":False}
+
+
+def _semantic_handoff_validate(plan: MotionPlan, grounding: dict[str, Any]) -> dict[str, Any]:
+    """Verify that Motion Director executed the approved story instead of rewriting it."""
+    story_plan = grounding.get("visual_story_plan") or {}
+    if not grounding.get("authoritative_story_plan"):
+        return {"status":"NOT_APPLICABLE","authoritative_story_plan":False,"checks":{},"changed_story_semantics":False}
+    approved_subject = _clean(story_plan.get("core_visual_subject"), 40)
+    approved_beats = [_clean(item.get("visual"), 120) for item in story_plan.get("story_beats", []) if isinstance(item, dict)]
+    current = grounding.get("current_story_beat") or (approved_beats[0] if approved_beats else "")
+    selected_is_approved = _clean(plan.selected_visual_concept, 120) == _clean(current, 120)
+    positive_prompt = plan.final_prompt.lower().split("keep every visible detail within the supplied story evidence", 1)[0]
+    unsupported = []
+    for item in grounding.get("unsupported_visuals") or []:
+        phrase = _clean(item, 20).lower()
+        if phrase and phrase in positive_prompt:
+            unsupported.append(item)
+    unsafe_generated_asset_requested = any(term in positive_prompt for term in ("archival photograph", "historical photograph", "archival image", "archival footage", "reenactment", "photo frame", "vintage invitation", "handwriting", "map animation", "gavel softly fades", "gavel fades"))
+    must_show_present = all(
+        any(token in plan.final_prompt.lower() for token in re.findall(r"[a-z0-9]+", _clean(item, 20).lower()) if len(token) > 4)
+        for item in grounding.get("must_show") or []
+    )
+    approved_shot = grounding.get("approved_storyboard_shot") or {}
+    storyboard_subject = _clean(approved_shot.get("visual_subject"), 40)
+    storyboard_action = _clean(approved_shot.get("action"), 180)
+    checks = {
+        "core_visual_subject_preserved": plan.core_subject == approved_subject and plan.core_visual_subject == approved_subject,
+        "current_story_beat_executed": selected_is_approved and bool(current),
+        "must_show_preserved": must_show_present,
+        "factual_boundaries_respected": bool(plan.factual_boundaries) and "within the supplied story evidence" in plan.final_prompt.lower(),
+        "unsupported_visuals_absent": not unsupported and not unsafe_generated_asset_requested,
+        "hero_payoff_consistent": plan.hero_payoff == _clean(story_plan.get("hero_payoff"), 120),
+        "no_category_template_override": plan.selected_visual_concept == current,
+        "no_person_substitution": plan.core_subject == approved_subject,
+        "storyboard_subject_preserved": not approved_shot or storyboard_subject == approved_subject,
+        "storyboard_action_preserved": not approved_shot or plan.concrete_visual_action == storyboard_action,
+        "reference_plan_not_semantic_authority": not plan.reference_frame_plan or _clean(plan.reference_frame_plan.get("subject"), 40) == approved_subject,
+    }
+    return {
+        "status":"PASS" if all(checks.values()) else "FAIL",
+        "authoritative_story_plan":True,
+        "checks":checks,
+        "approved_core_visual_subject":approved_subject,
+        "motion_core_visual_subject":plan.core_subject,
+        "current_story_beat":current,
+        "approved_storyboard_shot_id":approved_shot.get("shot_id"),
+        "unsupported_visuals_found":unsupported,
+        "generated_visuals":"PixVerse-safe generated execution of the approved beat",
+        "real_source_assets":[],
+        "changed_story_semantics":not all(checks.values()),
+    }
 
 def classify_scene(content: dict[str, Any], user_prompt: str = "") -> str:
     text = f" {_content_text(content, user_prompt)} "
@@ -357,6 +477,21 @@ def classify_scene(content: dict[str, Any], user_prompt: str = "") -> str:
         return "GAMING"
     ranked = sorted(PRIORITY, key=lambda scene: (scores[scene], -PRIORITY.index(scene)), reverse=True)
     return ranked[0] if scores[ranked[0]] else "CINEMATIC"
+
+
+def _authoritative_scene(grounding: dict[str, Any]) -> str:
+    """Choose only an execution profile; never reselect the approved subject or story."""
+    subject = grounding.get("core_subject", "").lower()
+    tokens = set(re.findall(r"[a-z0-9]+", subject))
+    if tokens & {"car", "vehicle", "motorcycle", "truck"}:
+        return "AUTOMOTIVE"
+    if tokens & {"dress", "garment", "gown", "product", "bottle", "device", "object"}:
+        return "PRODUCT"
+    if tokens & {"machine", "robot", "mechanism"}:
+        return "MECHANICAL_OBJECT"
+    if tokens & {"person", "woman", "man", "athlete", "player", "actor"}:
+        return "PORTRAIT"
+    return "CINEMATIC"
 
 
 def _subject(content: dict[str, Any]) -> str:
@@ -534,25 +669,44 @@ def _relationships(layers: list[MotionLayer]) -> tuple[list[str], list[str]]:
 
 
 def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_type: str = "text_to_video", quality_mode: bool = True, user_prompt: str = "") -> MotionPlan:
-    duration = max(5, min(60, int(duration or 5)))
+    minimum_duration = 1 if isinstance(content.get("approved_storyboard_shot"), dict) else 5
+    duration = max(minimum_duration, min(60, int(duration or 5)))
     generation_type = "image_to_video" if str(generation_type).replace("-", "_").lower() == "image_to_video" else "text_to_video"
     grounding = _ground_content(content, duration, user_prompt)
     candidates = _concept_candidates(grounding, duration)
     selected = _select_concept(candidates, grounding, duration)
-    concept_validation = _semantic_validate(selected, grounding, "visual_concept")
-    if concept_validation["status"] == "FAIL":
+    if grounding.get("authoritative_story_plan"):
+        approved_beats = [_clean(item.get("visual"), 120) for item in grounding["visual_story_plan"].get("story_beats", []) if isinstance(item, dict)]
+        approved = grounding.get("current_story_beat") or (approved_beats[0] if approved_beats else "")
+        concept_validation = {"stage":"visual_concept","status":"PASS" if selected == approved else "FAIL","unsupported_concepts":[],"core_subject_present":True,"repaired":False,"authority":"visual_story_plan"}
+    else:
+        concept_validation = _semantic_validate(selected, grounding, "visual_concept")
+    if concept_validation["status"] == "FAIL" and not grounding.get("authoritative_story_plan"):
         selected = f"one clear physical moment directly showing {grounding['core_subject']}"
         concept_validation = _semantic_validate(selected, grounding, "visual_concept")
         concept_validation["repaired"] = True
     action_candidates, concrete_action, action_validation = _resolve_visual_action(grounding, selected, generation_type)
     category_scene = {"Food / Seafood":"PRODUCT", "Food / Confectionery":"PRODUCT", "Gaming":"GAMING", "Automotive":"AUTOMOTIVE", "Travel":"ENVIRONMENT", "Beauty / Product":"BEAUTY", "Finance / Business":"FINANCE", "Technology / Business":"TECH", "News":"NEWS", "UI / Interface":"UI_ANIMATION", "Sports":"ACTION"}
-    scene = category_scene.get(grounding["category"], classify_scene(content, user_prompt))
+    scene = _authoritative_scene(grounding) if grounding.get("authoritative_story_plan") else category_scene.get(grounding["category"], classify_scene(content, user_prompt))
     text = grounding["source_content"].lower()
     layers = _specialize_layers(_generic_layers(scene), text)
     relationships, causes = _relationships(layers)
     subject = grounding["core_subject"]
     intent = grounding["content_intent"]
+    evidence_locks = grounding.get("visual_story_plan", {}).get("source_evidence_locks") or []
+    temporal_boundaries = list(grounding.get("factual_boundaries", []))
+    if any(item.get("temporal_status") in {"PLANNED_FUTURE", "PROPOSED", "EXPECTED"} for item in evidence_locks):
+        temporal_boundaries.append("Future, proposed, or expected activity must remain visibly preparatory and must not be shown as completed.")
     camera_plan = _camera(scene, quality_mode)
+    approved_shot = grounding.get("approved_storyboard_shot") or {}
+    if approved_shot.get("camera"):
+        camera_plan = {"level":"APPROVED", "direction":_clean(approved_shot["camera"], 120)}
+    elif grounding.get("authoritative_story_plan"):
+        action_lower = concrete_action.lower()
+        if "pulls back" in action_lower:
+            camera_plan = {"level":"SUBTLE","direction":"Use one slow controlled pullback that reveals the source-supported environment, with no orbit or lens change."}
+        elif "travels slowly" in action_lower:
+            camera_plan = {"level":"SUBTLE","direction":"Use one slow controlled traveling move along the approved subject detail, with no orbit or lens change."}
     if grounding["category"] == "Sports" and any(term in text for term in ("wrestling", "wwe", "wweraw", "wrestler")):
         camera_plan = {"level":"CONTROLLED", "direction":"Use one smooth ringside tracking move that follows the action and settles as the wrestlers complete the sequence."}
     plan = MotionPlan(
@@ -591,6 +745,21 @@ def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_
         action_validation=action_validation,
         creative_style=grounding["creative_style"],
         semantic_validation={"concept": concept_validation},
+        core_message=grounding.get("core_message", ""),
+        core_visual_subject=grounding.get("core_visual_subject", ""),
+        visual_message=grounding.get("visual_message", ""),
+        visual_hook=grounding.get("visual_hook", ""),
+        visual_story_plan=grounding.get("visual_story_plan", {}),
+        current_story_beat=grounding.get("current_story_beat", ""),
+        factual_boundaries=temporal_boundaries,
+        must_show=grounding.get("must_show", []),
+        must_avoid=grounding.get("must_avoid", []),
+        unsupported_visuals=grounding.get("unsupported_visuals", []),
+        hero_payoff=grounding.get("hero_payoff", ""),
+        approved_storyboard_shot=grounding.get("approved_storyboard_shot", {}),
+        reference_frame_plan=grounding.get("reference_frame_plan", {}),
+        action_outcome_contract=grounding.get("action_outcome_contract", {}),
+        result_state_reference=grounding.get("result_state_reference", {}),
     )
     compiled_prompt = compile_pixverse_prompt(plan)
     plan.final_prompt, polish_report = _final_prompt_polish(plan, compiled_prompt)
@@ -604,7 +773,21 @@ def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_
         final_validation = _semantic_validate(plan.final_prompt, grounding, "final_prompt")
         final_validation["repaired"] = True
     plan.semantic_validation["final"] = final_validation
-    plan.semantic_validation["status"] = "PASS" if concept_validation["status"] == "PASS" and final_validation["status"] == "PASS" and polish_report["status"] == "PASS" else "FAIL"
+    handoff = _semantic_handoff_validate(plan, grounding)
+    if handoff["status"] == "FAIL" and grounding.get("authoritative_story_plan"):
+        plan.core_subject = grounding["core_visual_subject"]
+        plan.core_visual_subject = grounding["core_visual_subject"]
+        plan.selected_visual_concept = grounding.get("current_story_beat") or candidates[0]
+        plan.concrete_visual_action = _story_beat_motion(grounding, plan.selected_visual_concept)
+        repaired_prompt = compile_pixverse_prompt(plan)
+        plan.final_prompt, polish_report = _final_prompt_polish(plan, repaired_prompt)
+        plan.semantic_validation["final_prompt_polish"] = polish_report
+        handoff = _semantic_handoff_validate(plan, grounding)
+        handoff["repaired"] = True
+    plan.semantic_validation["handoff"] = handoff
+    plan.semantic_validation["status"] = "PASS" if concept_validation["status"] == "PASS" and final_validation["status"] == "PASS" and polish_report["status"] == "PASS" and handoff["status"] in {"PASS", "NOT_APPLICABLE"} else "FAIL"
+    if grounding.get("authoritative_story_plan") and plan.semantic_validation["status"] != "PASS":
+        raise ValueError(f"Motion Director rejected output that changed or weakened the approved Visual Story Plan: {plan.semantic_validation}")
     return plan
 
 
@@ -716,11 +899,12 @@ def _final_prompt_polish(plan: MotionPlan, prompt: str) -> tuple[str, dict[str, 
     lower = polished.lower()
     action = _explicit_primary_action(plan).lower()
     internal_terms = [term for term in ("(primary", "(secondary", "(reactive", "(locked", "reacts_to", "attached_to", "inherits_motion", "motion budget", "/100") if term in lower]
-    subject_terms = [word for word in re.findall(r"[a-z0-9]+", plan.core_subject.lower()) if len(word) > 3 and word not in ABSTRACT_TERMS]
+    raw_subject_terms = re.findall(r"[A-Za-z0-9]+", plan.core_subject)
+    subject_terms = [word.lower() for word in raw_subject_terms if (len(word) > 3 or (len(word) >= 2 and word.isupper())) and word.lower() not in ABSTRACT_TERMS]
     checks = {
         "subject_obvious": any(word in lower for word in subject_terms) or plan.category == "Sports" and "wrestler" in lower,
         "physical_action_obvious": any(verb in action for verb in PHYSICAL_VERBS),
-        "action_fits_duration": plan.duration > 5 or len(action.split()) <= 32,
+        "action_fits_duration": len(action.replace(plan.core_subject.lower(), "subject").split()) <= max(24, plan.duration * 10),
         "camera_explicit": any(term in lower for term in ("camera", "push-in", "tracking", "locked", "pan", "zoom")),
         "cause_effect_preserved": any(term in lower for term in ("as the", "while", "respond", "react", "under gravity", "consistent with vehicle speed")),
         "preservation_relevant": any(term in lower for term in ("maintain", "preserve", "keep the remaining", "stable")),
@@ -735,7 +919,48 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
     action = _explicit_primary_action(plan).rstrip(" .") + "."
     preservation = _preservation_language(plan)
     support = _supporting_direction(plan) if plan.quality_mode else ""
-    if plan.generation_type == "image_to_video":
+    if plan.core_visual_subject and plan.visual_story_plan:
+        beat = plan.current_story_beat or plan.selected_visual_concept
+        shot = plan.approved_storyboard_shot or {}
+        shot_controls = ""
+        if shot:
+            shot_controls = (
+                f"Environment: {_clean(shot.get('environment'), 60)}. Composition: {_clean(shot.get('composition'), 60)}. "
+                f"Lighting: {_clean(shot.get('lighting'), 50)}. Foreground: {_clean(shot.get('foreground'), 35)}. "
+                f"Background: {_clean(shot.get('background'), 35)}. Transition out: {_clean(shot.get('transition_out'), 40)}."
+            )
+        boundary_text = "; ".join(_clean(item, 24) for item in plan.factual_boundaries[:4] if _clean(item, 24))
+        action_text = "" if _clean(beat, 180).lower() == _clean(plan.concrete_visual_action, 180).lower() else action + " "
+        body = (
+            f"Create one uninterrupted {plan.duration}-second vertical 9:16 {plan.creative_style} shot centered strictly on {plan.core_visual_subject}. "
+            f"Depict this sourced moment without changing its meaning: {beat}. {action_text}"
+            f"{plan.camera['direction']} {shot_controls} As the camera or subject moves, allow only physically caused changes in material, light, reflections, and the source-supported environment. "
+            f"Maintain the exact appearance, geometry, materials, composition, lighting logic, and spatial continuity of {plan.core_visual_subject} throughout."
+        )
+        factual = "Keep every visible detail within the supplied story evidence."
+        if boundary_text:
+            factual += f" Respect these factual boundaries: {boundary_text}."
+        evidence_locks = plan.visual_story_plan.get("source_evidence_locks") or []
+        planned = [item for item in evidence_locks if item.get("temporal_status") in {"PLANNED_FUTURE", "PROPOSED", "EXPECTED"}]
+        if planned:
+            factual += " Keep planned or expected activity visibly preparatory; never show it as launched, deployed, completed, or already operational."
+        must_show = "; ".join(_clean(item, 24) for item in plan.must_show[:5] if _clean(item, 24))
+        must_avoid = "; ".join(_clean(item, 24) for item in plan.must_avoid[:7] if _clean(item, 24))
+        if must_show:
+            factual += f" Preserve these approved visible elements: {must_show}."
+        if must_avoid:
+            factual += f" Do not introduce: {must_avoid}."
+        if plan.action_outcome_contract.get("result_shot_required") and plan.result_state_reference:
+            factual += (
+                f" Action-outcome requirement: {plan.action_outcome_contract.get('action')}. "
+                f"The observable payoff must clearly show: {plan.action_outcome_contract.get('expected_visible_result')}. "
+                "Keep the same relevant object, identity, anatomy, wardrobe, and spatial continuity; do not substitute symbolic achievement imagery."
+            )
+        ending = (f"Resolve on this sourced hero payoff: {plan.hero_payoff}. End on a clean, stable view."
+                  if plan.hero_payoff and _clean(beat, 120) == _clean(plan.hero_payoff, 120)
+                  else "Finish with a clear, stable composition that preserves continuity into the next approved sourced moment.")
+        prompt = _clean_prompt(f"{body} {factual} {ending} {_negative_language(plan)}")
+    elif plan.generation_type == "image_to_video":
         opening = (
             f"Use the supplied image as the visual source of truth for a {plan.duration}-second animation centered on {plan.core_subject}. "
             "Preserve the original composition, crop, camera perspective, subject placement, background layout, color palette, lighting direction and visible design details. "
@@ -760,7 +985,14 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
             f"Create one uninterrupted {plan.duration}-second vertical 9:16 {plan.creative_style} shot centered on {plan.core_subject}. "
             f"{setting} {action} {plan.camera['direction']} {support} {preservation}"
         )
-    if plan.loop_strategy.startswith("seamless loop"):
+    if plan.core_visual_subject and plan.visual_story_plan:
+        ending = ""
+        factual = ""
+    elif plan.visual_story_plan and plan.current_story_beat:
+        ending = "Finish this beat with motivated continuing movement that preserves continuity into the next sourced story beat."
+    elif plan.visual_story_plan and plan.hero_payoff:
+        ending = f"Resolve on this sourced hero payoff: {plan.hero_payoff}. End on a clean, stable view."
+    elif plan.loop_strategy.startswith("seamless loop"):
         ending = "Maintain smooth continuous motion through the final frame and return naturally to an opening-compatible state for a seamless loop."
     elif plan.loop_strategy.startswith("hero end"):
         ending = "End on a clean, stable hero view."
@@ -768,7 +1000,17 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
         ending = "Finish with motivated continuing movement suitable for the next shot."
     else:
         ending = "Complete the action naturally and settle without freezing unnaturally."
-    prompt = _clean_prompt(f"{body} {ending} {_negative_language(plan)}")
+    factual = ""
+    if plan.visual_story_plan:
+        must_show = "; ".join(_clean(item, 20) for item in plan.must_show[:4] if _clean(item, 20))
+        must_avoid = "; ".join(_clean(item, 20) for item in plan.must_avoid[:5] if _clean(item, 20))
+        factual = "Keep every visible detail within the supplied story evidence."
+        if must_show:
+            factual += f" Preserve these essential sourced facts visually: {must_show}."
+        if must_avoid:
+            factual += f" Do not introduce: {must_avoid}."
+    if not (plan.core_visual_subject and plan.visual_story_plan):
+        prompt = _clean_prompt(f"{body} {factual} {ending} {_negative_language(plan)}")
     unresolved = [phrase for phrase in PLACEHOLDER_ACTIONS if phrase in prompt.lower()]
     if unresolved:
         raise ValueError("PixVerse prompt contains unresolved visual-action language: " + ", ".join(unresolved))

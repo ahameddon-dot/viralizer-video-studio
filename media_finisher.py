@@ -21,11 +21,11 @@ async def _download(url, path):
                         output.write(chunk)
     except httpx.HTTPError as exc: raise MediaFinisherError(f"Could not download the generated video: {exc}") from exc
 
-async def _speech(text, voice, path):
+async def _speech(text, voice, path, instructions=None):
     key=os.getenv("OPENAI_API_KEY","").strip()
     if not key: raise MediaFinisherError("OPENAI_API_KEY is required to add speech.")
     if voice not in VOICES: raise MediaFinisherError("The selected narration voice is not supported.")
-    payload={"model":os.getenv("OPENAI_TTS_MODEL","gpt-4o-mini-tts"),"voice":voice,"input":text[:4096],"instructions":"Speak clearly and energetically for a short social video. Keep a natural pace.","response_format":"mp3"}
+    payload={"model":os.getenv("OPENAI_TTS_MODEL","gpt-4o-mini-tts"),"voice":voice,"input":text[:4096],"instructions":instructions or "Speak clearly and energetically for a short social video. Keep a natural pace.","response_format":"mp3"}
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             response=await client.post("https://api.openai.com/v1/audio/speech",headers={"Authorization":f"Bearer {key}"},json=payload); response.raise_for_status(); path.write_bytes(response.content)
@@ -44,20 +44,35 @@ def _escape_drawtext(value):
                  .replace("[", "\\[")
                  .replace("]", "\\]"))
 
-def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="bottom-center", overlay_color="white"):
+def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo=None):
     if not shutil.which("ffmpeg"): raise MediaFinisherError("FFmpeg is not installed on the server.")
     cmd=["ffmpeg","-y","-i",str(video)]
     if audio: cmd += ["-i",str(audio)]
-    if logo: cmd += ["-i",str(logo)]
+    next_input=1
+    audio_index=None
+    logo_index=None
+    secondary_logo_index=None
+    if audio:
+        audio_index=next_input
+        next_input+=1
+    if logo:
+        logo_index=next_input
+        next_input+=1
+        cmd += ["-i",str(logo)]
+    if secondary_logo:
+        secondary_logo_index=next_input
+        cmd += ["-i",str(secondary_logo)]
     font_candidates=[Path("C:/Windows/Fonts/arial.ttf"),Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf")]
     font_path=next((item for item in font_candidates if item.is_file()),None)
     font_value=str(font_path).replace("\\", "/").replace(":", "\\:") if font_path else ""
     font_setting=f"fontfile='{font_value}'" if font_path else "font='sans'"
     filters=[]; video_input="[0:v]"
     if logo:
-        index=2 if audio else 1
-        filters += [f"[{index}:v]scale='min(220,iw)':'-1'[logo]", f"{video_input}[logo]overlay=W-w-28:28:format=auto[vlogo]"]
+        filters += [f"[{logo_index}:v]scale='min(220,iw)':'-1'[logo]", f"{video_input}[logo]overlay=W-w-28:28:format=auto[vlogo]"]
         video_input="[vlogo]"
+    if secondary_logo:
+        filters += [f"[{secondary_logo_index}:v]scale='min(180,iw)':'-1'[brandlogo]", f"{video_input}[brandlogo]overlay=28:28:format=auto[vbrand]"]
+        video_input="[vbrand]"
     if overlay_text:
         positions={
             "top-left":("28","28"), "top-center":("(w-text_w)/2","28"), "top-right":("w-text_w-28","28"),
@@ -70,11 +85,11 @@ def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="botto
         video_input="[vtext]"
     if filters: cmd += ["-filter_complex",";".join(filters),"-map",video_input]
     else: cmd += ["-map","0:v:0"]
-    cmd += (["-map","1:a:0","-af","apad","-shortest"] if audio else ["-map","0:a?","-shortest"])
+    cmd += (["-map",f"{audio_index}:a:0","-af","apad","-shortest"] if audio else ["-map","0:a?","-shortest"])
     cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
     completed=subprocess.run(cmd,capture_output=True,text=True)
     if completed.returncode: raise MediaFinisherError("Could not add the selected speech, logo, or text overlay to the video.")
-async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white"):
+async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
     output=folder/f"viralizer-{uuid.uuid4().hex}.mp4"
     with tempfile.TemporaryDirectory(prefix="viralizer-finish-") as name:
@@ -86,12 +101,17 @@ async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="",
             if not local.is_file(): raise MediaFinisherError("The generated video file was not found.")
             shutil.copy2(local,video)
         else: await _download(video_url,video)
-        audio=logo=None
+        audio=logo=secondary_logo=None
         if narration.strip(): audio=temp/"narration.mp3"; await _speech(narration.strip(),voice,audio)
         if logo_bytes:
             logo=temp/"logo.png"
             try:
                 with Image.open(io.BytesIO(logo_bytes)) as source: source.thumbnail((1000,1000),Image.Resampling.LANCZOS); source.convert("RGBA").save(logo,"PNG")
             except Exception as exc: raise MediaFinisherError("The logo could not be read as an image.") from exc
-        await asyncio.to_thread(_ffmpeg,video,output,audio,logo,overlay_text,overlay_position,overlay_color)
+        if secondary_logo_bytes:
+            secondary_logo=temp/"official-logo.png"
+            try:
+                with Image.open(io.BytesIO(secondary_logo_bytes)) as source: source.thumbnail((1000,1000),Image.Resampling.LANCZOS); source.convert("RGBA").save(secondary_logo,"PNG")
+            except Exception as exc: raise MediaFinisherError("The official logo could not be read as an image.") from exc
+        await asyncio.to_thread(_ffmpeg,video,output,audio,logo,overlay_text,overlay_position,overlay_color,secondary_logo)
     return output

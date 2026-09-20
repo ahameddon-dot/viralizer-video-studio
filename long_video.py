@@ -3,9 +3,27 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import httpx
+from creative_story_qc import score_whole_video_creative_qc
+from creative_revision_director import classify_creative_failure, route_revision
+from human_identity_lock import (
+    apply_human_identity_lock,
+    derive_human_identity_lock,
+    identity_negative_constraints,
+    identity_qc_decision,
+)
+from human_reference_identity import (
+    human_reference_identity_decision,
+    score_human_reference_identity,
+    strengthen_human_reference_prompt,
+)
 from pixverse_client import PixVerseClient, build_video_prompt
-from openai_image_client import OpenAIImageError, generate_instagram_image
-from quality_pipeline import build_plan, repair_prompt, score_reference, score_video
+from quality_pipeline import build_plan, repair_prompt, score_continuity, score_human_identity, score_reference, score_video
+from visual_generation_control import (
+    PixVerseProvider,
+    assembly_eligibility,
+    configured_reference_provider,
+    qc_decision,
+)
 
 JOBS: dict[str, dict[str, Any]] = {}
 PURPOSES = ['visual hook','context','main development','important detail','human impact','wider impact','future implication','closing visual']
@@ -72,80 +90,155 @@ def _combine(clips,output):
     listing.unlink(missing_ok=True)
     if result.returncode: raise RuntimeError('Could not combine the generated scenes.')
 
-async def _quality_shot(client,shot,quality,folder,job_id,index,job,aspect_ratio="9:16"):
+def _trim_clip(path:Path,duration:int)->Path:
+    trimmed=path.with_name(path.stem+'-trimmed.mp4')
+    result=subprocess.run(['ffmpeg','-y','-i',str(path),'-t',str(duration),'-an','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(trimmed)],capture_output=True,text=True)
+    if result.returncode: raise RuntimeError('Could not trim the generated storyboard shot.')
+    path.unlink(missing_ok=True)
+    return trimmed
+
+def _frame_bytes(path:Path,position:str)->bytes:
+    if not shutil.which('ffmpeg'): raise RuntimeError('FFmpeg is required for continuity inspection.')
+    frame=path.with_name(path.stem+f'-{position}.jpg')
+    command=['ffmpeg','-y']
+    if position=='end':command += ['-sseof','-0.08']
+    command += ['-i',str(path),'-frames:v','1','-q:v','2',str(frame)]
+    result=subprocess.run(command,capture_output=True)
+    if result.returncode or not frame.exists():raise RuntimeError(f'Could not extract the {position} frame for continuity QC.')
+    data=frame.read_bytes();frame.unlink(missing_ok=True);return data
+
+async def _quality_shot(provider,shot,quality,folder,job_id,index,job,aspect_ratio="9:16",previous_end=None):
+    client=provider.client
     reference_bytes=None; reference_score=None; reference_retries=0; route=shot['route']
     preflight=shot.get('preflight_consistency') or {"status":"FAIL","reason":"Missing shot consistency validation"}
     job.update(current_job_id=job_id,generation_mode=route,core_subject=shot.get('shot_specification',{}).get('core_subject'),visual_concept=shot.get('motion_debug',{}).get('selected_visual_concept'),shot_specification=shot.get('shot_specification'),reference_image_prompt=shot.get('reference_prompt'),reference_prompt_consistency=preflight,final_pixverse_prompt=shot.get('motion_prompt'))
     job.setdefault('generation_trace',[]).append({'job_id':job_id,'scene_index':index,'core_subject':job.get('core_subject'),'category':shot.get('shot_specification',{}).get('category'),'visual_concept':job.get('visual_concept'),'concrete_action':shot.get('motion_debug',{}).get('concrete_visual_action'),'generation_mode':route,'shot_specification':shot.get('shot_specification'),'reference_image_prompt':shot.get('reference_prompt'),'reference_prompt_consistency':preflight,'final_pixverse_prompt':shot.get('motion_prompt')})
-    if route=='image_to_video' and preflight.get('status')!='PASS':
-        route='text_to_video';job['generation_mode']='text_to_video';job['reference_semantic_validation']={'status':'FAIL','reason':'Reference prompt and motion prompt failed canonical shot preflight; routed to text-to-video.'}
-    if route=='image_to_video':
-        job['stage']=f'Preparing reference frame {index+1} of {job["scenes_total"]}'
-        try:
-            reference_bytes=await generate_instagram_image({},shot['reference_prompt'],purpose='pixverse')
-            reference_path=folder/f"reference-{job_id}-{index}.png"
-            reference_path.write_bytes(reference_bytes)
-            job['reference_image_path']=str(reference_path)
-            job['reference_image_url']=f"/api/video/reference/{job_id}/{index}"
-            reference_score=await score_reference(reference_bytes,shot.get('shot_specification'))
-            job['reference_semantic_validation']={'status':reference_score.get('semantic_validation_status','FAIL') if reference_score.get('available') else 'UNAVAILABLE','semantic_alignment_score':reference_score.get('semantic_alignment_score'),'detected_subjects':reference_score.get('detected_subjects',[]),'conflicting_objects':reference_score.get('conflicting_objects',[]),'reason':reference_score.get('failure_reason','')}
-            if reference_score.get('available') and (float(reference_score.get('overall_quality_score',0))<85 or job['reference_semantic_validation']['status']!='PASS'):
-                reference_retries=1
-                repaired=repair_prompt(shot['reference_prompt'],str(reference_score.get('failure_reason') or 'semantic mismatch'))
-                reference_bytes=await generate_instagram_image({},repaired,purpose='pixverse')
-                reference_score=await score_reference(reference_bytes,shot.get('shot_specification'))
-                job['reference_semantic_validation']={'status':reference_score.get('semantic_validation_status','FAIL') if reference_score.get('available') else 'UNAVAILABLE','semantic_alignment_score':reference_score.get('semantic_alignment_score'),'detected_subjects':reference_score.get('detected_subjects',[]),'conflicting_objects':reference_score.get('conflicting_objects',[]),'reason':reference_score.get('failure_reason','')}
-            reference_path.write_bytes(reference_bytes)
-        except OpenAIImageError:
-            route='text_to_video';reference_bytes=None;reference_score={'available':False,'status':'unavailable'}
-    if route=='image_to_video' and job.get('reference_semantic_validation',{}).get('status')!='PASS':
-        route='text_to_video'
-        job['generation_mode']='text_to_video'
-        job['reference_fallback_reason']='Reference image was not pixel-validated; using text-to-video instead of risking an unrelated start frame.'
-        job['generation_trace'][-1].update(generation_mode='text_to_video',reference_fallback_reason=job['reference_fallback_reason'])
-    best=None; best_score=-1; retries=0; failure=''
-    for attempt in range(2):
+    if preflight.get('status')!='PASS' or str(shot.get('motion_semantic_qc') or '').upper()!='PASS':
+        raise RuntimeError(f"Shot {shot.get('shot_id')} failed motion semantic preflight and was blocked.")
+    if route!='image_to_video':
+        raise RuntimeError(f"Shot {shot.get('shot_id')} has no approved controlled-reference route.")
+    job['stage']=f'Preparing reference frame {index+1} of {job["scenes_total"]}'
+    reference_provider=configured_reference_provider()
+    if not reference_provider.capabilities.supports_generation:
+        raise RuntimeError('Reference image generation is not configured; assembly is blocked.')
+    reference_prompt=shot['reference_prompt']
+    human_reference_spec=shot.get('human_reference_identity_spec') or {}
+    reference_identity_qc=None
+    max_reference_attempts=3
+    for reference_attempt in range(max_reference_attempts):
+        reference_bytes=await reference_provider.generate(reference_prompt,previous_end if shot.get('reuse_previous_end_frame') else None)
+        if human_reference_spec:
+            reference_identity_qc=await score_human_reference_identity(reference_bytes,human_reference_spec)
+            identity_reference_decision=human_reference_identity_decision(reference_identity_qc,reference_attempt,max_reference_attempts)
+            job.setdefault('reference_identity_qc_results',[]).append(reference_identity_qc)
+            job['reference_identity_qc_status']=identity_reference_decision['status']
+            if identity_reference_decision['status']!='PASS':
+                if identity_reference_decision['status']=='REFERENCE_IDENTITY_QC_UNAVAILABLE':
+                    raise RuntimeError(f"Shot {shot.get('shot_id')} reference identity QC was unavailable; reference was blocked before semantic QC.")
+                if identity_reference_decision['status']=='REFERENCE_PROVIDER_IDENTITY_LIMITATION':
+                    raise RuntimeError(f"REFERENCE_PROVIDER_IDENTITY_LIMITATION: Shot {shot.get('shot_id')} failed reference identity QC after {max_reference_attempts} capped attempts.")
+                reference_retries+=1
+                reference_prompt=strengthen_human_reference_prompt(
+                    shot['reference_prompt'],
+                    identity_reference_decision['failed_gates'],
+                    str(reference_identity_qc.get('corrective_instruction') or ''),
+                )
+                continue
+        reference_score=await score_reference(reference_bytes,shot.get('reference_qc_spec'))
+        reference_decision=qc_decision(reference_score)
+        if reference_decision['status']=='PASS':break
+        reference_retries+=1
+        reference_prompt=repair_prompt(reference_prompt,reference_decision['correction'])
+    else:
+        reference_decision={'status':'REGENERATE','correction':'Reference retry cap reached'}
+    if reference_decision['status']!='PASS':
+        raise RuntimeError(f"Shot {shot.get('shot_id')} reference QC failed: {reference_decision['correction']}")
+    reference_path=folder/f"reference-{job_id}-{index}.png";reference_path.write_bytes(reference_bytes)
+    job['reference_image_path']=str(reference_path);job['reference_image_url']=f"/api/video/reference/{job_id}/{index}"
+    job['reference_semantic_validation']={'status':'PASS','semantic_alignment_score':reference_score.get('semantic_alignment_score'),'detected_subjects':reference_score.get('detected_subjects',[]),'conflicting_objects':reference_score.get('conflicting_objects',[]),'reason':''}
+    if reference_identity_qc:
+        job['reference_identity_qc']=reference_identity_qc
+    human_identity_lock=await derive_human_identity_lock(reference_bytes,shot)
+    if human_identity_lock.get('identity_authority_conflict'):
+        reasons='; '.join(human_identity_lock.get('identity_authority_conflict_reasons') or [])
+        raise RuntimeError(f"APPROVED_REFERENCE_IDENTITY_CONFLICT: Shot {shot.get('shot_id')} reference conflicts with approved story identity evidence: {reasons}")
+    identity_negative=identity_negative_constraints(human_identity_lock)
+    job['human_identity_lock']=human_identity_lock
+    job['identity_qc_criteria']=[
+        'SAME_PERSON','GENDER_PRESENTATION_PRESERVED','FACE_PRESERVED','HAIR_PRESERVED',
+        'CLOTHING_PRESERVED','BODY_BUILD_PRESERVED','SUBJECT_COUNT_PRESERVED',
+    ] if human_identity_lock else []
+    max_video_attempts=2
+    best=None;best_score=-1;retries=0;failure='';accepted_qc=None;accepted_identity_qc=None;accepted_continuity=None;accepted_end=None
+    for attempt in range(max_video_attempts):
         job['stage']=f'Generating scene {index+1} of {job["scenes_total"]}' if attempt==0 else f'Improving scene {index+1} of {job["scenes_total"]}'
-        base_prompt=shot['motion_prompt'] if route=='image_to_video' and reference_bytes else shot['prompt']
-        active_prompt=base_prompt if attempt==0 else repair_prompt(base_prompt,failure)
-        if route=='image_to_video' and reference_bytes:
-            image_id=await client.upload_image(image_bytes=reference_bytes,filename=f'{job_id}-reference-{index}.png',content_type='image/png')
-            job['reference_image_id']=image_id
-            request_payload={'mode':'image_to_video','image_id':image_id,'prompt':active_prompt,'duration':shot['duration'],'quality':quality,'model':'v6'}
-            job['pixverse_request_payload']=request_payload
-            job['generation_trace'][-1].update(reference_image_id=image_id,reference_image_path=job.get('reference_image_path'),reference_semantic_validation=job.get('reference_semantic_validation'),pixverse_request_payload=request_payload)
-            _persist_generation_trace(folder,job['generation_trace'][-1])
-            video_id=await client.generate_from_image(image_id,active_prompt,duration=shot['duration'],quality=quality)
-        else:
-            request_payload={'mode':'text_to_video','prompt':active_prompt,'duration':shot['duration'],'quality':quality,'model':'v6','negative_prompt':MODEL_NEGATIVE}
-            job['pixverse_request_payload']=request_payload
-            job['generation_trace'][-1].update(pixverse_request_payload=request_payload)
-            _persist_generation_trace(folder,job['generation_trace'][-1])
-            video_id=await client.generate(active_prompt,duration=shot['duration'],quality=quality,negative_prompt=MODEL_NEGATIVE,aspect_ratio=aspect_ratio)
+        base_prompt=shot['motion_prompt']
+        active_prompt=apply_human_identity_lock(base_prompt,human_identity_lock,retry=attempt>0)
+        if attempt>0 and not human_identity_lock:
+            active_prompt=repair_prompt(base_prompt,failure)
+        active_negative=', '.join(item for item in (MODEL_NEGATIVE,identity_negative) if item)
+        generated=await provider.generate_shot(motion_prompt=active_prompt,text_prompt=shot['prompt'],start_reference=reference_bytes,end_reference=None,duration=shot.get('provider_duration',shot['duration']),aspect_ratio=aspect_ratio,quality=quality,negative_prompt=active_negative)
+        video_id=generated['video_id'];job['reference_image_id']=generated.get('image_id')
+        request_payload={'mode':generated['mode'],'image_id':generated.get('image_id'),'prompt':active_prompt,'negative_prompt':active_negative,'duration':shot.get('provider_duration',shot['duration']),'quality':quality,'model':'v6','motion_mode':'normal','seed':0,'storyboard_duration':shot['duration'],'provider_controls':generated.get('controls',{}),'provider_capabilities':generated['capabilities'],'human_identity_lock':human_identity_lock}
+        job['pixverse_request_payload']=request_payload;job['generation_trace'][-1].update(reference_image_id=generated.get('image_id'),reference_image_path=job.get('reference_image_path'),reference_semantic_validation=job.get('reference_semantic_validation'),pixverse_request_payload=request_payload);_persist_generation_trace(folder,job['generation_trace'][-1])
         url=await _poll(client,video_id); path=folder/f'{job_id}-scene-{index}-attempt-{attempt}.mp4';await _download(url,path)
+        if shot.get('provider_duration',shot['duration'])>shot['duration']:
+            path=_trim_clip(path,shot['duration'])
         job['stage']=f'Checking scene {index+1} of {job["scenes_total"]}'
-        qc=await score_video(path); score=float(qc.get('overall_quality_score',100 if not qc.get('available') else 0))
-        if score>best_score:
-            if best:best.unlink(missing_ok=True)
-            best,best_score=path,score
-        else:path.unlink(missing_ok=True)
-        if not qc.get('available') or score>=85:
-            job['qc_results'].append(qc);break
-        failure=str(qc.get('failure_reason') or 'stability');retries=1
-    job['retry_count']+=retries;job['reference_retry_count']+=reference_retries
-    job['qc_results'].append(reference_score) if reference_score else None
-    return best
+        if human_identity_lock:
+            identity_qc=await score_human_identity(reference_bytes,path,human_identity_lock)
+            identity_decision=identity_qc_decision(identity_qc,attempt,max_video_attempts)
+            job.setdefault('identity_qc_results',[]).append(identity_qc)
+            job['identity_qc_status']=identity_decision['status']
+            if identity_decision['status']!='PASS':
+                path.unlink(missing_ok=True)
+                if identity_decision['status']=='IDENTITY_QC_UNAVAILABLE':
+                    raise RuntimeError(f"Shot {shot.get('shot_id')} identity QC was unavailable; later QC and assembly were blocked.")
+                failure='IDENTITY_DRIFT: '+', '.join(identity_decision['failed_checks'])
+                retries=1
+                if identity_decision['status']=='PROVIDER_IDENTITY_LIMITATION':
+                    raise RuntimeError(f"PROVIDER_IDENTITY_LIMITATION: Shot {shot.get('shot_id')} failed human identity preservation after {max_video_attempts} capped attempts.")
+                continue
+            accepted_identity_qc=identity_qc
+        qc=await score_video(path,shot.get('visual_qc_spec'));score=float(qc.get('overall_quality_score',0))
+        first_frame=_frame_bytes(path,'start');end_frame=_frame_bytes(path,'end')
+        continuity={'available':True,'decision':'PASS','overall_quality_score':100}
+        if previous_end is not None:
+            continuity=await score_continuity(previous_end,first_frame,shot.get('continuity_qc_spec'))
+        action_result_fields=('ACTION_CLEAR','ACTION_ARTICLE_SPECIFIC','RESULT_VISIBLE','RESULT_MATCHES_EVIDENCE','CAUSE_EFFECT_CLEAR','PAYOFF_NON_GENERIC')
+        action_result_required=bool((shot.get('visual_qc_spec') or {}).get('action_result_qc_required'))
+        action_result_pass=not action_result_required or all(str(qc.get(field) or '').upper()=='PASS' for field in action_result_fields)
+        qc_pass=bool(qc.get('available') and score>=85 and qc.get('decision','PASS')=='PASS' and action_result_pass)
+        continuity_pass=bool(continuity.get('available') and float(continuity.get('overall_quality_score',0))>=85 and continuity.get('decision','PASS')=='PASS')
+        if qc_pass and continuity_pass:
+            best=path;best_score=score;accepted_qc=qc;accepted_continuity=continuity;accepted_end=end_frame;break
+        path.unlink(missing_ok=True)
+        if not action_result_pass:
+            failed_action_fields=[field for field in action_result_fields if str(qc.get(field) or '').upper()!='PASS']
+            failure='Action/result QC failed: '+', '.join(failed_action_fields)+'. Make the supported post-action result clearly visible without symbolic substitutes.'
+        else:
+            failure=str((continuity if not continuity_pass else qc).get('corrective_instruction') or (continuity if not continuity_pass else qc).get('failure_reason') or 'stability and continuity')
+        retries=1
+    if accepted_qc is None or accepted_end is None:
+        if best:best.unlink(missing_ok=True)
+        raise RuntimeError(f"Shot {shot.get('shot_id')} failed visual or continuity QC after shot-specific regeneration: {failure}")
+    job['retry_count']+=retries;job['shot_regeneration_count']=job.get('shot_regeneration_count',0)+retries;job['reference_retry_count']+=reference_retries
+    job['qc_results'].extend([item for item in (reference_score,accepted_identity_qc,accepted_qc,accepted_continuity) if item is not None])
+    return {'path':best,'end_frame':accepted_end,'gates':{'shot_id':shot.get('shot_id'), 'reference_qc':'PASS','identity_qc':'PASS' if human_identity_lock else 'NOT_APPLICABLE','motion_semantic_qc':'PASS','shot_visual_qc':'PASS','continuity_qc':'PASS' if previous_end is not None else 'PASS'}}
 
 async def _run(job_id,content,total,quality,quality_mode=False,production=None):
     job=JOBS[job_id]
     folder=Path(os.getenv('APP_DATA_DIR',str(Path(__file__).parent/'data')))/'finished_videos';folder.mkdir(parents=True,exist_ok=True)
     clip_paths=[]
     try:
-        client=PixVerseClient();aspect_ratio=(production or {}).get('aspect_ratio','9:16')
+        client=PixVerseClient();provider=PixVerseProvider(client);aspect_ratio=(production or {}).get('aspect_ratio','9:16')
         if quality_mode:
             planned=build_plan(content,total,creative_prompt=(production or {}).get("prompt","")); plan=planned['shots'];job.update(scenes_total=len(plan),visual_bible=planned['visual_bible'],generation_route=planned['route'],stage='Creating visual direction')
+            gate_records=[];previous_end=None
             for index,shot in enumerate(plan):
-                clip_paths.append(await _quality_shot(client,shot,quality,folder,job_id,index,job,aspect_ratio));job['scenes_complete']=index+1
+                result=await _quality_shot(provider,shot,quality,folder,job_id,index,job,aspect_ratio,previous_end);clip_paths.append(result['path']);previous_end=result['end_frame'];gate_records.append(result['gates']);job['scenes_complete']=index+1
+            eligibility=assembly_eligibility(gate_records);job['assembly_eligibility']=eligibility
+            if not eligibility['eligible']:raise RuntimeError('Final assembly blocked: '+', '.join(eligibility['failures']))
         else:
             plan=prompts(content,total,creative_prompt=(production or {}).get("prompt",""));job.update(scenes_total=len(plan),stage='Preparing scenes')
             for index,(length,prompt) in enumerate(plan):
@@ -153,9 +246,19 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
         job['stage']='Rendering final video';output=folder/f'viralizer-{uuid.uuid4().hex}.mp4'
         if len(clip_paths)==1: shutil.copyfile(clip_paths[0],output)
         else: await asyncio.to_thread(_combine,clip_paths,output)
+        creative_qc=None
+        if quality_mode and content.get('story_understanding') and content.get('visual_story_plan'):
+            job['stage']='Evaluating complete visual story'
+            creative_qc=await score_whole_video_creative_qc(output,content['story_understanding'],content['visual_story_plan'])
+            job['whole_video_creative_qc']=creative_qc
+            if creative_qc.get('available') and creative_qc.get('final_story_pass')!='PASS':
+                failure_classes=classify_creative_failure(creative_qc)
+                job['whole_video_failure_classification']=failure_classes
+                job['whole_video_revision_route']=route_revision(failure_classes)
         for path in clip_paths:path.unlink(missing_ok=True)
         scores=[float(x.get('overall_quality_score',0)) for x in job['qc_results'] if isinstance(x,dict) and x.get('available')]
-        job.update(status='complete',url=f'/api/finished-video/{output.name}',stage='Video ready',qc_status='complete' if scores else ('unavailable' if quality_mode else 'not_requested'),qc_score=round(sum(scores)/len(scores),1) if scores else None,best_available=bool(scores and min(scores)<85))
+        creative_failed=bool(creative_qc and creative_qc.get('available') and creative_qc.get('final_story_pass')!='PASS')
+        job.update(status='complete',url=f'/api/finished-video/{output.name}',stage='Video ready - creative review required' if creative_failed else 'Video ready',qc_status='creative_failed' if creative_failed else ('complete' if scores else ('unavailable' if quality_mode else 'not_requested')),qc_score=round(sum(scores)/len(scores),1) if scores else None,best_available=creative_failed or bool(scores and min(scores)<85))
     except Exception as exc:
         for path in clip_paths:
             if path:path.unlink(missing_ok=True)
@@ -163,7 +266,7 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
 
 def start(content,total,quality,quality_mode=False,production=None):
     job_id='long-'+uuid.uuid4().hex
-    JOBS[job_id]={'status':'processing','stage':'Analyzing content','scenes_complete':0,'scenes_total':0,'quality_mode':quality_mode,'generation_mode':(production or {}).get('generation_mode','text_to_video'),'qc_status':'pending' if quality_mode else 'not_requested','qc_results':[],'retry_count':0,'reference_retry_count':0}
+    JOBS[job_id]={'status':'processing','stage':'Analyzing content','scenes_complete':0,'scenes_total':0,'quality_mode':quality_mode,'generation_mode':(production or {}).get('generation_mode','text_to_video'),'qc_status':'pending' if quality_mode else 'not_requested','qc_results':[],'retry_count':0,'reference_retry_count':0,'creative_revision_count':int((content.get('article_intelligence') or {}).get('creative_revision_count') or 0),'shot_regeneration_count':0,'whole_video_revision_count':0,'credits_consumed':None}
     asyncio.create_task(_run(job_id,content,total,quality,quality_mode,production));return job_id
 def status(job_id):
     return JOBS.get(job_id)
