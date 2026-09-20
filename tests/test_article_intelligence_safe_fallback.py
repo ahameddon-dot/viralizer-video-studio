@@ -28,6 +28,33 @@ class ArticleIntelligenceSafeFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(intelligence["approved_for_media_generation"])
         self.assertIn("RuntimeError", intelligence["fallback_reason"])
 
+    async def test_video_prompt_returns_editable_prompt_when_compiler_raises(self):
+        request = app.GenerateRequest(
+            content={
+                "topic": "Myntra Launches Italian Fashion Brand Sisley in India",
+                "summary": "The retailer introduced the Italian fashion label in India.",
+            },
+            duration=10,
+            aspect_ratio="9:16",
+            target_platform="Instagram",
+        )
+        with (
+            patch.object(
+                app,
+                "prepare_article_intelligence_safely",
+                new=AsyncMock(return_value=dict(request.content)),
+            ),
+            patch.object(app, "build_video_prompt", side_effect=RuntimeError("compiler edge case")),
+        ):
+            result = await app.video_prompt(request)
+        self.assertTrue(result["prompt_fallback"])
+        self.assertIn("Myntra", result["prompt"])
+        self.assertIn("10-second vertical 9:16", result["prompt"])
+        self.assertEqual(
+            result["article_intelligence"]["analysis_model"],
+            "safe-prompt-response-fallback",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

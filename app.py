@@ -363,7 +363,11 @@ async def start_daily_scheduler():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "viralizer-video-studio"}
+    return {
+        "status": "ok",
+        "service": "viralizer-video-studio",
+        "release": os.getenv("RENDER_GIT_COMMIT", os.getenv("APP_VERSION", "local")),
+    }
 
 
 @app.get("/health/pixverse")
@@ -1155,31 +1159,62 @@ async def video_providers():
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
     content = await prepare_article_intelligence_safely(request.content, request.duration, request.aspect_ratio)
-    prompt_result = build_video_prompt(
-        content,
-        request.duration,
-        generation_type=request.generation_type,
-        quality_mode=request.quality_mode,
-        user_prompt=request.prompt or "",
-        include_debug=request.debug_prompt,
-        aspect_ratio=request.aspect_ratio,
-    )
-    prompt, motion_debug = prompt_result if request.debug_prompt else (prompt_result, None)
-    platform = " ".join(request.target_platform.split()[:4]).strip()
-    if platform:
-        safe_areas = {
-            "9:16": "Keep essential subjects inside the central 80%; leave the top 10% and bottom 20% visually quiet for platform controls.",
-            "3:4": "Keep essential subjects and brand elements inside the central 84% with clean margins on every edge.",
-            "1:1": "Use centered square-safe composition with essential subjects inside the central 82%.",
-            "16:9": "Use landscape-safe composition with essential subjects inside the central 86% and clean lower-third space.",
+    try:
+        prompt_result = build_video_prompt(
+            content,
+            request.duration,
+            generation_type=request.generation_type,
+            quality_mode=request.quality_mode,
+            user_prompt=request.prompt or "",
+            include_debug=request.debug_prompt,
+            aspect_ratio=request.aspect_ratio,
+        )
+        prompt, motion_debug = prompt_result if request.debug_prompt else (prompt_result, None)
+        platform = " ".join(request.target_platform.split()[:4]).strip()
+        if platform:
+            safe_areas = {
+                "9:16": "Keep essential subjects inside the central 80%; leave the top 10% and bottom 20% visually quiet for platform controls.",
+                "3:4": "Keep essential subjects and brand elements inside the central 84% with clean margins on every edge.",
+                "1:1": "Use centered square-safe composition with essential subjects inside the central 82%.",
+                "16:9": "Use landscape-safe composition with essential subjects inside the central 86% and clean lower-third space.",
+            }
+            prompt = f"{prompt} Delivery target: {platform}, {request.aspect_ratio}. {safe_areas.get(request.aspect_ratio, safe_areas['9:16'])} Do not render platform logos or platform interface elements."
+        heygen_plan = build_heygen_plan(content, request.duration, visual_mode=request.visual_mode, aspect_ratio=request.aspect_ratio, captions=request.captions, user_direction=request.prompt or "")
+        heygen_payload = compile_heygen_request(heygen_plan, avatar_id=request.avatar_id, voice_id=request.voice_id, style_id=request.heygen_style_id, brand_kit_id=request.brand_kit_id)
+        response = {"prompt": prompt, "narration": build_narration_script(content, request.duration), "heygen_script": heygen_plan["script"], "heygen_direction": heygen_plan["compiled_prompt"], "heygen_plan": heygen_plan, "heygen_request": heygen_payload, "content": content, "article_intelligence": content.get("article_intelligence", {})}
+        if motion_debug is not None:
+            response["motion_director"] = motion_debug
+        return response
+    except Exception as exc:
+        title = " ".join(str(request.content.get("topic") or request.content.get("suggested_title") or "the selected story").split())[:500]
+        summary = " ".join(str(request.content.get("summary") or request.content.get("description") or request.content.get("video_idea") or "").split())[:1200]
+        aspect = {"9:16": "vertical 9:16", "16:9": "landscape 16:9", "3:4": "portrait 3:4", "1:1": "square 1:1"}.get(request.aspect_ratio, "vertical 9:16")
+        prompt = (
+            f"Create one uninterrupted {request.duration}-second {aspect} editorial video centered on {title}. "
+            f"Visually communicate this verified development: {summary or title}. "
+            "Use one clear real-world subject, one achievable physical action, one controlled camera move, "
+            "natural cause-and-effect reactions, stable identity and object geometry, and a clean hero ending. "
+            "No cuts, flicker, abrupt movement, readable text, captions, watermarks, generated logos, morphing, "
+            "duplicated subjects, disappearing objects, or anatomy distortion."
+        )
+        intelligence = dict(content.get("article_intelligence") or {})
+        intelligence.update(
+            extraction_state=intelligence.get("extraction_state") or "failed",
+            analysis_model="safe-prompt-response-fallback",
+            fallback_reason=f"{type(exc).__name__}: {str(exc)[:240]}",
+        )
+        content["article_intelligence"] = intelligence
+        return {
+            "prompt": prompt,
+            "narration": build_narration_script(request.content, request.duration),
+            "heygen_script": "",
+            "heygen_direction": "",
+            "heygen_plan": {},
+            "heygen_request": {},
+            "content": content,
+            "article_intelligence": intelligence,
+            "prompt_fallback": True,
         }
-        prompt = f"{prompt} Delivery target: {platform}, {request.aspect_ratio}. {safe_areas.get(request.aspect_ratio, safe_areas['9:16'])} Do not render platform logos or platform interface elements."
-    heygen_plan = build_heygen_plan(content, request.duration, visual_mode=request.visual_mode, aspect_ratio=request.aspect_ratio, captions=request.captions, user_direction=request.prompt or "")
-    heygen_payload = compile_heygen_request(heygen_plan, avatar_id=request.avatar_id, voice_id=request.voice_id, style_id=request.heygen_style_id, brand_kit_id=request.brand_kit_id)
-    response = {"prompt": prompt, "narration": build_narration_script(content, request.duration), "heygen_script": heygen_plan["script"], "heygen_direction": heygen_plan["compiled_prompt"], "heygen_plan": heygen_plan, "heygen_request": heygen_payload, "content": content, "article_intelligence": content.get("article_intelligence", {})}
-    if motion_debug is not None:
-        response["motion_director"] = motion_debug
-    return response
 
 @app.get("/api/video/{provider}/{job_id}")
 async def video_status(provider: str, job_id: str):
