@@ -40,6 +40,13 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("d.video_url||d.url||d.output_url", page)
         self.assertIn("['complete','completed','success','succeeded']", page)
 
+    def test_selected_categories_are_visually_persistent(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn(".cat-card.selected", page)
+        self.assertIn("✓ Selected", page)
+        self.assertIn("state.categories.includes(n)?' on'", page)
+        self.assertIn("aria-pressed", page)
+
 
 if __name__ == "__main__":
     unittest.main()
