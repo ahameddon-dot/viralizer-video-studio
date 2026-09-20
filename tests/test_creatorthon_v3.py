@@ -68,6 +68,15 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertNotIn('value="Premium editorial setting"', page)
         self.assertIn('<select id="face"><option value="">No preference</option>', page)
 
+    def test_completed_video_is_finished_with_speech_and_mandatory_branding(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("async function finishV3Video", page)
+        self.assertIn("/api/creatorthon/finish", page)
+        self.assertIn("const finalVideoUrl=await finishV3Video", page)
+        self.assertIn("nativeSpeech=['heygen','hybrid'].includes(provider)", page)
+        self.assertIn("narration=nativeSpeech?'':", page)
+        self.assertIn("Open narrated finished video", page)
+
 
 if __name__ == "__main__":
     unittest.main()
