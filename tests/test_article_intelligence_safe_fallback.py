@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -27,6 +28,21 @@ class ArticleIntelligenceSafeFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intelligence["analysis_model"], "safe-discovery-metadata-fallback")
         self.assertFalse(intelligence["approved_for_media_generation"])
         self.assertIn("RuntimeError", intelligence["fallback_reason"])
+
+    async def test_timeout_returns_metadata_fallback_quickly(self):
+        async def slow_pipeline(*_args):
+            await asyncio.sleep(0.1)
+            return {"topic": "too late"}
+
+        with patch.object(app, "prepare_article_intelligence", new=slow_pipeline):
+            result = await app.prepare_article_intelligence_safely(
+                {"topic": "Fast prompt"}, 10, "9:16", timeout_seconds=0.001
+            )
+        self.assertEqual(result["topic"], "Fast prompt")
+        self.assertEqual(
+            result["article_intelligence"]["analysis_model"],
+            "safe-discovery-metadata-fallback",
+        )
 
     async def test_video_prompt_returns_editable_prompt_when_compiler_raises(self):
         request = app.GenerateRequest(

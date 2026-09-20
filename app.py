@@ -69,11 +69,17 @@ from article_intelligence import prepare_article_intelligence
 
 
 async def prepare_article_intelligence_safely(
-    content: dict[str, Any], duration: int, aspect_ratio: str
+    content: dict[str, Any],
+    duration: int,
+    aspect_ratio: str,
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Keep prompt preparation usable when a live publisher edge case fails."""
     try:
-        return await prepare_article_intelligence(content, duration, aspect_ratio)
+        work = prepare_article_intelligence(content, duration, aspect_ratio)
+        if timeout_seconds is not None:
+            return await asyncio.wait_for(work, timeout=max(0.05, timeout_seconds))
+        return await work
     except Exception as exc:
         fallback = dict(content)
         fallback["article_intelligence"] = {
@@ -1158,7 +1164,13 @@ async def video_providers():
     return {"providers": provider_catalog()}
 @app.post("/api/video/prompt")
 async def video_prompt(request: GenerateRequest):
-    content = await prepare_article_intelligence_safely(request.content, request.duration, request.aspect_ratio)
+    timeout_seconds = float(os.getenv("PROMPT_INTELLIGENCE_TIMEOUT_SECONDS", "12"))
+    content = await prepare_article_intelligence_safely(
+        request.content,
+        request.duration,
+        request.aspect_ratio,
+        timeout_seconds=timeout_seconds,
+    )
     try:
         prompt_result = build_video_prompt(
             content,
