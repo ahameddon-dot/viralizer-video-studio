@@ -108,13 +108,19 @@ def _frame_bytes(path:Path,position:str)->bytes:
     if result.returncode or not frame.exists():raise RuntimeError(f'Could not extract the {position} frame for continuity QC.')
     data=frame.read_bytes();frame.unlink(missing_ok=True);return data
 
+def _motion_preflight_passes(shot:dict[str,Any])->bool:
+    consistency=(shot.get('preflight_consistency') or {}).get('status')
+    semantic=str(shot.get('motion_semantic_qc') or '').upper()
+    return consistency=='PASS' and semantic in {'PASS','NOT_APPLICABLE'}
+
+
 async def _quality_shot(provider,shot,quality,folder,job_id,index,job,aspect_ratio="9:16",previous_end=None):
     client=provider.client
     reference_bytes=None; reference_score=None; reference_retries=0; route=shot['route']
     preflight=shot.get('preflight_consistency') or {"status":"FAIL","reason":"Missing shot consistency validation"}
     job.update(current_job_id=job_id,generation_mode=route,core_subject=shot.get('shot_specification',{}).get('core_subject'),visual_concept=shot.get('motion_debug',{}).get('selected_visual_concept'),shot_specification=shot.get('shot_specification'),reference_image_prompt=shot.get('reference_prompt'),reference_prompt_consistency=preflight,final_pixverse_prompt=shot.get('motion_prompt'))
     job.setdefault('generation_trace',[]).append({'job_id':job_id,'scene_index':index,'core_subject':job.get('core_subject'),'category':shot.get('shot_specification',{}).get('category'),'visual_concept':job.get('visual_concept'),'concrete_action':shot.get('motion_debug',{}).get('concrete_visual_action'),'generation_mode':route,'shot_specification':shot.get('shot_specification'),'reference_image_prompt':shot.get('reference_prompt'),'reference_prompt_consistency':preflight,'final_pixverse_prompt':shot.get('motion_prompt')})
-    if preflight.get('status')!='PASS' or str(shot.get('motion_semantic_qc') or '').upper()!='PASS':
+    if not _motion_preflight_passes(shot):
         raise RuntimeError(f"Shot {shot.get('shot_id')} failed motion semantic preflight and was blocked.")
     if route!='image_to_video':
         raise RuntimeError(f"Shot {shot.get('shot_id')} has no approved controlled-reference route.")

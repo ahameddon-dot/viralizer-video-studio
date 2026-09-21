@@ -124,6 +124,21 @@ class VisualGenerationControlTests(unittest.IsolatedAsyncioTestCase):
         retry = regeneration_scope("S2", "continuity_qc", "match the previous ending")
         self.assertEqual(retry, {"action": "REGENERATE_SHOT", "shot_id": "S2", "failed_gate": "continuity_qc", "correction": "match the previous ending"})
 
+    def test_motion_runner_accepts_legitimate_not_applicable_semantic_gate(self):
+        from long_video import _motion_preflight_passes
+        self.assertTrue(_motion_preflight_passes({
+            "preflight_consistency": {"status": "PASS"},
+            "motion_semantic_qc": "NOT_APPLICABLE",
+        }))
+        self.assertFalse(_motion_preflight_passes({
+            "preflight_consistency": {"status": "PASS"},
+            "motion_semantic_qc": "FAIL",
+        }))
+        self.assertFalse(_motion_preflight_passes({
+            "preflight_consistency": {"status": "FAIL"},
+            "motion_semantic_qc": "PASS",
+        }))
+
     def test_final_assembly_blocks_any_failed_gate(self):
         passed = {"shot_id": "S1", "reference_qc": "PASS", "motion_semantic_qc": "PASS", "shot_visual_qc": "PASS", "continuity_qc": "PASS"}
         failed = {**passed, "shot_id": "S2", "shot_visual_qc": "REGENERATE"}
