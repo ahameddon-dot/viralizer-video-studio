@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from creatorthon_store import add_asset, create_project, list_projects, save_report, update_project, workspace
-from object_store import configured
+from object_store import _endpoint_url, configured
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +57,14 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
     def test_cloud_storage_is_optional_for_local_development(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertFalse(configured())
+
+    def test_r2_endpoint_accepts_account_id_or_full_url(self):
+        account = "d65966212dd82e6ee1d8a073350e6dde"
+        expected = f"https://{account}.r2.cloudflarestorage.com"
+        with patch.dict("os.environ", {"R2_ACCOUNT_ID": account}):
+            self.assertEqual(_endpoint_url(), expected)
+        with patch.dict("os.environ", {"R2_ACCOUNT_ID": expected + "/"}):
+            self.assertEqual(_endpoint_url(), expected)
 
     def test_production_dependencies_and_environment_are_documented(self):
         requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")

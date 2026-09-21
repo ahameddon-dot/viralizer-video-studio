@@ -1,6 +1,7 @@
 import asyncio
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 class ObjectStoreError(RuntimeError):
@@ -13,6 +14,23 @@ def configured() -> bool:
     ))
 
 
+def _endpoint_url() -> str:
+    """Accept either a Cloudflare account ID or its full R2 S3 endpoint."""
+    raw = os.getenv("R2_ACCOUNT_ID", "").strip().rstrip("/")
+    if not raw:
+        return ""
+    if "://" in raw:
+        parsed = urlsplit(raw)
+        host = parsed.netloc or parsed.path
+    else:
+        host = raw
+    host = host.strip("/").split("/", 1)[0]
+    suffix = ".r2.cloudflarestorage.com"
+    if host.endswith(suffix):
+        return f"https://{host}"
+    return f"https://{host}{suffix}"
+
+
 def _client():
     if not configured():
         return None
@@ -22,7 +40,7 @@ def _client():
         raise ObjectStoreError("R2 support requires the boto3 package.") from exc
     return boto3.client(
         "s3",
-        endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID'].strip()}.r2.cloudflarestorage.com",
+        endpoint_url=_endpoint_url(),
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"].strip(),
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"].strip(),
         region_name="auto",
