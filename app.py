@@ -184,7 +184,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
