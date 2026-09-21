@@ -1,6 +1,6 @@
 import unittest
 
-from media_finisher import _media_url_candidates, _normalize_media_url
+from media_finisher import _media_request_headers, _media_url_candidates, _normalize_media_url
 
 
 class MediaFinisherUrlTests(unittest.TestCase):
@@ -21,6 +21,12 @@ class MediaFinisherUrlTests(unittest.TestCase):
             _media_url_candidates(raw),
             [raw, "https://media.pixverse.ai/pixverse/mp4/video.mp4"],
         )
+
+    def test_pixverse_download_uses_required_media_headers(self):
+        headers = _media_request_headers("https://media.pixverse.ai/video.mp4")
+        self.assertEqual(headers["Referer"], "https://app.pixverse.ai/")
+        self.assertIn("Mozilla/5.0", headers["User-Agent"])
+        self.assertEqual(_media_request_headers("https://example.com/video.mp4"), {})
 
 
 if __name__ == "__main__":

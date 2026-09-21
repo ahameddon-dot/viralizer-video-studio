@@ -21,6 +21,17 @@ def _media_url_candidates(url: str) -> list[str]:
     return list(dict.fromkeys((original, normalized)))
 
 
+def _media_request_headers(url: str) -> dict[str, str]:
+    if urlparse(str(url)).hostname == "media.pixverse.ai":
+        return {
+            "User-Agent": "Mozilla/5.0 (compatible; Viralizer/1.0)",
+            "Referer": "https://app.pixverse.ai/",
+            "Origin": "https://app.pixverse.ai",
+            "Accept": "video/mp4,video/*;q=0.9,*/*;q=0.5",
+        }
+    return {}
+
+
 async def _download(url, path):
     parsed=urlparse(str(url))
     if parsed.scheme != "https" or not parsed.hostname: raise MediaFinisherError("The generated video URL is invalid.")
@@ -33,7 +44,7 @@ async def _download(url, path):
                 await asyncio.sleep(delay)
             for candidate in candidates:
                 try:
-                    async with client.stream("GET",candidate) as response:
+                    async with client.stream("GET",candidate,headers=_media_request_headers(candidate)) as response:
                         response.raise_for_status(); size=0
                         with path.open("wb") as output:
                             async for chunk in response.aiter_bytes():
