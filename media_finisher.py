@@ -65,19 +65,36 @@ async def _download(url, path):
         "Please retry this completed job in a moment; no new video credit is required."
     ) from last_error
 
+def _speech_retryable(status_code: int | None) -> bool:
+    return status_code is None or status_code == 429 or status_code >= 500
+
+
 async def _speech(text, voice, path, instructions=None):
     key=os.getenv("OPENAI_API_KEY","").strip()
     if not key: raise MediaFinisherError("OPENAI_API_KEY is required to add speech.")
     if voice not in VOICES: raise MediaFinisherError("The selected narration voice is not supported.")
     payload={"model":os.getenv("OPENAI_TTS_MODEL","gpt-4o-mini-tts"),"voice":voice,"input":text[:4096],"instructions":instructions or "Speak clearly and energetically for a short social video. Keep a natural pace.","response_format":"mp3"}
-    try:
-        async with httpx.AsyncClient(timeout=90) as client:
-            response=await client.post("https://api.openai.com/v1/audio/speech",headers={"Authorization":f"Bearer {key}"},json=payload); response.raise_for_status(); path.write_bytes(response.content)
-    except httpx.HTTPStatusError as exc:
-        try: detail=exc.response.json().get("error",{}).get("message","")
-        except ValueError: detail=""
-        raise MediaFinisherError(detail or "OpenAI could not generate the narration.") from exc
-    except httpx.HTTPError as exc: raise MediaFinisherError(f"Could not connect to the speech service: {exc}") from exc
+    last_error = None
+    async with httpx.AsyncClient(timeout=90) as client:
+        for attempt, delay in enumerate((0, 2, 5)):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                response=await client.post("https://api.openai.com/v1/audio/speech",headers={"Authorization":f"Bearer {key}"},json=payload)
+                response.raise_for_status()
+                path.write_bytes(response.content)
+                return
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                if not _speech_retryable(exc.response.status_code) or attempt == 2:
+                    try: detail=exc.response.json().get("error",{}).get("message","")
+                    except ValueError: detail=""
+                    raise MediaFinisherError(detail or "OpenAI could not generate the narration.") from exc
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == 2:
+                    raise MediaFinisherError(f"Could not connect to the speech service: {exc}") from exc
+    raise MediaFinisherError("OpenAI could not generate the narration.") from last_error
 
 def _escape_drawtext(value):
     return (value.replace("\\", "\\\\")

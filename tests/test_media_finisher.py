@@ -1,6 +1,6 @@
 import unittest
 
-from media_finisher import _media_request_headers, _media_url_candidates, _normalize_media_url
+from media_finisher import _media_request_headers, _media_url_candidates, _normalize_media_url, _speech_retryable
 
 
 class MediaFinisherUrlTests(unittest.TestCase):
@@ -27,6 +27,13 @@ class MediaFinisherUrlTests(unittest.TestCase):
         self.assertEqual(headers["Referer"], "https://app.pixverse.ai/")
         self.assertIn("Mozilla/5.0", headers["User-Agent"])
         self.assertEqual(_media_request_headers("https://example.com/video.mp4"), {})
+
+    def test_speech_retries_only_temporary_service_errors(self):
+        self.assertTrue(_speech_retryable(None))
+        self.assertTrue(_speech_retryable(429))
+        self.assertTrue(_speech_retryable(503))
+        self.assertFalse(_speech_retryable(400))
+        self.assertFalse(_speech_retryable(401))
 
 
 if __name__ == "__main__":
