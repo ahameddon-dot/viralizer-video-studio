@@ -95,6 +95,37 @@ async def prepare_article_intelligence_safely(
         return fallback
 
 
+def apply_selected_alternate_direction(content: dict[str, Any], user_direction: str = "") -> dict[str, Any]:
+    """Turn a selected V3 alternate into an authoritative shot without changing story facts."""
+    concept = " ".join(str(content.get("selected_alternate_concept") or "").split())[:80]
+    direction = " ".join(str(user_direction or content.get("creator_angle") or "").split())[:1000]
+    if not concept or not direction:
+        return content
+    updated = dict(content)
+    plan = content.get("visual_story_plan") if isinstance(content.get("visual_story_plan"), dict) else {}
+    story = content.get("story_understanding") if isinstance(content.get("story_understanding"), dict) else {}
+    camera_by_concept = {
+        "hero reveal": "Begin on one article-specific close detail, then use one slow controlled pullback to reveal the complete sourced subject and result.",
+        "human impact": "Use one restrained eye-level tracking move that stays with the sourced person through the visible action and reaction.",
+        "before and after": "Use one locked composition with a motivated foreground transition from the sourced before state to the sourced after state.",
+        "process in motion": "Use one controlled lateral tracking move that follows the sourced process from cause through visible result.",
+        "editorial spotlight": "Use one slow editorial push-in that reveals the article-specific subject, evidence, and final consequence in a single coherent scene.",
+    }
+    camera = camera_by_concept.get(concept.lower(), "Use one controlled camera move that clearly executes the selected concept.")
+    must_show = plan.get("must_show") if isinstance(plan.get("must_show"), list) else []
+    must_avoid = list(dict.fromkeys(
+        (plan.get("must_avoid") if isinstance(plan.get("must_avoid"), list) else [])
+        + (story.get("unsupported_visuals") if isinstance(story.get("unsupported_visuals"), list) else [])
+    ))
+    core = str(plan.get("core_visual_subject") or content.get("core_visual_subject") or content.get("topic") or "the selected story")
+    updated["current_story_beat"] = f"{concept}: {direction}"
+    updated["alternate_camera_direction"] = camera
+    updated["alternate_must_show"] = must_show[:5] or [core]
+    updated["alternate_must_avoid"] = must_avoid[:8]
+    updated["selected_creative_concept"] = concept
+    return updated
+
+
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
@@ -1220,6 +1251,7 @@ async def video_prompt(request: GenerateRequest):
         request.aspect_ratio,
         timeout_seconds=timeout_seconds,
     )
+    content = apply_selected_alternate_direction(content, request.prompt or "")
     try:
         prompt_result = build_video_prompt(
             content,

@@ -57,7 +57,7 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Alternate ideas", page)
         self.assertIn("function alternateConcepts()", page)
         self.assertIn("async function selectAlternateIdea", page)
-        self.assertIn("state.alternatePrepared=await compilePrompt", page)
+        self.assertIn("state.alternatePrepared=await compilePrompt(state.activeContent,idea.text)", page)
         self.assertIn("function rewriteConfiguredPrompt()", page)
         self.assertIn("content:state.activeContent||state.topic", page)
         self.assertIn("prompt:state.workingPrepared?.prompt", page)
