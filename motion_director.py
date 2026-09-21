@@ -4,6 +4,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from article_visual_kernel import evaluate_final_prompt
+
 
 SCENE_TYPES = (
     "UI_ANIMATION", "CHARACTER_IDLE", "PRODUCT", "PORTRAIT", "GAMING",
@@ -130,7 +132,7 @@ GROUNDING_PROFILES: tuple[dict[str, Any], ...] = (
     {"category":"Travel","keywords":("travel","tourism","destination","hotel","resort","holiday","vacation","tourist"),"style":"premium travel editorial"},
     {"category":"Beauty / Product","keywords":("perfume","fragrance","beauty","cosmetic","skincare","makeup"),"style":"luxury beauty commercial"},
     {"category":"Finance / Business","keywords":("stock market","stocks","trading","finance","banking","earnings","investment","investor"),"style":"financial editorial"},
-    {"category":"Technology / Business","keywords":("artificial intelligence"," ai ","technology","software","chip","platform","startup","tech company"),"style":"technology business editorial"},
+    {"category":"Technology / Business","keywords":("artificial intelligence"," ai ","technology","software","chip","platform","startup","tech company"),"style":"factual technical editorial"},
     {"category":"News","keywords":("breaking news","news update","report","journalism"),"style":"editorial documentary"},
     {"category":"Fashion","keywords":("fashion","clothing","silk","outfit","apparel"),"style":"fashion editorial"},
     {"category":"Sports","keywords":("football","soccer","match","league","tournament","athlete","stadium","wrestling","wwe","wweraw","wrestler","arena ring","takedown"),"style":"sports documentary"},
@@ -289,9 +291,9 @@ def _concept_candidates(grounding: dict[str, Any], duration: int) -> list[str]:
     elif category == "Beauty / Product":
         candidates = [f"the featured beauty product from {subject} presented with stable geometry and material detail", f"a hand naturally demonstrates the product in {subject}", f"a macro product reveal showing material, packaging and application context for {subject}"]
     elif category == "Finance / Business":
-        candidates = [f"a financial professional reviewing market movement relevant to {subject} with screens kept unreadable", f"a grounded business environment showing the human consequence of {subject}", f"physical market activity and a focused investor reaction representing {subject}"]
+        candidates = [f"the source-supported market or business change in {subject} represented through its observable evidence", f"the specific operational relationship in {subject} changing from its supported prior state to its reported new state", f"the article-supported physical consequence of {subject} without invented people, charts, or readable screens"]
     elif category == "Technology / Business":
-        candidates = [f"the named technology product, company or service in a directly relevant working context for {subject}", f"people using the relevant technology connected to {subject}", f"a grounded business scene showing the practical impact of {subject}"]
+        candidates = [f"the exact source-supported system, process, product, interface, infrastructure, or relationship change in {subject}", f"the specific technical cause-and-effect sequence evidenced for {subject}", f"the article-supported observable result of {subject} without invented people, devices, or environments"]
     elif category == "UI / Interface":
         candidates = [f"the supplied interface for {subject} preserved exactly while only its intended focal control animates", f"one precise state change within the existing interface for {subject}"]
     elif category == "Sports":
@@ -362,7 +364,8 @@ def _visual_action_candidates(grounding: dict[str, Any], concept: str, generatio
     if category == "Finance / Business":
         return ["A financial professional reviews changing market activity on an unreadable display, then makes one focused note while colleagues move subtly behind.", "An investor studies the market display and points to one changing trend while the camera moves closer."]
     if category == "Technology / Business":
-        return ["A team member demonstrates the named technology in a directly relevant working context while colleagues observe its practical result.", "A user operates the relevant technology and completes one clear task that demonstrates its practical impact."]
+        subject = grounding.get("core_subject") or "the supported technical subject"
+        return [f"{subject} progresses through the exact supported technical state change, with each visible system response caused by the preceding step.", f"Reveal the article-supported relationship around {subject} through one observable state change without invented devices or unnecessary people."]
     if category == "UI / Interface" or "vinyl" in source:
         return ["The vinyl record rotates clockwise at a slow constant turntable speed while its centered artwork moves with it and the remaining interface stays fixed."]
     if "portrait" in source or "creator" in source:
@@ -519,7 +522,7 @@ def _camera(scene: str, quality: bool) -> dict[str, str]:
     if scene in {"PORTRAIT", "CHARACTER_IDLE", "BEAUTY"}:
         return {"level": "MICRO", "direction": "Use only an almost imperceptible cinematic push-in; preserve the original framing and perspective."}
     if scene in {"PRODUCT", "TECH"}:
-        return {"level": "SUBTLE", "direction": "Use one very slow controlled push-in, with no orbit or lens change."}
+        return {"level": "SUBTLE", "direction": "Hold stable unless the observable change requires one restrained reveal; do not add an unmotivated orbit, zoom, or lens change."}
     if scene == "AUTOMOTIVE":
         return {"level": "CONTROLLED", "direction": "Use one smooth tracking move matched to the vehicle speed; avoid sudden acceleration or angle changes."}
     return {"level": "CONTROLLED" if quality else "SUBTLE", "direction": "Use one motivated, smooth camera move only, then settle into a stable end frame."}
@@ -785,7 +788,9 @@ def build_motion_plan(content: dict[str, Any], duration: int = 5, *, generation_
         handoff = _semantic_handoff_validate(plan, grounding)
         handoff["repaired"] = True
     plan.semantic_validation["handoff"] = handoff
-    plan.semantic_validation["status"] = "PASS" if concept_validation["status"] == "PASS" and final_validation["status"] == "PASS" and polish_report["status"] == "PASS" and handoff["status"] in {"PASS", "NOT_APPLICABLE"} else "FAIL"
+    prompt_quality = evaluate_final_prompt(plan.final_prompt, plan.visual_story_plan)
+    plan.semantic_validation["article_prompt_quality_gate"] = prompt_quality
+    plan.semantic_validation["status"] = "PASS" if concept_validation["status"] == "PASS" and final_validation["status"] == "PASS" and polish_report["status"] == "PASS" and handoff["status"] in {"PASS", "NOT_APPLICABLE"} and prompt_quality["status"] == "PASS" else "FAIL"
     if grounding.get("authoritative_story_plan") and plan.semantic_validation["status"] != "PASS":
         raise ValueError(f"Motion Director rejected output that changed or weakened the approved Visual Story Plan: {plan.semantic_validation}")
     return plan
@@ -836,9 +841,9 @@ def _supporting_direction(plan: MotionPlan) -> str:
     if plan.category == "Beauty / Product":
         return "Let controlled highlights travel gently across the product material while the background remains soft and undistracting."
     if plan.category == "Finance / Business":
-        return "Keep displays and documents unreadable while restrained workplace movement supports the main action."
+        return "Let only source-supported operational or market evidence change in response to the main event; keep exact figures and labels out of generated imagery."
     if plan.category == "Technology / Business":
-        return "As the demonstration progresses, let visible screen light and nearby reflections respond subtly while background activity remains restrained and relevant."
+        return "As the supported technical event progresses, let only directly caused system, material, light, or environmental responses change; do not add unrelated activity."
     secondary = [layer for layer in plan.layers if layer.category in {"secondary", "reactive"}]
     return " ".join(_natural_motion_sentence(layer) for layer in secondary[:2])
 
@@ -922,20 +927,29 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
     if plan.core_visual_subject and plan.visual_story_plan:
         beat = plan.current_story_beat or plan.selected_visual_concept
         shot = plan.approved_storyboard_shot or {}
-        shot_controls = ""
-        if shot:
-            shot_controls = (
-                f"Environment: {_clean(shot.get('environment'), 60)}. Composition: {_clean(shot.get('composition'), 60)}. "
-                f"Lighting: {_clean(shot.get('lighting'), 50)}. Foreground: {_clean(shot.get('foreground'), 35)}. "
-                f"Background: {_clean(shot.get('background'), 35)}. Transition out: {_clean(shot.get('transition_out'), 40)}."
-            )
+        kernel = plan.visual_story_plan.get("article_visual_kernel") or {}
+        mechanism = shot.get("visual_mechanism") or plan.visual_story_plan.get("selected_visual_mechanism") or kernel.get("selected_visual_mechanism") or "CAUSE_EFFECT"
+        visual_event = _clean(shot.get("action") or beat or kernel.get("visual_story_sentence"), 220)
+        visual_event = re.sub(r"^[A-Z_ ]+:\s*", "", visual_event)
+        visual_event = re.sub(r"^(?:Show|Reveal)\s+", "", visual_event, flags=re.I)
+        before_state = _clean(kernel.get("before_state"), 90)
+        after_state = _clean(kernel.get("after_state"), 110)
+        progression = f"Begin with {before_state}; progress to {after_state}" if before_state and after_state else _clean(kernel.get("visual_story_sentence") or plan.visual_message, 220)
+        environment = _clean(shot.get("environment") or " ".join(kernel.get("location_or_environment_if_supported") or []), 90)
+        composition = _clean(shot.get("composition"), 70)
+        lighting = _clean(shot.get("lighting"), 60)
+        truth_class = kernel.get("visual_truth_classification")
         boundary_text = "; ".join(_clean(item, 24) for item in plan.factual_boundaries[:4] if _clean(item, 24))
-        action_text = "" if _clean(beat, 180).lower() == _clean(plan.concrete_visual_action, 180).lower() else action + " "
+        required_evidence = "; ".join(_clean(item, 28) for item in (shot.get("required_visual_anchors") or kernel.get("unique_visual_anchors") or plan.must_show)[:6] if _clean(item, 28))
         body = (
-            f"Create one uninterrupted {plan.duration}-second vertical 9:16 {plan.creative_style} shot centered strictly on {plan.core_visual_subject}. "
-            f"Depict this sourced moment without changing its meaning: {beat}. {action_text}"
-            f"{plan.camera['direction']} {shot_controls} As the camera or subject moves, allow only physically caused changes in material, light, reflections, and the source-supported environment. "
-            f"Maintain the exact appearance, geometry, materials, composition, lighting logic, and spatial continuity of {plan.core_visual_subject} throughout."
+            f"Create one uninterrupted {plan.duration}-second vertical 9:16 shot showing {visual_event}. "
+            f"Core subject: {plan.core_visual_subject}. Article-specific progression ({mechanism}): {progression}. "
+            f"Required evidence: {required_evidence or 'only the article-supported subject, change, and relationships'}. "
+            f"Environment: {environment or 'minimum neutral contextual completion supported by the article'}. "
+            f"Visual truth: {'present this as a clearly editorial visualization, not documentary evidence' if truth_class == 'SAFE_EDITORIAL_VISUALIZATION' else 'use only literal article-supported visible details'}. "
+            f"Motion: execute this {str(mechanism).lower().replace('_', ' ')} change continuously within the available time. As the progression occurs, allow only physically caused changes in material, light, reflections, and the source-supported environment. "
+            f"Camera: {plan.camera['direction'].rstrip(' .')}. Composition: {composition or 'one clear article-specific focal composition'}. Lighting: {lighting or 'stable realistic source-faithful lighting'}. "
+            f"Continuity: maintain the exact identity, appearance, geometry, materials, composition, lighting logic, and spatial relationships of {plan.core_visual_subject}."
         )
         factual = "Keep every visible detail within the supplied story evidence."
         if boundary_text:
@@ -956,7 +970,7 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
                 f"The observable payoff must clearly show: {plan.action_outcome_contract.get('expected_visible_result')}. "
                 "Keep the same relevant object, identity, anatomy, wardrobe, and spatial continuity; do not substitute symbolic achievement imagery."
             )
-        ending = (f"Resolve on this sourced hero payoff: {plan.hero_payoff}. End on a clean, stable view."
+        ending = (f"Resolve on this sourced payoff and hold its article-specific visible result: {plan.hero_payoff}."
                   if plan.hero_payoff and _clean(beat, 120) == _clean(plan.hero_payoff, 120)
                   else "Finish with a clear, stable composition that preserves continuity into the next approved sourced moment.")
         prompt = _clean_prompt(f"{body} {factual} {ending} {_negative_language(plan)}")
@@ -975,8 +989,8 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
             "Food / Confectionery": "Stage an inviting assortment of richly detailed pieces on an elegant tasting surface with warm premium confectionery lighting, shallow depth of field and a softly blurred tasting environment.",
             "Sports": "Place the athletes inside a brightly lit professional arena with a clearly defined competition area and a softly active audience.",
             "Gaming": "Use a premium console gaming environment with controlled screen light and stable recognizable gaming objects.",
-            "Technology / Business": "Use a grounded working context directly connected to the named technology, without inventing unrelated devices or laboratories.",
-            "Finance / Business": "Use a credible financial workplace with all screen and document content kept unreadable for later overlays.",
+            "Technology / Business": "Use only the source-supported technology system, process, interface, product, infrastructure, or relationship context; do not invent people, devices, laboratories, or offices.",
+            "Finance / Business": "Use only source-supported operational, transaction, product, asset, or market evidence; reserve exact figures and labels for controlled overlays.",
             "Beauty / Product": "Use a refined beauty-review setting with controlled material highlights and stable product geometry.",
             "Automotive": "Use a relevant real road or launch environment with stable vehicle design and physically consistent reflections.",
             "Travel": "Use an authentic travel-showcase environment that clearly represents the named destination through recognizable landscape, culture and visitor experience, with no unrelated products or vehicles.",
@@ -991,11 +1005,13 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
     elif plan.visual_story_plan and plan.current_story_beat:
         ending = "Finish this beat with motivated continuing movement that preserves continuity into the next sourced story beat."
     elif plan.visual_story_plan and plan.hero_payoff:
-        ending = f"Resolve on this sourced hero payoff: {plan.hero_payoff}. End on a clean, stable view."
+        ending = f"Resolve on this sourced payoff and hold its article-specific visible result: {plan.hero_payoff}."
+    elif plan.generation_type == "image_to_video" and plan.category == "Beauty / Product":
+        ending = "End on a clean, stable hero view."
     elif plan.loop_strategy.startswith("seamless loop"):
         ending = "Maintain smooth continuous motion through the final frame and return naturally to an opening-compatible state for a seamless loop."
     elif plan.loop_strategy.startswith("hero end"):
-        ending = "End on a clean, stable hero view."
+        ending = "End on the article-specific observable result and hold it clearly."
     elif plan.loop_strategy.startswith("transition"):
         ending = "Finish with motivated continuing movement suitable for the next shot."
     else:

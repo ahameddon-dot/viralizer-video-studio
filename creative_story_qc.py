@@ -31,7 +31,7 @@ def _score(value: Any) -> int:
 def creative_qc_authority(story: dict[str, Any], visual_plan: dict[str, Any]) -> dict[str, Any]:
     visualizability = visual_plan.get("visualizability_analysis") or story.get("visualizability_analysis") or {}
     narration_gap = visual_plan.get("narration_gap") or visualizability.get("narration_gap") or {}
-    allocation = visual_plan.get("editorial_allocation") or story.get("editorial_allocation") or {}
+    allocation = visual_plan.get("editorial_channel_allocation") or visual_plan.get("editorial_allocation") or story.get("editorial_channel_allocation") or story.get("editorial_allocation") or {}
     visual_responsibilities = allocation.get("visual_channel") or narration_gap.get("viewer_should_understand_visually") or visualizability.get("visualizable_facts") or []
     narration_responsibilities = allocation.get("narration_channel") or narration_gap.get("narration_must_explain") or visualizability.get("narration_dependent_meanings") or []
     text_responsibilities = allocation.get("text_channel") or []
@@ -57,6 +57,9 @@ def creative_qc_authority(story: dict[str, Any], visual_plan: dict[str, Any]) ->
         "achievement_representation": achievement,
         "action_outcome_contract": visual_plan.get("action_outcome_contract") or story.get("action_outcome_contract") or achievement.get("action_outcome_contract") or {},
         "source_evidence_locks": visual_plan.get("source_evidence_locks") or [],
+        "article_visual_kernel": visual_plan.get("article_visual_kernel") or story.get("article_visual_kernel") or {},
+        "selected_visual_mechanism": visual_plan.get("selected_visual_mechanism") or "",
+        "article_visual_relation": visual_plan.get("article_visual_relation") or {},
     }
 
 
@@ -77,6 +80,10 @@ environmental_storytelling (0-100),
 generic_ad_risk (0-100 where 100 is severe),
 fake_information_panel_detected (boolean),
 fake_information_panel_detail (string),
+article_relation (0-100),
+genericity (0-100 where 100 is severe),
+visual_evidence_usage (0-100),
+story_type_match (0-100),
 model_final_story_pass (PASS or FAIL),
 muted_primary_visual_story_pass (PASS or FAIL),
 narration_gap_acceptable (boolean),
@@ -84,7 +91,7 @@ failure_reasons (array of concise strings).
 
 Also return visual_channel_coverage (0-100), narration_channel_coverage (use null at visual-production stage), text_channel_coverage (use null at visual-production stage), final_multimodal_coverage (use null at visual-production stage), and action_result_qc containing ACTION_CLEAR, ACTION_ARTICLE_SPECIFIC, RESULT_VISIBLE, RESULT_MATCHES_EVIDENCE, CAUSE_EFFECT_CLEAR, PAYOFF_NON_GENERIC, each exactly PASS or FAIL when action_outcome_contract applies and NOT_APPLICABLE otherwise.
 
-This is STAGE 1 VISUAL PRODUCTION QC. Evaluate only editorial_allocation.visual_channel, technical execution, the action/result contract, source evidence, continuity, and factual safety. Do not fail visuals for facts assigned to narration_channel, text_channel, controlled_text_dependent, or facts_not_required_visually. Those channels are intentionally deferred to final multimodal QC. The primary allocated visual story must survive visually. Exact names, dates, statistics, opponent identity/context, record titles, and achievement counts do not need to appear when assigned to narration or controlled text. For PERSON_ACTION, require the distinctive supported physical action, its readable cause-and-effect, and the expected visible result; an action without its required result fails RESULT_VISIBLE. Reject generic award poses and symbolic badges/icons/trophies as substitutes. For PRODUCT, require the supported new development or old/new state and reject dependency on model-generated lettering; deterministic overlay routing is valid. For EVENT or PROCESS, require supported technical elements, temporal progression, causal clarity, and strict preservation of planned-versus-completed status. Evaluate only visual identity anchors assigned to the visual channel. Be strict and candid when a technically attractive sequence merely looks like a generic advertisement or exhibition video."""
+This is STAGE 1 VISUAL PRODUCTION QC. Evaluate only editorial_allocation.visual_channel, technical execution, the action/result contract, source evidence, continuity, and factual safety. Compare viewer_inferred_story directly with article_visual_kernel.visual_story_sentence, not the headline or narration-dependent facts. A polished sequence that can only be inferred as 'people demonstrating technology', 'analysts looking at code', or another category-level scene must receive low article_relation, high genericity, and FAIL. Do not fail visuals for facts assigned to narration_channel, text_channel, controlled_text_dependent, or facts_not_required_visually. Those channels are intentionally deferred to final multimodal QC. The primary allocated visual story must survive visually. Exact names, dates, statistics, opponent identity/context, record titles, and achievement counts do not need to appear when assigned to narration or controlled text. For PERSON_ACTION, require the distinctive supported physical action, its readable cause-and-effect, and the expected visible result; an action without its required result fails RESULT_VISIBLE. Reject generic award poses and symbolic badges/icons/trophies as substitutes. For PRODUCT, require the supported new development or old/new state and reject dependency on model-generated lettering; deterministic overlay routing is valid. For EVENT or PROCESS, require supported technical elements, temporal progression, causal clarity, and strict preservation of planned-versus-completed status. Evaluate only visual identity anchors assigned to the visual channel. Be strict and candid when a technically attractive sequence merely looks like generic category footage."""
 
 
 def _qc_status(value: Any, default: str = "FAIL") -> str:
@@ -112,9 +119,15 @@ def normalize_creative_qc(
     authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = dict(result)
+    result = dict(result)
+    result.setdefault("article_relation", result.get("article_specificity", 0))
+    result.setdefault("genericity", result.get("generic_ad_risk", 100))
+    result.setdefault("visual_evidence_usage", (result.get("visual_semantic_coverage") or {}).get("overall_score", 0))
+    result.setdefault("story_type_match", result.get("article_specificity", 0))
     score_fields = (
         "subject_clarity", "story_progression", "article_specificity", "visual_impact",
         "visual_continuity", "narrative_progression", "environmental_storytelling", "generic_ad_risk",
+        "article_relation", "genericity", "visual_evidence_usage", "story_type_match",
     )
     for field in score_fields:
         normalized[field] = _score(result.get(field))
@@ -167,6 +180,10 @@ def normalize_creative_qc(
         "environment_adds_meaning": normalized["environmental_storytelling"] >= 60,
         "not_generic_ad": normalized["generic_ad_risk"] <= 40,
         "no_fake_information_panel": not normalized["fake_information_panel_detected"],
+        "article_relation": normalized["article_relation"] >= 65,
+        "genericity_kill_switch": normalized["genericity"] <= 40,
+        "visual_evidence_used": normalized["visual_evidence_usage"] >= 60,
+        "story_type_match": normalized["story_type_match"] >= 60,
         "each_later_shot_adds_meaning": all(bool(item.get("adds_new_meaning")) for item in normalized["shot_progression"][1:] if isinstance(item, dict)) if len(normalized["shot_progression"]) > 1 else True,
     }
     if not checks["story_progresses"]:

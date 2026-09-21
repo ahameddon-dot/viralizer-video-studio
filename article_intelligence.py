@@ -21,6 +21,7 @@ from scene_evidence import build_source_evidence_locks
 from scene_evidence import collect_source_visual_evidence
 from visualizability_analyzer import normalize_visualizability, symbolism_is_supported
 from visual_specificity_analyzer import analyze_visual_specificity
+from article_visual_kernel import strengthen_article_visual_plan
 
 try:
     import trafilatura
@@ -480,7 +481,7 @@ Analyze only the supplied publisher evidence. Never invent a person, place, prod
  Create an article-specific visual plan for a {duration}-second video around the primary_visual_story. Use story-type-appropriate visual progression. Physical action is only one valid mechanism; context reveal, relational reveal, environmental recontextualization, process progression, temporal contrast, scale reveal, cause/effect, state change, and object-state transition are also valid when they add meaning. Camera or lighting change alone is not progression. Keep every beat achievable within the duration and return no more than {max_beats} story beats.
 Return one JSON object with exactly three objects:
 story_understanding: what_happened (string), main_subjects (array), important_context (string), new_development (string), core_message (string), viewer_takeaway (string), key_visual_facts (array), factual_boundaries (array), unsupported_visuals (array).
- visualizability_analysis: story_type (PERSON_ACTION, OBJECT_SIGNIFICANCE, EVENT, PROCESS, TRANSFORMATION, PRODUCT, PLACE, COMPARISON, RELATIONSHIP, EXPLANATION, or OTHER), visualizable_facts (array), partially_visualizable_meanings (array), narration_dependent_meanings (array), unsafe_to_visualize_without_source_media (array), primary_visual_story (string), supporting_narration_story (string), narration_gap (object: visual_story_target string, viewer_should_understand_visually array, narration_must_explain array, visual_semantic_coverage_target 0-100, narration_gap_acceptable boolean).
+ visualizability_analysis: story_type (PERSON_ACTION, ACHIEVEMENT, PRODUCT_LAUNCH, PRODUCT_CHANGE, INTERFACE_CHANGE, TECHNICAL_PROCESS, CYBERSECURITY_INCIDENT, POLICY_COLLABORATION, BUSINESS_CHANGE, SCIENTIFIC_DISCOVERY, MISSION_OR_PROJECT, EVENT, OBJECT_SIGNIFICANCE, INFRASTRUCTURE, COMPARISON, TRANSFORMATION, DATA_OR_MARKET_STORY, or OTHER), visualizable_facts (array), partially_visualizable_meanings (array), narration_dependent_meanings (array), unsafe_to_visualize_without_source_media (array), primary_visual_story (string), supporting_narration_story (string), narration_gap (object: visual_story_target string, viewer_should_understand_visually array, narration_must_explain array, visual_semantic_coverage_target 0-100, narration_gap_acceptable boolean).
  visual_story_plan: core_visual_subject (string), visual_message (string equal to the primary visual story), selected_creative_concept (string), creative_concept_selection_reason (string), visual_hook (string), story_beats (array of objects with beat, purpose, visual, progression_mechanism), continuity_strategy (string), hero_payoff (string), visual_style (string), must_show (array), must_avoid (array), muted_test_explanation (string).
  Internally consider multiple truthful concepts using article specificity, visual impact, scroll-stopping power, core-message clarity, factual safety, continuity, short-form suitability, and AI-video feasibility. Return only the selected concept and a concise selection reason; do not expose candidate reasoning.
  The selected concept must visibly connect the article's new development or viewer takeaway to the core visual subject; a spotlighted subject, material close-up, pan, zoom, or hero display by itself is not a concept. The first second must use the strongest truthful, article-specific visual available. Avoid generic aerials, exteriors, walking, newspapers, phone screens, laptops, crowds, or product rotations unless the evidence makes one essential.
@@ -540,6 +541,24 @@ def validate_story_package(story: dict[str, Any], plan: dict[str, Any], duration
         "narration_gap_declared": bool(visualizability.get("narration_gap", {}).get("visual_story_target")),
         "creative_concept_article_specific": concept_specific and concept_mechanism,
     }
+    kernel = plan.get("article_visual_kernel") or {}
+    if kernel:
+        relation = plan.get("article_visual_relation") or {}
+        genericity = plan.get("genericity_result") or {}
+        checks.update(
+            article_visual_kernel_complete=all(key in kernel for key in (
+                "article_event", "main_change", "core_visual_subject",
+                "visualizable_action_or_change", "before_state", "after_state",
+                "important_relationships", "physical_evidence", "temporal_status",
+                "unique_visual_anchors", "nonvisual_facts", "abstract_meanings",
+                "visual_story_sentence",
+            )),
+            article_visual_relation_score=int(relation.get("score") or 0) >= 60,
+            genericity_kill_switch=genericity.get("status") == "PASS",
+            creative_concept_candidates=len(plan.get("creative_concept_candidates") or []) >= 3,
+            editorial_channels_allocated=all(key in (plan.get("editorial_channel_allocation") or {}) for key in ("visual_channel", "narration_channel", "text_channel")),
+            creative_concept_article_specific=int(relation.get("score") or 0) >= 60,
+        )
     return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks, "beat_count": len(beats), "duration": duration}
 
 
@@ -575,7 +594,10 @@ async def build_story_package(article: dict[str, Any], duration: int) -> dict[st
                 factual_details_for_narration=specificity["factual_details_for_narration"],
             )
             plan["visual_specificity_analysis"] = specificity
-            plan["visual_message"] = visualizability.get("primary_visual_story") or plan.get("visual_message")
+            plan = strengthen_article_visual_plan(article, story, visualizability, plan, specificity)
+            story["article_visual_kernel"] = plan["article_visual_kernel"]
+            story["editorial_channel_allocation"] = plan["editorial_channel_allocation"]
+            plan["visual_message"] = plan["article_visual_kernel"]["visual_story_sentence"]
             story["analysis_mode"] = "llm"
             plan["analysis_mode"] = "llm"
             validation = validate_story_package(story, plan, duration, visualizability)
@@ -600,6 +622,9 @@ async def build_story_package(article: dict[str, Any], duration: int) -> dict[st
         factual_details_for_narration=specificity["factual_details_for_narration"],
     )
     plan["visual_specificity_analysis"] = specificity
+    plan = strengthen_article_visual_plan(article, story, visualizability, plan, specificity)
+    story["article_visual_kernel"] = plan["article_visual_kernel"]
+    story["editorial_channel_allocation"] = plan["editorial_channel_allocation"]
     validation = validate_story_package(story, plan, duration, visualizability)
     result = {"story_understanding": story, "visualizability_analysis": visualizability, "visual_story_plan": plan, "validation": validation, "model": "deterministic-evidence-fallback", "attempts": 0, "fallback_reason": error or "The generated plan did not pass validation."}
     _STORY_CACHE[cache_key] = (time.time(), result)
@@ -608,7 +633,7 @@ async def build_story_package(article: dict[str, Any], duration: int) -> dict[st
 
 async def prepare_article_intelligence(content: dict[str, Any], duration: int, aspect_ratio: str = "9:16") -> dict[str, Any]:
     existing = content.get("article_intelligence")
-    if isinstance(existing, dict) and existing.get("version") == 3 and existing.get("duration") == duration and existing.get("aspect_ratio") == aspect_ratio:
+    if isinstance(existing, dict) and existing.get("version") == 4 and existing.get("duration") == duration and existing.get("aspect_ratio") == aspect_ratio:
         return dict(content)
     article = await resolve_and_extract_article(content)
     package = await build_story_package(article, duration)
@@ -646,10 +671,16 @@ async def prepare_article_intelligence(content: dict[str, Any], duration: int, a
         unsupported_visuals=package["story_understanding"].get("unsupported_visuals", []),
         achievement_representation=achievement,
         source_evidence_locks=evidence_locks,
+        article_visual_kernel=effective_visual_plan.get("article_visual_kernel") or {},
+        selected_visual_mechanism=effective_visual_plan.get("selected_visual_mechanism", ""),
+        creative_concept_candidates=effective_visual_plan.get("creative_concept_candidates") or [],
+        article_visual_relation=effective_visual_plan.get("article_visual_relation") or {},
+        genericity_result=effective_visual_plan.get("genericity_result") or {},
+        editorial_channel_allocation=effective_visual_plan.get("editorial_channel_allocation") or {},
         generated_text_routing=storyboard.get("generated_text_routing") or {},
         story_type_qc=storyboard.get("story_type_qc") or {},
         article_intelligence={
-            "version": 3,
+            "version": 4,
             "duration": duration,
             "aspect_ratio": aspect_ratio,
             "extraction_state": article.get("extraction_state"),
@@ -667,6 +698,12 @@ async def prepare_article_intelligence(content: dict[str, Any], duration: int, a
             "creative_story_qc": storyboard.get("creative_story_qc"),
             "achievement_representation": achievement,
             "source_evidence_locks": evidence_locks,
+            "article_visual_kernel": effective_visual_plan.get("article_visual_kernel") or {},
+            "selected_visual_mechanism": effective_visual_plan.get("selected_visual_mechanism", ""),
+            "creative_concept_candidates": effective_visual_plan.get("creative_concept_candidates") or [],
+            "article_visual_relation": effective_visual_plan.get("article_visual_relation") or {},
+            "genericity_result": effective_visual_plan.get("genericity_result") or {},
+            "editorial_channel_allocation": effective_visual_plan.get("editorial_channel_allocation") or {},
             "generated_text_routing": storyboard.get("generated_text_routing") or {},
             "story_type_qc": storyboard.get("story_type_qc") or {},
             "creative_revision_count": storyboard.get("creative_revision_count", 0),

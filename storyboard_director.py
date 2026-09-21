@@ -17,6 +17,7 @@ from generated_text_router import route_generated_text
 from story_type_qc import evaluate_story_type_qc
 from storyboard_preflight_controls import enforce_storyboard_preflight_controls
 from action_outcome_contract import build_result_state_reference
+from article_visual_kernel import attach_shot_meaning_contracts, evaluate_storyboard_article_relation
 
 
 PURPOSES = {"HOOK", "CONTEXT", "DEVELOPMENT", "TRANSFORMATION", "EVIDENCE", "EMOTIONAL MEANING", "HERO PAYOFF"}
@@ -77,6 +78,14 @@ def build_reference_frame_plan(shot: dict[str, Any], visual_plan: dict[str, Any]
         "end_frame": _clean(shot.get("end_frame"), 1000),
         "continuity_frame_strategy": _clean(shot.get("continuity_frame_strategy"), 120),
         "reuse_previous_end_frame": bool(shot.get("reuse_previous_end_frame")),
+        "article_visual_kernel": visual_plan.get("article_visual_kernel") or {},
+        "shot_meaning_contract": {
+            key: shot.get(key) for key in (
+                "viewer_understands_before", "viewer_understands_after",
+                "new_article_meaning_added", "visual_mechanism", "source_evidence",
+                "required_visual_anchors", "forbidden_generic_elements",
+            )
+        },
     }
     contract = shot.get("action_outcome_contract") or visual_plan.get("action_outcome_contract") or {}
     if str(shot.get("purpose") or "").upper() == "HERO PAYOFF" and contract.get("result_shot_required"):
@@ -108,6 +117,13 @@ def build_visual_qc_spec(shot: dict[str, Any], reference_plan: dict[str, Any], s
         "reference_frame_plan": reference_plan,
         "action_outcome_contract": contract,
         "action_result_qc_required": bool(str(shot.get("purpose") or "").upper() == "HERO PAYOFF" and contract.get("result_shot_required")),
+        "article_relevance": visual_plan.get("article_visual_relation") or {},
+        "required_visual_anchors": shot.get("required_visual_anchors") or [],
+        "reference_qc_requirements": [
+            "ARTICLE_RELEVANCE", "SUBJECT_ACCURACY", "ENVIRONMENT_RELEVANCE",
+            "OBJECT_RELEVANCE", "NO_GENERIC_TECH_DECORATION",
+            "NO_UNSUPPORTED_DEVICE", "NO_UNSUPPORTED_PEOPLE", "NO_GENERATED_TEXT",
+        ],
     }
 
 
@@ -158,6 +174,7 @@ def _fallback_storyboard(story: dict[str, Any], visual_plan: dict[str, Any], dur
             "must_avoid": list(dict.fromkeys((visual_plan.get("must_avoid") or []) + (story.get("unsupported_visuals") or []))),
             "duration_seconds": seconds, "reference_frame_required": index in {1, len(beats)},
         })
+    shots = attach_shot_meaning_contracts(shots, visual_plan)
     return {
         "storyboard": shots,
         "muted_test_v2": {
@@ -188,7 +205,7 @@ async def _ask_storyboard_model(article: dict[str, Any], story: dict[str, Any], 
         "story_understanding": story, "approved_visual_story_plan": visual_plan,
         "duration": duration, "aspect_ratio": aspect_ratio,
     }
-    instruction = f"""You are Viralizer's Storyboard Director. The supplied Story Director output is immutable semantic authority for WHAT the story means. Translate its primary visualizable story into a connected {duration}-second {aspect_ratio} visual sequence; do not force narration-dependent meaning into generated imagery. Choose shot count from the story, not a fixed duration template. Use only as many shots as supported meanings; two strong supported beats are better than a fabricated third beat. Every shot purpose must be one of: {', '.join(sorted(PURPOSES))}. Every shot must visibly advance the visual_story_target. Use article-specific, truthful first-second curiosity; reject generic fashion-ad or stock-footage grammar. Choose progression appropriate to story_type. Valid mechanisms are: {', '.join(sorted(PROGRESSION_MECHANISMS))}. Physical action is not universally required. A factual context reveal or environmental recontextualization is valid when it adds meaning. Camera movement or lighting change alone is not progression. Unsupported symbolism is not evidence. Use minimum necessary visual completion: neutral walls, floors, empty negative space, ambient lighting, natural shadows, generic architectural surfaces, and physically necessary supports may complete a scene only when they add no story meaning. Never create a new beat from unsupported contextual detail. Crowds, visitors, staff, photographers, ropes, benches, crates, covered objects, preparation activity, signage, furniture, additional mannequins, other displayed artifacts, or a before-state require source or source-media evidence. Do not assume a glass case, pedestal, platform, ropes, furniture, or a specific display method unless explicitly present in article facts or source_visual_evidence. Never invent cover removal, empty-to-occupied display transitions, or other events. Durations must be positive integers and sum exactly to {duration}. shot_id must be a string such as S1. source_support, continuity_requirements, must_show, and must_avoid must be arrays. Set visual_subject to the exact approved core_visual_subject in every shot. Put the chosen progression mechanism at the start of action, for example 'CONTEXT_REVEAL: ...'. Do not request signage, plaques, newspapers, screens, or other readable/fabricated evidence unless supplied in source assets.
+    instruction = f"""You are Viralizer's Storyboard Director. The supplied Story Director output and ARTICLE_VISUAL_KERNEL are immutable semantic authority for WHAT the story means and WHAT can be shown. Translate the kernel's visual_story_sentence and selected_visual_mechanism into a connected {duration}-second {aspect_ratio} visual sequence; do not force narration-dependent meaning into generated imagery. Choose shot count from the story, not a fixed duration template. Use only as many shots as supported meanings; two strong supported beats are better than a fabricated third beat. Every shot purpose must be one of: {', '.join(sorted(PURPOSES))}. Every shot must visibly advance the visual_story_target. Use article-specific, truthful first-second curiosity; reject category footage that could be made without reading the article. Choose progression appropriate to story_type. Valid mechanisms are: {', '.join(sorted(PROGRESSION_MECHANISMS))}. Physical action is not universally required. A factual context reveal or environmental recontextualization is valid when it adds meaning. Camera movement or lighting change alone is not progression. Unsupported symbolism is not evidence. People may appear only when the kernel's human_presence justification requires them or source evidence makes them necessary. Reject random laboratories, offices, control rooms, server rooms, boardrooms, generic monitors, hoodie hackers, code rain, invented futuristic devices, holographic chips, and meaningless technology decoration. Use minimum necessary visual completion: neutral walls, floors, empty negative space, ambient lighting, natural shadows, generic architectural surfaces, and physically necessary supports may complete a scene only when they add no story meaning. Never create a new beat from unsupported contextual detail. Crowds, visitors, staff, photographers, ropes, benches, crates, covered objects, preparation activity, signage, furniture, additional mannequins, other displayed artifacts, or a before-state require source or source-media evidence. Do not assume a glass case, pedestal, platform, ropes, furniture, or a specific display method unless explicitly present in article facts or source_visual_evidence. Never invent cover removal, empty-to-occupied display transitions, or other events. Durations must be positive integers and sum exactly to {duration}. shot_id must be a string such as S1. source_support, continuity_requirements, must_show, and must_avoid must be arrays. Set visual_subject to the exact approved core_visual_subject in every shot. Put the chosen progression mechanism at the start of action. Do not request generated readable code, headlines, names, dates, statistics, terminal commands, UI labels, articles, chart labels, or map labels; reserve exact information for editorial channels.
 For PERSON_ACTION, obey achievement_representation and action_outcome_contract: show the distinctive supported physical feat followed by its expected_visible_result when result_shot_required is true. The final result shot must make the exact relevant object and supported post-action state clearly visible. Do not replace it with a trophy, medal, badge, icon, certificate, scoreboard, judges, crowd, podium, record book, logo, or fabricated event. A counted achievement assigned to controlled text or narration does not require that many visual objects. End on the action's supported physical payoff.
 For EVENT or PROCESS, preserve every source_evidence_locks item, its semantic_role, and temporal_status. Keep supported original and new objects distinct, never add an unsupported duplicate, and never depict PLANNED_FUTURE, PROPOSED, or EXPECTED events as completed.
 For PRODUCT, do not ask the image/video model to draw readable phrases, dates, labels, numbers, statistics, headlines, annotations, or interface lettering. Compose clean overlay-safe space; verified source UI may only be preserved from its real reference.
@@ -250,6 +267,7 @@ def validate_storyboard(story: dict[str, Any], visual_plan: dict[str, Any], pack
     muted = package.get("muted_test_v2") if isinstance(package.get("muted_test_v2"), dict) else {}
     generic = package.get("generic_video_test_v2") if isinstance(package.get("generic_video_test_v2"), dict) else {}
     scene_evidence = build_scene_evidence_preflight(story, visual_plan, shots)
+    article_relation = evaluate_storyboard_article_relation(shots, visual_plan)
     checks = {
         "storyboard_structure": fields and typed, "shot_purpose": purposes, "duration_consistency": duration_ok,
         "source_support": source_support, "core_visual_subject_preserved": subject_preserved,
@@ -258,8 +276,11 @@ def validate_storyboard(story: dict[str, Any], visual_plan: dict[str, Any], pack
         "article_specific_visual_progression": meaningful_progression,
         "symbolism_safe": symbolism_is_supported(positive_text, visualizability),
         "muted_test_v2": muted.get("status") == "PASS", "generic_video_test_v2": generic.get("status") == "PASS" and generic.get("reusable_for_unrelated_stories") is False,
+        "shot_meaning_contracts": article_relation["shot_meaning_contracts"],
+        "shot_meaning_progression": article_relation["meaning_progression"],
+        "article_visual_relation_score": article_relation["status"] == "PASS",
     }
-    return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks, "shot_count": len(shots), "duration": duration, **scene_evidence}
+    return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks, "shot_count": len(shots), "duration": duration, "article_visual_relation": article_relation, **scene_evidence}
 
 
 def _normalize_candidate(candidate: dict[str, Any], story: dict[str, Any], visual_plan: dict[str, Any]) -> dict[str, Any]:
@@ -295,7 +316,7 @@ def _normalize_candidate(candidate: dict[str, Any], story: dict[str, Any], visua
         shot["must_show"] = [item for item in shot["must_show"] if not any(term in str(item).lower() for term in ("signage", "tag", "card", "text", "logo"))]
         shot["must_avoid"] = list(dict.fromkeys(shot["must_avoid"] + global_avoid))
         normalized.append(shot)
-    result["storyboard"] = enforce_storyboard_preflight_controls(normalized, story, visual_plan)
+    result["storyboard"] = attach_shot_meaning_contracts(enforce_storyboard_preflight_controls(normalized, story, visual_plan), visual_plan)
     return result
 
 
@@ -315,6 +336,8 @@ def _attach_meaning_progression(package: dict[str, Any], visual_plan: dict[str, 
 async def _finalize_storyboard_control(package: dict[str, Any], story: dict[str, Any], visual_plan: dict[str, Any]) -> dict[str, Any]:
     _attach_meaning_progression(package, visual_plan)
     package["storyboard"] = enforce_storyboard_preflight_controls(package["storyboard"], story, visual_plan)
+    package["storyboard"] = attach_shot_meaning_contracts(package["storyboard"], visual_plan)
+    package["article_visual_relation"] = evaluate_storyboard_article_relation(package["storyboard"], visual_plan)
     text_routing = route_generated_text(package["storyboard"], visual_plan.get("source_visual_evidence") or [])
     package["storyboard"] = text_routing["storyboard"]
     package["generated_text_routing"] = text_routing
