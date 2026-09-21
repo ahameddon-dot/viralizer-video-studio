@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import httpx
+from article_intelligence import openai_story_analysis_complete
 from creative_story_qc import score_whole_video_creative_qc
 from creative_revision_director import classify_creative_failure, route_revision
 from human_identity_lock import (
@@ -258,7 +259,9 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
         for path in clip_paths:path.unlink(missing_ok=True)
         scores=[float(x.get('overall_quality_score',0)) for x in job['qc_results'] if isinstance(x,dict) and x.get('available')]
         creative_failed=bool(creative_qc and creative_qc.get('available') and creative_qc.get('final_story_pass')!='PASS')
-        job.update(status='complete',url=f'/api/finished-video/{output.name}',stage='Video ready - creative review required' if creative_failed else 'Video ready',qc_status='creative_failed' if creative_failed else ('complete' if scores else ('unavailable' if quality_mode else 'not_requested')),qc_score=round(sum(scores)/len(scores),1) if scores else None,best_available=creative_failed or bool(scores and min(scores)<85))
+        vision_unavailable=bool(quality_mode and (not creative_qc or not creative_qc.get('available')))
+        review_required=creative_failed or vision_unavailable
+        job.update(status='complete',url=f'/api/finished-video/{output.name}',stage='Video ready - OpenAI vision review required' if review_required else 'Video ready - OpenAI vision approved',qc_status='creative_failed' if creative_failed else ('vision_unavailable' if vision_unavailable else ('complete' if scores else ('unavailable' if quality_mode else 'not_requested'))),qc_score=round(sum(scores)/len(scores),1) if scores else None,best_available=review_required or bool(scores and min(scores)<85),approval_status='REVIEW_REQUIRED' if review_required else 'APPROVED',openai_vision_qc_complete=bool(creative_qc and creative_qc.get('available')))
     except Exception as exc:
         for path in clip_paths:
             if path:path.unlink(missing_ok=True)
@@ -266,7 +269,7 @@ async def _run(job_id,content,total,quality,quality_mode=False,production=None):
 
 def start(content,total,quality,quality_mode=False,production=None):
     job_id='long-'+uuid.uuid4().hex
-    JOBS[job_id]={'status':'processing','stage':'Analyzing content','scenes_complete':0,'scenes_total':0,'quality_mode':quality_mode,'generation_mode':(production or {}).get('generation_mode','text_to_video'),'qc_status':'pending' if quality_mode else 'not_requested','qc_results':[],'retry_count':0,'reference_retry_count':0,'creative_revision_count':int((content.get('article_intelligence') or {}).get('creative_revision_count') or 0),'shot_regeneration_count':0,'whole_video_revision_count':0,'credits_consumed':None}
+    JOBS[job_id]={'status':'processing','stage':'Analyzing content with OpenAI','scenes_complete':0,'scenes_total':0,'quality_mode':quality_mode,'generation_mode':(production or {}).get('generation_mode','text_to_video'),'qc_status':'pending' if quality_mode else 'not_requested','vision_qc_required':bool(quality_mode),'openai_story_analysis_complete':openai_story_analysis_complete(content),'approval_status':'PENDING','qc_results':[],'retry_count':0,'reference_retry_count':0,'creative_revision_count':int((content.get('article_intelligence') or {}).get('creative_revision_count') or 0),'shot_regeneration_count':0,'whole_video_revision_count':0,'credits_consumed':None}
     asyncio.create_task(_run(job_id,content,total,quality,quality_mode,production));return job_id
 def status(job_id):
     return JOBS.get(job_id)

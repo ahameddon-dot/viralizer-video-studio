@@ -562,12 +562,23 @@ def validate_story_package(story: dict[str, Any], plan: dict[str, Any], duration
     return {"status": "PASS" if all(checks.values()) else "FAIL", "checks": checks, "beat_count": len(beats), "duration": duration}
 
 
-async def build_story_package(article: dict[str, Any], duration: int) -> dict[str, Any]:
+def openai_story_analysis_complete(value: dict[str, Any] | None) -> bool:
+    """Return True only for a validated, non-fallback OpenAI story analysis."""
+    value = value or {}
+    intelligence = value.get("article_intelligence") if isinstance(value.get("article_intelligence"), dict) else value
+    model = str(intelligence.get("analysis_model") or intelligence.get("model") or "").strip().lower()
+    validation = intelligence.get("validation") or {}
+    return bool(model and "fallback" not in model and validation.get("status") == "PASS")
+
+
+async def build_story_package(article: dict[str, Any], duration: int, *, require_openai: bool = False) -> dict[str, Any]:
     cache_material = json.dumps({"duration": duration, "url": article.get("canonical_url"), "evidence": _evidence(article)}, ensure_ascii=False, sort_keys=True)
     cache_key = hashlib.sha256(cache_material.encode("utf-8")).hexdigest()
     cached = _STORY_CACHE.get(cache_key)
     if cached and time.time() - cached[0] < ARTICLE_CACHE_TTL:
-        return json.loads(json.dumps(cached[1]))
+        cached_result = json.loads(json.dumps(cached[1]))
+        if not require_openai or openai_story_analysis_complete(cached_result):
+            return cached_result
     result: dict[str, Any] | None = None
     error = ""
     for attempt in range(2):
@@ -608,6 +619,8 @@ async def build_story_package(article: dict[str, Any], duration: int) -> dict[st
         except Exception as exc:
             error = _clean(exc, 240)
             break
+    if require_openai:
+        raise RuntimeError(error or "OpenAI story analysis did not return an approved structured plan.")
     story = fallback_story_understanding(article)
     visualizability = normalize_visualizability(None, story)
     story["visualizability_analysis"] = visualizability
@@ -631,12 +644,24 @@ async def build_story_package(article: dict[str, Any], duration: int) -> dict[st
     return result
 
 
-async def prepare_article_intelligence(content: dict[str, Any], duration: int, aspect_ratio: str = "9:16") -> dict[str, Any]:
+async def prepare_article_intelligence(
+    content: dict[str, Any],
+    duration: int,
+    aspect_ratio: str = "9:16",
+    *,
+    require_openai: bool = False,
+) -> dict[str, Any]:
     existing = content.get("article_intelligence")
-    if isinstance(existing, dict) and existing.get("version") == 4 and existing.get("duration") == duration and existing.get("aspect_ratio") == aspect_ratio:
+    if (
+        isinstance(existing, dict)
+        and existing.get("version") == 4
+        and existing.get("duration") == duration
+        and existing.get("aspect_ratio") == aspect_ratio
+        and (not require_openai or openai_story_analysis_complete(content))
+    ):
         return dict(content)
     article = await resolve_and_extract_article(content)
-    package = await build_story_package(article, duration)
+    package = await build_story_package(article, duration, require_openai=require_openai)
     achievement = apply_achievement_representation(
         article, package["story_understanding"], package["visual_story_plan"]
     )

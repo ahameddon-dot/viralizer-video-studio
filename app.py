@@ -65,7 +65,7 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
-from article_intelligence import prepare_article_intelligence
+from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 
 
 async def prepare_article_intelligence_safely(
@@ -1008,29 +1008,51 @@ async def heygen_styles():
         raise HTTPException(502, str(exc)) from exc
 @app.post("/api/video/generate")
 async def generate_video(request: GenerateRequest):
-    content = await prepare_article_intelligence_safely(request.content, request.duration, request.aspect_ratio)
+    try:
+        content = await prepare_article_intelligence(
+            request.content,
+            request.duration,
+            request.aspect_ratio,
+            require_openai=True,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            503,
+            "OpenAI could not complete the selected topic analysis. No video credits were spent. Please try again.",
+        ) from exc
+    if not openai_story_analysis_complete(content):
+        raise HTTPException(
+            503,
+            "The selected topic did not receive a validated OpenAI story analysis. No video credits were spent.",
+        )
     selected_provider = request.provider
     if selected_provider == "auto":
         routing_text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
         presenter_intent = any(word in routing_text for word in ("presenter", "spokesperson", "talking", "host", "explainer", "news anchor"))
         selected_provider = "heygen" if presenter_intent and request.aspect_ratio in {"9:16", "16:9"} and bool(os.getenv("HEYGEN_API_KEY", "").strip()) else "pixverse"
-    production = prepare_production(content, request.duration, request.prompt or "", quality_mode=request.quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
+    effective_quality_mode = request.quality_mode or selected_provider == "pixverse"
+    if selected_provider == "pixverse" and not (content.get("article_intelligence") or {}).get("approved_for_media_generation"):
+        raise HTTPException(
+            422,
+            "The selected topic did not pass story and storyboard approval. No video credits were spent.",
+        )
+    production = prepare_production(content, request.duration, request.prompt or "", quality_mode=effective_quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
     prompt = production["prompt"]
     if not prompt:
         raise HTTPException(422, "The selected content did not produce a usable video direction.")
     if selected_provider == "hybrid":
         script = request.narration or build_heygen_script(content, request.duration)
-        job_id = start_hybrid_video(content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, request.quality_mode)
+        job_id = start_hybrid_video(content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, effective_quality_mode)
         production.update(job_id=job_id, provider="hybrid", status="processing", generation_mode="hybrid", motion_prompt=build_presenter_direction(content, request.duration))
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
-        return {"job_id": job_id, "provider": "hybrid", "status": "processing", "prompt": prompt, "quality_mode": request.quality_mode, "stage": "Planning presenter and content visuals"}
-    if selected_provider == "pixverse" and (request.duration > 15 or request.quality_mode):
+        return {"job_id": job_id, "provider": "hybrid", "status": "processing", "prompt": prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Planning presenter and content visuals"}
+    if selected_provider == "pixverse" and (request.duration > 15 or effective_quality_mode):
         if selected_provider != "pixverse":
             raise HTTPException(422, "Long multi-clip videos currently require PixVerse.")
-        job_id = start_long_video(content, request.duration, request.quality, quality_mode=request.quality_mode, production=production)
+        job_id = start_long_video(content, request.duration, request.quality, quality_mode=effective_quality_mode, production=production)
         production.update(job_id=job_id, provider="viralizer", status="processing")
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
-        return {"job_id": job_id, "provider": "viralizer", "status": "processing", "prompt": prompt, "multi_clip": True, "quality_mode": request.quality_mode, "stage": "Preparing scenes"}
+        return {"job_id": job_id, "provider": "viralizer", "status": "processing", "prompt": prompt, "multi_clip": True, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "vision_qc_required": True, "stage": "Preparing scenes"}
     try:
         job_id = await generate_with_provider(
             selected_provider,
@@ -1050,7 +1072,7 @@ async def generate_video(request: GenerateRequest):
         )
         production.update(job_id=job_id, provider=selected_provider, status="processing")
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
-        return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": prompt, "quality_mode": request.quality_mode, "stage": "Generating video"}
+        return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video"}
     except VideoProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
