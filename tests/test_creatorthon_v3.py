@@ -77,6 +77,13 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertNotIn('value="Premium editorial setting"', page)
         self.assertIn('<select id="face"><option value="">No preference</option>', page)
 
+    def test_failed_storage_can_resume_existing_job_without_new_generation(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("resumeJob:null", page)
+        self.assertIn("saved.job_id?{provider:saved.provider||'pixverse',job:saved.job_id}", page)
+        self.assertIn("Recovering your existing generated video without spending another credit", page)
+        self.assertIn("await pollVideo(existing.provider,existing.job)", page)
+
     def test_completed_video_is_finished_with_speech_and_mandatory_branding(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn("async function finishV3Video", page)
