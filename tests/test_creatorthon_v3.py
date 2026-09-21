@@ -77,6 +77,16 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("narration=nativeSpeech?'':", page)
         self.assertIn("Open narrated finished video", page)
 
+    def test_category_topics_load_progressively_with_visible_animation(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("loading-orbit", page)
+        self.assertIn("cat-card loading", page)
+        self.assertIn("@keyframes shimmer", page)
+        self.assertIn("state.loadingCategories=new Set(state.categories)", page)
+        self.assertIn("show('home');let ready=0", page)
+        self.assertIn("categories ready", page)
+        self.assertIn("state.loadingCategories.delete(c)", page)
+
 
 if __name__ == "__main__":
     unittest.main()
