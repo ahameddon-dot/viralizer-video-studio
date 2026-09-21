@@ -62,10 +62,14 @@ from release_dashboard import (
     rollback_preview,
 )
 from release_actions import ReleaseActionError, publish_beta, rollback_production
-from creatorthon_store import create_project, get_profile, list_projects, save_profile, update_project
+from creatorthon_store import (
+    add_asset, create_project, get_profile, list_assets, list_projects, list_reports,
+    save_profile, save_report, update_project, workspace,
+)
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
+from object_store import ObjectStoreError, restore_file as restore_object_file, upload_file as upload_object_file
 
 
 async def prepare_article_intelligence_safely(
@@ -512,6 +516,13 @@ class CreatorthonTopicsRequest(BaseModel):
 
 class CreatorthonProjectRequest(BaseModel):
     topic: dict[str, Any]
+    prompt: dict[str, Any] | str = Field(default_factory=dict)
+    narration: dict[str, Any] | str = Field(default_factory=dict)
+    configuration: dict[str, Any] = Field(default_factory=dict)
+    article_intelligence: dict[str, Any] = Field(default_factory=dict)
+    provider: str = Field(default="", max_length=40)
+    aspect_ratio: str = Field(default="", max_length=20)
+    quality: str = Field(default="", max_length=20)
 
 
 class CreatorthonProjectUpdateRequest(BaseModel):
@@ -519,6 +530,26 @@ class CreatorthonProjectUpdateRequest(BaseModel):
     job_id: str = Field(default="", max_length=160)
     video_url: str = Field(default="", max_length=1000)
     status: str = Field(default="", max_length=40)
+    title: str = Field(default="", max_length=500)
+    thumbnail_url: str = Field(default="", max_length=2000)
+    aspect_ratio: str = Field(default="", max_length=20)
+    quality: str = Field(default="", max_length=20)
+    topic: dict[str, Any] | None = None
+    prompt: dict[str, Any] | str | None = None
+    narration: dict[str, Any] | str | None = None
+    configuration: dict[str, Any] | None = None
+    article_intelligence: dict[str, Any] | None = None
+    production: dict[str, Any] | None = None
+    qc: dict[str, Any] | None = None
+
+
+class CreatorthonReportRequest(BaseModel):
+    id: str = Field(default="", max_length=64)
+    project_id: str = Field(default="", max_length=64)
+    title: str = Field(min_length=1, max_length=500)
+    report_type: str = Field(default="topic-research", max_length=80)
+    source_url: str = Field(default="", max_length=2000)
+    content: dict[str, Any]
 
 
 class CreatorthonFinishRequest(BaseModel):
@@ -719,6 +750,16 @@ async def creatorthon_v3(request: Request):
     )
 
 
+@app.get("/creatorthon/workspace")
+async def creatorthon_workspace_page(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3/login?next=/creatorthon/workspace", status_code=303)
+    return FileResponse(
+        ROOT / "static" / "creatorthon-workspace.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
 def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if not user:
@@ -730,6 +771,27 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
 async def creatorthon_profile(request: Request):
     user = creatorthon_user(request)
     return {"profile": get_profile(ROOT, user), "projects": list_projects(ROOT, str(user.get("sub", "")))}
+
+
+@app.get("/api/creatorthon/workspace")
+async def creatorthon_workspace(request: Request):
+    """Return the signed-in user's complete, account-scoped creation history."""
+    return workspace(ROOT, creatorthon_user(request))
+
+
+@app.get("/api/creatorthon/projects/{project_id}")
+async def get_creatorthon_project(request: Request, project_id: str):
+    user = creatorthon_user(request)
+    result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
+    if not result:
+        raise HTTPException(404, "Creatorthon project not found.")
+    return result
+
+
+@app.post("/api/creatorthon/reports")
+async def store_creatorthon_report(request: Request, payload: CreatorthonReportRequest):
+    user = creatorthon_user(request)
+    return save_report(ROOT, str(user.get("sub", "")), payload.model_dump())
 
 
 @app.put("/api/creatorthon/profile")
@@ -762,15 +824,23 @@ async def new_creatorthon_project(request: Request, payload: CreatorthonProjectR
     user = creatorthon_user(request)
     if not str(payload.topic.get("topic") or payload.topic.get("title") or "").strip():
         raise HTTPException(422, "Choose a valid topic.")
-    return create_project(ROOT, str(user.get("sub", "")), payload.topic)
+    values = payload.model_dump(exclude={"topic"}, exclude_defaults=True)
+    return create_project(ROOT, str(user.get("sub", "")), payload.topic, values)
 
 
 @app.patch("/api/creatorthon/projects/{project_id}")
 async def patch_creatorthon_project(request: Request, project_id: str, payload: CreatorthonProjectUpdateRequest):
     user = creatorthon_user(request)
-    result = update_project(ROOT, str(user.get("sub", "")), project_id, payload.model_dump(exclude_unset=True))
+    user_id = str(user.get("sub", ""))
+    changes = payload.model_dump(exclude_unset=True)
+    result = update_project(ROOT, user_id, project_id, changes)
     if not result:
         raise HTTPException(404, "Creatorthon project not found.")
+    if changes.get("video_url"):
+        existing = [asset for asset in list_assets(ROOT, user_id) if asset.get("project_id") == project_id and asset.get("url") == changes["video_url"]]
+        if not existing:
+            add_asset(ROOT, user_id, {"project_id": project_id, "kind": "video", "url": changes["video_url"],
+                                      "metadata": {"provider": result.get("provider", ""), "status": result.get("status", "")}})
     return result
 
 
@@ -796,7 +866,7 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     if not match:
         raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
     video_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
-    if not video_path.is_file():
+    if not video_path.is_file() and not await restore_object_file(video_path, f"finished_videos/{match.group(1)}"):
         raise HTTPException(404, "The completed video could not be found.")
     hashtags = list(dict.fromkeys(value.strip() for value in payload.hashtags if value.strip()))
     if MANDATORY_HASHTAG.lower() not in {value.lower() for value in hashtags}:
@@ -1397,7 +1467,10 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
         raise HTTPException(422, "Add narration, a logo, or a text overlay.")
     try:
         output = await finish_video(video_url, narration, voice, logo_bytes, combined_overlay, overlay_position, overlay_color)
+        await upload_object_file(output, f"finished_videos/{output.name}", "video/mp4")
     except MediaFinisherError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except ObjectStoreError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}
 
@@ -1420,7 +1493,10 @@ async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishR
             raise HTTPException(422, "Official logo must be smaller than 10 MB.")
     try:
         output = await finish_video(payload.video_url, payload.narration, payload.voice, logo_bytes, secondary_logo_bytes=official_logo_bytes)
+        await upload_object_file(output, f"finished_videos/{output.name}", "video/mp4")
     except MediaFinisherError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except ObjectStoreError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}
 
@@ -1430,7 +1506,7 @@ async def finished_video(filename: str):
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
-    if not path.is_file():
+    if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
         raise HTTPException(404, "Finished video not found.")
     return FileResponse(
         path,

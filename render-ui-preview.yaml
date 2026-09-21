@@ -40,5 +40,15 @@ services:
         value: "@cf/leonardo/lucid-origin"
       - key: APP_DATA_DIR
         value: /tmp/viralizer-ui-preview-data
+      - key: DATABASE_URL
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: viralizer-media
       - key: DAILY_TRENDS_ENABLED
         value: false
