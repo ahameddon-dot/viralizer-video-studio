@@ -59,6 +59,16 @@ class OpenAITopicVideoGateTests(unittest.IsolatedAsyncioTestCase):
             result = await article_intelligence.prepare_article_intelligence(rejected, 10, "9:16", require_openai=True)
         self.assertTrue(result["article_intelligence"]["approved_for_media_generation"])
 
+    def test_standard_pixverse_fallback_is_explicit_and_v3_scoped(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        v3_source = (root / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("allow_standard_fallback: bool = False", app_source)
+        self.assertIn("not request.allow_standard_fallback", app_source)
+        self.assertIn("effective_quality_mode and not", app_source)
+        self.assertIn("allow_standard_fallback:true", v3_source)
+
     async def test_strict_story_package_never_uses_fallback(self):
         article = {
             "title": "Strict OpenAI analysis test topic",

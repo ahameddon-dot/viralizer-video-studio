@@ -447,6 +447,7 @@ class GenerateRequest(BaseModel):
     duration: int = Field(default=5, ge=5, le=60)
     quality: str = "720p"
     quality_mode: bool = True
+    allow_standard_fallback: bool = False
     aspect_ratio: str = "9:16"
     target_platform: str = ""
     narration: str = ""
@@ -1142,8 +1143,8 @@ async def generate_video(request: GenerateRequest):
         routing_text = " ".join(str(content.get(key) or "") for key in ("topic", "category", "video_idea", "creator_angle")).lower()
         presenter_intent = any(word in routing_text for word in ("presenter", "spokesperson", "talking", "host", "explainer", "news anchor"))
         selected_provider = "heygen" if presenter_intent and request.aspect_ratio in {"9:16", "16:9"} and bool(os.getenv("HEYGEN_API_KEY", "").strip()) else "pixverse"
-    effective_quality_mode = request.quality_mode or selected_provider == "pixverse"
-    if selected_provider == "pixverse" and not (content.get("article_intelligence") or {}).get("approved_for_media_generation"):
+    effective_quality_mode = request.quality_mode or (selected_provider == "pixverse" and not request.allow_standard_fallback)
+    if selected_provider == "pixverse" and effective_quality_mode and not (content.get("article_intelligence") or {}).get("approved_for_media_generation"):
         raise HTTPException(
             422,
             "The selected topic did not pass story and storyboard approval. No video credits were spent.",
