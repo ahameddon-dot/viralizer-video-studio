@@ -14,20 +14,45 @@ def _normalize_media_url(url: str) -> str:
     return urlunparse(parsed)
 
 
+def _media_url_candidates(url: str) -> list[str]:
+    """Keep PixVerse's returned URL intact, with a decoded-path fallback."""
+    original = str(url)
+    normalized = _normalize_media_url(original)
+    return list(dict.fromkeys((original, normalized)))
+
+
 async def _download(url, path):
-    url = _normalize_media_url(url)
-    parsed=urlparse(url)
+    parsed=urlparse(str(url))
     if parsed.scheme != "https" or not parsed.hostname: raise MediaFinisherError("The generated video URL is invalid.")
-    try:
-        async with httpx.AsyncClient(timeout=90,follow_redirects=True) as client:
-            async with client.stream("GET",url) as response:
-                response.raise_for_status(); size=0
-                with path.open("wb") as output:
-                    async for chunk in response.aiter_bytes():
-                        size+=len(chunk)
-                        if size>250*1024*1024: raise MediaFinisherError("The generated video is larger than 250 MB.")
-                        output.write(chunk)
-    except httpx.HTTPError as exc: raise MediaFinisherError(f"Could not download the generated video: {exc}") from exc
+    last_error = None
+    delays = (0, 3, 7, 15)
+    candidates = _media_url_candidates(str(url))
+    async with httpx.AsyncClient(timeout=90,follow_redirects=True) as client:
+        for attempt, delay in enumerate(delays):
+            if delay:
+                await asyncio.sleep(delay)
+            for candidate in candidates:
+                try:
+                    async with client.stream("GET",candidate) as response:
+                        response.raise_for_status(); size=0
+                        with path.open("wb") as output:
+                            async for chunk in response.aiter_bytes():
+                                size+=len(chunk)
+                                if size>250*1024*1024: raise MediaFinisherError("The generated video is larger than 250 MB.")
+                                output.write(chunk)
+                    return
+                except httpx.HTTPStatusError as exc:
+                    last_error = exc
+                    if exc.response.status_code != 404:
+                        raise MediaFinisherError(f"Could not download the generated video: {exc}") from exc
+                except httpx.HTTPError as exc:
+                    last_error = exc
+                    if attempt == len(delays) - 1:
+                        raise MediaFinisherError(f"Could not download the generated video: {exc}") from exc
+    raise MediaFinisherError(
+        "PixVerse finished the video, but its media file is not available yet. "
+        "Please retry this completed job in a moment; no new video credit is required."
+    ) from last_error
 
 async def _speech(text, voice, path, instructions=None):
     key=os.getenv("OPENAI_API_KEY","").strip()

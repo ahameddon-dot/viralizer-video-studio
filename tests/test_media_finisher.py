@@ -1,6 +1,6 @@
 import unittest
 
-from media_finisher import _normalize_media_url
+from media_finisher import _media_url_candidates, _normalize_media_url
 
 
 class MediaFinisherUrlTests(unittest.TestCase):
@@ -14,6 +14,13 @@ class MediaFinisherUrlTests(unittest.TestCase):
     def test_does_not_rewrite_unrelated_hosts(self):
         raw = "https://example.com/folder%2Fvideo.mp4?token=abc"
         self.assertEqual(_normalize_media_url(raw), raw)
+
+    def test_pixverse_download_preserves_original_then_tries_decoded_path(self):
+        raw = "https://media.pixverse.ai/pixverse%2Fmp4%2Fvideo.mp4"
+        self.assertEqual(
+            _media_url_candidates(raw),
+            [raw, "https://media.pixverse.ai/pixverse/mp4/video.mp4"],
+        )
 
 
 if __name__ == "__main__":
