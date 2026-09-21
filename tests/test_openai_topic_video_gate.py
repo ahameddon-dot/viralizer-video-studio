@@ -19,6 +19,46 @@ class OpenAITopicVideoGateTests(unittest.IsolatedAsyncioTestCase):
             "validation": {"status": "PASS"},
         }))
 
+    async def test_strict_preparation_rebuilds_rejected_storyboard(self):
+        rejected = {
+            "article_intelligence": {
+                "version": 4,
+                "duration": 10,
+                "aspect_ratio": "9:16",
+                "analysis_model": "gpt-4.1-mini",
+                "validation": {"status": "PASS"},
+                "approved_for_media_generation": False,
+            }
+        }
+        rebuilt = {
+            **rejected,
+            "article_intelligence": {
+                **rejected["article_intelligence"],
+                "approved_for_media_generation": True,
+            },
+        }
+        with patch.object(article_intelligence, "resolve_and_extract_article", new=AsyncMock(return_value={})), patch.object(
+            article_intelligence, "build_story_package", new=AsyncMock(return_value={
+                "story_understanding": {"factual_boundaries": [], "unsupported_visuals": []},
+                "visualizability_analysis": {},
+                "visual_story_plan": {},
+                "validation": {"status": "PASS"},
+                "model": "gpt-4.1-mini",
+                "attempts": 1,
+            })), patch.object(
+            article_intelligence, "build_storyboard_package", new=AsyncMock(return_value={
+                "storyboard": [], "reference_frame_plans": [], "visual_qc_specs": [],
+                "muted_test_v2": {}, "generic_video_test_v2": {},
+                "effective_visual_story_plan": {}, "validation": {"status": "PASS"},
+                "creative_story_qc": {"final_story_pass": "PASS"},
+                "story_type_qc": {"status": "PASS"},
+                "approved_for_media_generation": True,
+            })), patch.object(article_intelligence, "apply_achievement_representation", return_value={}), patch.object(
+                article_intelligence, "build_source_evidence_locks", return_value=[]
+            ), patch.object(article_intelligence, "collect_source_visual_evidence", return_value=[]):
+            result = await article_intelligence.prepare_article_intelligence(rejected, 10, "9:16", require_openai=True)
+        self.assertTrue(result["article_intelligence"]["approved_for_media_generation"])
+
     async def test_strict_story_package_never_uses_fallback(self):
         article = {
             "title": "Strict OpenAI analysis test topic",

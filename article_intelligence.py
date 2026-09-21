@@ -657,7 +657,7 @@ async def prepare_article_intelligence(
         and existing.get("version") == 4
         and existing.get("duration") == duration
         and existing.get("aspect_ratio") == aspect_ratio
-        and (not require_openai or openai_story_analysis_complete(content))
+        and (not require_openai or (openai_story_analysis_complete(content) and bool(existing.get("approved_for_media_generation"))))
     ):
         return dict(content)
     article = await resolve_and_extract_article(content)
