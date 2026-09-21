@@ -1,13 +1,21 @@
 import asyncio, io, os, re, shutil, subprocess, tempfile, uuid
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 import httpx
 from PIL import Image
 
 class MediaFinisherError(RuntimeError): pass
 VOICES={"alloy","ash","ballad","coral","echo","fable","onyx","nova","sage","shimmer","verse","marin","cedar"}
 
+def _normalize_media_url(url: str) -> str:
+    parsed = urlparse(str(url))
+    if parsed.hostname == "media.pixverse.ai" and "%2f" in parsed.path.lower():
+        parsed = parsed._replace(path=unquote(parsed.path))
+    return urlunparse(parsed)
+
+
 async def _download(url, path):
+    url = _normalize_media_url(url)
     parsed=urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname: raise MediaFinisherError("The generated video URL is invalid.")
     try:
