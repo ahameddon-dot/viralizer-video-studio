@@ -155,6 +155,36 @@ def _connect(root: Path) -> Iterator[Any]:
         db.close()
 
 
+def database_health(root: Path) -> dict[str, Any]:
+    """Return a secret-free database readiness result for deployment diagnostics."""
+    configured = bool(os.getenv("DATABASE_URL", "").strip())
+    backend = "postgres" if configured else "sqlite"
+    try:
+        with _connect(root) as db:
+            row = db.execute("SELECT 1 AS ready").fetchone()
+        ready = bool(row and (dict(row).get("ready") if hasattr(row, "keys") else row[0]))
+        return {"configured": configured, "backend": backend, "ready": ready, "error": ""}
+    except Exception as exc:
+        message = str(exc).lower()
+        if "password authentication failed" in message or "authentication failed" in message:
+            category = "authentication_failed"
+        elif "name or service not known" in message or "could not translate host" in message:
+            category = "host_not_found"
+        elif "timeout" in message or "timed out" in message:
+            category = "connection_timeout"
+        elif "ssl" in message or "certificate" in message:
+            category = "tls_error"
+        elif "database_url is configured but psycopg" in message:
+            category = "driver_missing"
+        elif "invalid" in message and ("dsn" in message or "uri" in message or "connection" in message):
+            category = "invalid_connection_string"
+        elif "permission denied" in message or "insufficient privilege" in message:
+            category = "database_permission_denied"
+        else:
+            category = "database_unavailable"
+        return {"configured": configured, "backend": backend, "ready": False, "error": category}
+
+
 def get_profile(root: Path, user: dict[str, Any]) -> dict[str, Any]:
     with _connect(root) as db:
         row = db.execute("SELECT * FROM creatorthon_profiles WHERE user_id=?", (str(user.get("sub", "")),)).fetchone()

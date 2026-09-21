@@ -760,6 +760,15 @@ async def creatorthon_workspace_page(request: Request):
     )
 
 
+@app.get("/health/storage")
+async def storage_health():
+    """Secret-free readiness check for the persistent Creatorthon database."""
+    from creatorthon_store import database_health
+
+    result = database_health(ROOT)
+    return JSONResponse(result, status_code=200 if result["ready"] else 503)
+
+
 def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if not user:
