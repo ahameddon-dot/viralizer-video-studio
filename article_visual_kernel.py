@@ -127,6 +127,27 @@ def select_visual_mechanism(story_type: str, kernel: dict[str, Any]) -> str:
     return mechanism
 
 
+def _policy_collaboration_contract(evidence: str, subject: str) -> dict[str, Any]:
+    technical_network = bool(re.search(r"\b(?:telecom|wireless|radio|antenna|network|standards|spectrum)\b", evidence, re.I))
+    local_system = (
+        "one recognizable local wireless-infrastructure planning cluster with antenna or base-station elements"
+        if technical_network else "one clearly bounded source-supported local operational system"
+    )
+    peer_systems = (
+        "several physically separate peer telecom or research-network clusters"
+        if technical_network else "several physically separate peer systems supported by the collaboration context"
+    )
+    return {
+        "required": True,
+        "local_system": local_system,
+        "peer_systems": peer_systems,
+        "connection_transition": "visible links must travel outward from the local system to the separate peers, changing isolated systems into a coordinated network",
+        "collaborative_payoff": "end with the local system visibly participating as one node within the wider coordinated multi-cluster network",
+        "viewer_inference_target": f"The viewer can infer that {subject} joins a wider collaboration through a real system relationship, not merely that abstract nodes are connected.",
+        "reject_if_viewer_infers": ["generic network animation", "technology connection", "random glowing nodes", "people discussing technology"],
+    }
+
+
 def build_article_visual_kernel(article: dict[str, Any], story: dict[str, Any], visualizability: dict[str, Any]) -> dict[str, Any]:
     story_type = classify_article_story_type(story, article)
     facts = _unique(list(story.get("key_visual_facts") or []) + list(visualizability.get("visualizable_facts") or []), 10)
@@ -152,9 +173,14 @@ def build_article_visual_kernel(article: dict[str, Any], story: dict[str, Any], 
         "MISSION_OR_PROJECT": "the supported preparation or assembly environment",
     }
     environment = environments.get(story_type, "the minimum real-world context supported by the article")
+    collaboration_contract = _policy_collaboration_contract(evidence, subject) if story_type == "POLICY_COLLABORATION" else {}
     visual_sentence = {
         "CYBERSECURITY_INCIDENT": f"Show {subject} as the execution path reaches and crosses the supported security boundary, affects the evidenced target relationship, and ends in visible containment or investigation.",
-        "POLICY_COLLABORATION": f"Show {subject} establishing visible links through the supported infrastructure or system relationship into the wider standards and research network; reserve names, counts, and agreement details for narration or controlled text.",
+        "POLICY_COLLABORATION": (
+            f"Begin with {collaboration_contract.get('local_system')} isolated from {collaboration_contract.get('peer_systems')}. "
+            f"Show visible connection paths extending outward from the local system to each separate peer until {collaboration_contract.get('collaborative_payoff')}. "
+            "Make the transition from isolated participation to coordinated collaboration visually unmistakable; reserve names, counts, and agreement details for narration or controlled text."
+        ),
         "INFRASTRUCTURE": f"Show {subject} changing from the article's prior state into the newly connected or expanded infrastructure state, using only supported nodes and relationships.",
         "TECHNICAL_PROCESS": f"Follow {subject} through the specific supported process so each visible state causes the next and the final result reveals the article's change.",
         "SCIENTIFIC_DISCOVERY": f"Reveal the supported evidence around {subject}, moving from the observable starting condition to the newly established finding without fabricating a laboratory event.",
@@ -183,6 +209,7 @@ def build_article_visual_kernel(article: dict[str, Any], story: dict[str, Any], 
         "visual_story_sentence": visual_sentence,
         "story_type": story_type,
         "selected_visual_mechanism": mechanism,
+        "collaboration_visibility_contract": collaboration_contract,
         "human_presence": {
             "required": story_type in {"PERSON_ACTION", "ACHIEVEMENT"},
             "justification": "A visible human action carries the article meaning." if story_type in {"PERSON_ACTION", "ACHIEVEMENT"} else "People are excluded unless source evidence makes them necessary to understand the event.",
@@ -245,7 +272,14 @@ def strengthen_article_visual_plan(article: dict[str, Any], story: dict[str, Any
         visual_message=kernel["visual_story_sentence"],
         editorial_channel_allocation=allocation,
         human_presence_justification=kernel["human_presence"],
+        collaboration_visibility_contract=kernel.get("collaboration_visibility_contract") or {},
     )
+    if kernel["story_type"] == "POLICY_COLLABORATION":
+        contract = kernel["collaboration_visibility_contract"]
+        result["must_show"] = _unique(list(result.get("must_show") or []) + [
+            contract["local_system"], contract["peer_systems"],
+            contract["connection_transition"], contract["collaborative_payoff"],
+        ], 12)
     beat_relation = article_relation_score(result.get("story_beats") or [], kernel)
     if beat_relation["status"] != "PASS":
         existing_count = max(1, min(4, len(result.get("story_beats") or []) or 2))

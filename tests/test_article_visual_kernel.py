@@ -2,6 +2,7 @@ import inspect
 import unittest
 
 import article_visual_kernel as avk
+from creative_story_qc import normalize_creative_qc
 from motion_director import build_motion_directed_prompt
 
 
@@ -78,6 +79,33 @@ class ArticleVisualKernelTests(unittest.TestCase):
         self.assertEqual(kernel["story_type"], "POLICY_COLLABORATION")
         self.assertEqual(kernel["selected_visual_mechanism"], "SYSTEM_CONNECTION")
         self.assertNotIn("laboratory", kernel["visual_story_sentence"].lower())
+        contract = kernel["collaboration_visibility_contract"]
+        self.assertTrue(contract["required"])
+        self.assertIn("local", contract["local_system"])
+        self.assertIn("separate", contract["peer_systems"])
+        self.assertIn("coordinated", contract["collaborative_payoff"])
+
+    def test_policy_collaboration_prompt_requires_visible_relationship(self):
+        plan, shot, prompt, debug = self.compile_fixture(self.sixg)
+        self.assertIn("Collaboration visibility:", prompt)
+        self.assertIn("visibly separate", prompt)
+        self.assertIn("coordinated multi-system collaboration", prompt)
+        self.assertEqual(debug["semantic_validation"]["article_prompt_quality_gate"]["status"], "PASS")
+
+    def test_policy_collaboration_pixel_qc_cannot_pass_without_contract(self):
+        plan, shot, prompt, debug = self.compile_fixture(self.sixg)
+        result = normalize_creative_qc({
+            "subject_clarity": 90, "story_progression": 90, "article_specificity": 90,
+            "visual_impact": 90, "visual_continuity": 90, "narrative_progression": 90,
+            "environmental_storytelling": 90, "generic_ad_risk": 5, "article_relation": 90,
+            "genericity": 5, "visual_evidence_usage": 90, "story_type_match": 90,
+            "visual_semantic_coverage": {"overall_score": 90}, "visual_channel_coverage": 90,
+            "shot_progression": [], "model_final_story_pass": "PASS",
+            "muted_primary_visual_story_pass": "PASS", "narration_gap_acceptable": True,
+            "failure_reasons": [],
+        }, 70, True, storyboard=[shot], authority={"story_type": "POLICY_COLLABORATION", "editorial_allocation": plan["editorial_channel_allocation"]})
+        self.assertEqual(result["policy_collaboration_qc"]["VIEWER_CAN_INFER_COLLABORATION"], "FAIL")
+        self.assertEqual(result["final_story_pass"], "FAIL")
 
     def test_cyber_incident_extracts_boundary_mechanism(self):
         kernel = self.kernel(self.cyber)

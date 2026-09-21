@@ -941,10 +941,18 @@ def compile_pixverse_prompt(plan: MotionPlan) -> str:
         truth_class = kernel.get("visual_truth_classification")
         boundary_text = "; ".join(_clean(item, 24) for item in plan.factual_boundaries[:4] if _clean(item, 24))
         required_evidence = "; ".join(_clean(item, 28) for item in (shot.get("required_visual_anchors") or kernel.get("unique_visual_anchors") or plan.must_show)[:6] if _clean(item, 28))
+        collaboration = kernel.get("collaboration_visibility_contract") or {}
+        collaboration_direction = ""
+        if collaboration.get("required"):
+            collaboration_direction = (
+                f" Collaboration visibility: begin with {collaboration.get('local_system')}; keep {collaboration.get('peer_systems')} visibly separate; "
+                f"{collaboration.get('connection_transition')}; {collaboration.get('collaborative_payoff')}. "
+                "The final image must read as coordinated multi-system collaboration, not a generic network animation."
+            )
         body = (
             f"Create one uninterrupted {plan.duration}-second vertical 9:16 shot showing {visual_event}. "
             f"Core subject: {plan.core_visual_subject}. Article-specific progression ({mechanism}): {progression}. "
-            f"Required evidence: {required_evidence or 'only the article-supported subject, change, and relationships'}. "
+            f"Required evidence: {required_evidence or 'only the article-supported subject, change, and relationships'}.{collaboration_direction} "
             f"Environment: {environment or 'minimum neutral contextual completion supported by the article'}. "
             f"Visual truth: {'present this as a clearly editorial visualization, not documentary evidence' if truth_class == 'SAFE_EDITORIAL_VISUALIZATION' else 'use only literal article-supported visible details'}. "
             f"Motion: execute this {str(mechanism).lower().replace('_', ' ')} change continuously within the available time. As the progression occurs, allow only physically caused changes in material, light, reflections, and the source-supported environment. "

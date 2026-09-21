@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -84,6 +85,7 @@ article_relation (0-100),
 genericity (0-100 where 100 is severe),
 visual_evidence_usage (0-100),
 story_type_match (0-100),
+policy_collaboration_qc (object containing LOCAL_SYSTEM_VISIBLE, DISTINCT_PEER_SYSTEMS_VISIBLE, OUTWARD_CONNECTION_VISIBLE, COLLABORATIVE_PAYOFF_VISIBLE, VIEWER_CAN_INFER_COLLABORATION; each PASS, FAIL, or NOT_APPLICABLE),
 model_final_story_pass (PASS or FAIL),
 muted_primary_visual_story_pass (PASS or FAIL),
 narration_gap_acceptable (boolean),
@@ -91,7 +93,7 @@ failure_reasons (array of concise strings).
 
 Also return visual_channel_coverage (0-100), narration_channel_coverage (use null at visual-production stage), text_channel_coverage (use null at visual-production stage), final_multimodal_coverage (use null at visual-production stage), and action_result_qc containing ACTION_CLEAR, ACTION_ARTICLE_SPECIFIC, RESULT_VISIBLE, RESULT_MATCHES_EVIDENCE, CAUSE_EFFECT_CLEAR, PAYOFF_NON_GENERIC, each exactly PASS or FAIL when action_outcome_contract applies and NOT_APPLICABLE otherwise.
 
-This is STAGE 1 VISUAL PRODUCTION QC. Evaluate only editorial_allocation.visual_channel, technical execution, the action/result contract, source evidence, continuity, and factual safety. Compare viewer_inferred_story directly with article_visual_kernel.visual_story_sentence, not the headline or narration-dependent facts. A polished sequence that can only be inferred as 'people demonstrating technology', 'analysts looking at code', or another category-level scene must receive low article_relation, high genericity, and FAIL. Do not fail visuals for facts assigned to narration_channel, text_channel, controlled_text_dependent, or facts_not_required_visually. Those channels are intentionally deferred to final multimodal QC. The primary allocated visual story must survive visually. Exact names, dates, statistics, opponent identity/context, record titles, and achievement counts do not need to appear when assigned to narration or controlled text. For PERSON_ACTION, require the distinctive supported physical action, its readable cause-and-effect, and the expected visible result; an action without its required result fails RESULT_VISIBLE. Reject generic award poses and symbolic badges/icons/trophies as substitutes. For PRODUCT, require the supported new development or old/new state and reject dependency on model-generated lettering; deterministic overlay routing is valid. For EVENT or PROCESS, require supported technical elements, temporal progression, causal clarity, and strict preservation of planned-versus-completed status. Evaluate only visual identity anchors assigned to the visual channel. Be strict and candid when a technically attractive sequence merely looks like generic category footage."""
+This is STAGE 1 VISUAL PRODUCTION QC. Evaluate only editorial_allocation.visual_channel, technical execution, the action/result contract, source evidence, continuity, and factual safety. Compare viewer_inferred_story directly with article_visual_kernel.visual_story_sentence, not the headline or narration-dependent facts. A polished sequence that can only be inferred as 'people demonstrating technology', 'analysts looking at code', or another category-level scene must receive low article_relation, high genericity, and FAIL. For POLICY_COLLABORATION, require the collaboration_visibility_contract: one supported local system, visibly separate peer systems, an outward connection transition, and a final coordinated multi-system relationship. Generic glowing nodes or an ambiguous network animation must fail VIEWER_CAN_INFER_COLLABORATION even if attractive. Do not fail visuals for facts assigned to narration_channel, text_channel, controlled_text_dependent, or facts_not_required_visually. Those channels are intentionally deferred to final multimodal QC. The primary allocated visual story must survive visually. Exact names, dates, statistics, opponent identity/context, record titles, and achievement counts do not need to appear when assigned to narration or controlled text. For PERSON_ACTION, require the distinctive supported physical action, its readable cause-and-effect, and the expected visible result; an action without its required result fails RESULT_VISIBLE. Reject generic award poses and symbolic badges/icons/trophies as substitutes. For PRODUCT, require the supported new development or old/new state and reject dependency on model-generated lettering; deterministic overlay routing is valid. For EVENT or PROCESS, require supported technical elements, temporal progression, causal clarity, and strict preservation of planned-versus-completed status. Evaluate only visual identity anchors assigned to the visual channel. Be strict and candid when a technically attractive sequence merely looks like generic category footage."""
 
 
 def _qc_status(value: Any, default: str = "FAIL") -> str:
@@ -199,6 +201,17 @@ def normalize_creative_qc(
     normalized["checks"] = checks
     normalized["failure_reasons"] = list(dict.fromkeys(reasons))
     normalized["model_final_story_pass"] = str(result.get("model_final_story_pass") or "FAIL").upper()
+    policy_required = bool(authority and str(authority.get("story_type") or "").upper() == "POLICY_COLLABORATION")
+    policy_fields = ("LOCAL_SYSTEM_VISIBLE", "DISTINCT_PEER_SYSTEMS_VISIBLE", "OUTWARD_CONNECTION_VISIBLE", "COLLABORATIVE_PAYOFF_VISIBLE", "VIEWER_CAN_INFER_COLLABORATION")
+    raw_policy_qc = result.get("policy_collaboration_qc") if isinstance(result.get("policy_collaboration_qc"), dict) else {}
+    normalized["policy_collaboration_qc"] = {
+        field: _qc_status(raw_policy_qc.get(field), "FAIL" if policy_required else "NOT_APPLICABLE")
+        for field in policy_fields
+    }
+    checks["policy_collaboration_visible"] = not policy_required or all(value == "PASS" for value in normalized["policy_collaboration_qc"].values())
+    if policy_required and not checks["policy_collaboration_visible"]:
+        reasons.append("The generated pixels do not make the supported collaboration relationship visually inferable.")
+        normalized["failure_reasons"] = list(dict.fromkeys(reasons))
     achievement_allocation_override = False
     story_type_result: dict[str, Any] = {"status": "NOT_APPLICABLE"}
     if (
