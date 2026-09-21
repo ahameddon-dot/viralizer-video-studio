@@ -27,10 +27,12 @@ class CreatorthonV3Tests(unittest.TestCase):
         ):
             self.assertIn(expected, page)
 
-    def test_v3_uses_original_logo_and_responsive_layout(self):
+    def test_v3_uses_official_logo_and_responsive_layout(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
-        self.assertIn("/static/viralizer-original-logo.png", page)
-        self.assertIn("@media(max-width:850px)", page)
+        self.assertIn("/static/viralizer-logo-black.png", page)
+        self.assertIn("Professional scale and alignment pass", page)
+        self.assertIn("@media(max-width:960px)", page)
+        self.assertIn("@media(max-width:680px)", page)
 
     def test_v3_uses_confirmation_gates_and_shows_video_results(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
