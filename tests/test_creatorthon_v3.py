@@ -62,6 +62,13 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("content:state.activeContent||state.topic", page)
         self.assertIn("prompt:state.workingPrepared?.prompt", page)
 
+    def test_generation_reuses_prepared_article_intelligence(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("state.activeContent=d.content||state.topic", page)
+        self.assertIn("state.activeContent=state.prepared?.content||state.topic", page)
+        self.assertIn("state.activeContent=state.alternatePrepared.content||state.activeContent", page)
+        self.assertIn("content:state.activeContent||state.topic", page)
+
     def test_configuration_defaults_do_not_modify_prompt_until_confirmed(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn("No preference", page)
