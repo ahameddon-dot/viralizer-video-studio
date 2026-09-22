@@ -12,6 +12,15 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn('@app.get("/creatorthon-v3")', app_source)
         self.assertIn('ROOT / "static" / "creatorthon-v3.html"', app_source)
 
+    def test_creatorthon_versions_have_context_aware_sign_out(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        v1_page = (ROOT / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        v3_page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn('@app.get("/creatorthon/login"', app_source)
+        self.assertIn('async def logout(next: str = "/login")', app_source)
+        self.assertIn('href="/logout?next=/creatorthon/login"', v1_page)
+        self.assertIn('href="/logout?next=/creatorthon-v3/login"', v3_page)
+
     def test_v3_contains_requested_creator_journey(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         for expected in (

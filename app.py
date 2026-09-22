@@ -11,6 +11,7 @@ import httpx
 import io
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -291,8 +292,9 @@ async def login(request: Request, password: str = Form(...)):
 
 
 @app.api_route("/logout", methods=["GET", "POST"])
-async def logout():
-    response = RedirectResponse("/login", status_code=303)
+async def logout(next: str = "/login"):
+    destination = next if next.startswith("/") and not next.startswith("//") else "/login"
+    response = RedirectResponse(destination, status_code=303)
     response.delete_cookie(AUTH_COOKIE)
     response.delete_cookie(GOOGLE_STATE_COOKIE)
     return response
@@ -711,6 +713,15 @@ async def creatorthon(request: Request):
     return FileResponse(ROOT / "static" / "creatorthon.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/creatorthon/login", response_class=HTMLResponse)
+async def creatorthon_v1_login(request: Request):
+    if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon", status_code=303)
+    google_ready = google_configured()
+    action = '<a class="google" href="/auth/google?next=/creatorthon"><b>G</b><span>Continue with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet.</p>'
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Creatorthon · Viralizer</title><style>
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:radial-gradient(circle at top,#29154b,#090611 65%);color:#fff;font-family:Inter,system-ui,sans-serif}}body{{display:grid;place-items:center;padding:24px}}main{{width:min(520px,100%);padding:46px;border:1px solid #563483;border-radius:28px;background:#12101ccc;box-shadow:0 30px 90px #0008}}img{{width:188px;height:auto}}.tag{{display:inline-block;margin-top:42px;padding:8px 12px;border-radius:99px;background:#31194e;color:#d8b5ff;font-size:12px;font-weight:850}}h1{{font-size:clamp(42px,8vw,64px);line-height:.98;letter-spacing:-.06em;margin:18px 0}}p{{color:#c1b6d2;line-height:1.6}}.google{{display:flex;align-items:center;justify-content:center;gap:12px;min-height:64px;margin-top:32px;border-radius:18px;background:#fff;color:#16111c;text-decoration:none;font-weight:850}}.google b{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#4285f4;font-size:20px}}.warning{{padding:14px;border-radius:14px;background:#fff1f2;color:#a82035}}</style></head><body><main><img src="/static/viralizer-logo-white.png" alt="Viralizer"><span class="tag">CREATORTHON</span><h1>Start Viral Content Creation</h1><p>Discover timely topics, direct your video, add speech and branding, then publish—all in one guided journey.</p>{action}</main></body></html>""")
+
 @app.get("/creatorthon-v2/login", response_class=HTMLResponse)
 async def creatorthon_v2_login(request: Request):
     if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
@@ -732,11 +743,12 @@ async def creatorthon_v2(request: Request):
 
 
 @app.get("/creatorthon-v3/login", response_class=HTMLResponse)
-async def creatorthon_v3_login(request: Request):
+async def creatorthon_v3_login(request: Request, next: str = "/creatorthon-v3"):
+    destination = next if next.startswith("/") and not next.startswith("//") else "/creatorthon-v3"
     if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
-        return RedirectResponse("/creatorthon-v3", status_code=303)
+        return RedirectResponse(destination, status_code=303)
     google_ready = google_configured()
-    action = '<a class="google" href="/auth/google?next=/creatorthon-v3"><b>G</b><span>Login or sign up with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet.</p>'
+    action = f'<a class="google" href="/auth/google?next={quote(destination, safe="/")}"><b>G</b><span>Login or sign up with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet.</p>'
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Creatorthon V3 · Viralizer</title><style>
 *{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:#f5f5f7;color:#121216;font-family:Inter,system-ui,sans-serif}}body{{display:grid;place-items:center;padding:24px}}main{{width:min(520px,100%);padding:46px;border:1px solid #e1e1e6;border-radius:30px;background:#fff;box-shadow:0 30px 90px #1111}}img{{width:188px;height:auto}}.tag{{display:inline-block;margin-top:45px;padding:8px 12px;border-radius:99px;background:#f0e7ff;color:#7425d7;font-size:12px;font-weight:850}}h1{{font-size:clamp(42px,8vw,64px);line-height:.98;letter-spacing:-.06em;margin:18px 0}}p{{color:#6d6c73;line-height:1.6}}.google{{display:flex;align-items:center;justify-content:center;gap:12px;min-height:64px;margin-top:32px;border-radius:18px;background:#111;color:#fff;text-decoration:none;font-weight:850}}.google b{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#4285f4;font-size:20px}}.warning{{padding:14px;border-radius:14px;background:#fff1f2;color:#a82035}}</style></head><body><main><img src="/static/viralizer-logo-black.png" alt="Viralizer"><span class="tag">CREATORTHON V3</span><h1>Start Viral Content Creation</h1><p>Choose what matters to you, discover timely topics, and create with the right video engine.</p>{action}</main></body></html>""")
 
