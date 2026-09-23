@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Any
 from creatorthon_store import _connect, update_project
 from media_finisher import MediaFinisherError, _download, finish_video
-from object_store import ObjectStoreError, upload_file
+from object_store import ObjectStoreError, restore_file, upload_file
 from video_providers import VideoProviderError, video_status
 ACTIVE=("queued","waiting_provider","raw_archiving","finishing","retrying")
+RETRYABLE_HINTS=("timeout","timed out","temporar","connection","connect","429","rate limit","502","503","504","not available yet","publishing","endpoint")
 _SCHEMA_READY=False
 _SCHEMA_LOCK=threading.Lock()
 def _ensure(db: Any)->None:
@@ -16,6 +17,7 @@ def _ensure(db: Any)->None:
   if _SCHEMA_READY:return
   db.execute("""CREATE TABLE IF NOT EXISTS creatorthon_media_jobs (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '',provider_job_id TEXT NOT NULL DEFAULT '',raw_video_url TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'queued',stage TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',raw_object_key TEXT NOT NULL DEFAULT '',output_url TEXT NOT NULL DEFAULT '',retry_count BIGINT NOT NULL DEFAULT 0,next_attempt_at BIGINT NOT NULL DEFAULT 0,lease_until BIGINT NOT NULL DEFAULT 0,created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL)""")
   db.execute("CREATE INDEX IF NOT EXISTS idx_creatorthon_media_jobs_due ON creatorthon_media_jobs(status,next_attempt_at)")
+  db.execute("""CREATE TABLE IF NOT EXISTS creatorthon_worker_heartbeat (worker_id TEXT PRIMARY KEY,updated_at BIGINT NOT NULL,current_job_id TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT 'starting')""")
   _SCHEMA_READY=True
 def _row(row: Any)->dict[str,Any]:
  item=dict(row)
@@ -45,9 +47,31 @@ def _update(root:Path,job_id:str,**values):
 def due(root:Path,limit=1):
  now=int(time.time())
  with _connect(root) as db:
-  _ensure(db);marks=",".join("?" for _ in ACTIVE);rows=db.execute(f"SELECT * FROM creatorthon_media_jobs WHERE status IN ({marks}) AND next_attempt_at<=? AND lease_until<=? ORDER BY updated_at LIMIT ?",[*ACTIVE,now,now,limit]).fetchall();items=[_row(row) for row in rows]
-  for item in items:db.execute("UPDATE creatorthon_media_jobs SET lease_until=?,updated_at=? WHERE id=?",(now+180,now,item["id"]))
+  _ensure(db);marks=",".join("?" for _ in ACTIVE)
+  if getattr(db,"dialect","sqlite")=="postgres":
+   rows=db.execute(f"""WITH candidates AS (SELECT id FROM creatorthon_media_jobs WHERE status IN ({marks}) AND next_attempt_at<=? AND lease_until<=? ORDER BY updated_at FOR UPDATE SKIP LOCKED LIMIT ?) UPDATE creatorthon_media_jobs AS jobs SET lease_until=?,updated_at=? FROM candidates WHERE jobs.id=candidates.id RETURNING jobs.*""",[*ACTIVE,now,now,limit,now+300,now]).fetchall()
+  else:
+   rows=db.execute(f"""UPDATE creatorthon_media_jobs SET lease_until=?,updated_at=? WHERE id IN (SELECT id FROM creatorthon_media_jobs WHERE status IN ({marks}) AND next_attempt_at<=? AND lease_until<=? ORDER BY updated_at LIMIT ?) RETURNING *""",[now+300,now,*ACTIVE,now,now,limit]).fetchall()
+  items=[_row(row) for row in rows]
  return items
+
+async def renew_lease(root:Path,job_id:str):
+ while True:
+  await asyncio.sleep(60)
+  await asyncio.to_thread(_update,root,job_id,lease_until=int(time.time())+300)
+
+def heartbeat(root:Path,worker_id:str,current_job_id="",state="idle"):
+ now=int(time.time())
+ with _connect(root) as db:
+  _ensure(db);db.execute("""INSERT INTO creatorthon_worker_heartbeat (worker_id,updated_at,current_job_id,state) VALUES (?,?,?,?) ON CONFLICT(worker_id) DO UPDATE SET updated_at=excluded.updated_at,current_job_id=excluded.current_job_id,state=excluded.state""",(worker_id,now,current_job_id,state))
+
+def worker_health(root:Path)->dict[str,Any]:
+ now=int(time.time())
+ with _connect(root) as db:
+  _ensure(db);row=db.execute("SELECT * FROM creatorthon_worker_heartbeat ORDER BY updated_at DESC LIMIT 1").fetchone()
+ if not row:return {"ready":False,"state":"missing","age_seconds":None}
+ item=dict(row);age=max(0,now-int(item.get("updated_at") or 0))
+ return {"ready":age<=90,"state":str(item.get("state") or "unknown"),"age_seconds":age,"current_job":bool(item.get("current_job_id"))}
 def collapse_duplicates(root:Path):
  statuses=(*ACTIVE,"completed")
  with _connect(root) as db:
@@ -64,9 +88,15 @@ def collapse_duplicates(root:Path):
     else:
      db.execute("UPDATE creatorthon_media_jobs SET status='failed',stage=?,error=?,lease_until=0,updated_at=? WHERE id=?",("Duplicate finishing request was consolidated.","This duplicate request was replaced by the active finishing job; no new provider credit was used.",int(time.time()),duplicate["id"]))
 
+def _retryable(error:str)->bool:
+ text=str(error or "").lower()
+ permanent=("api key is required","not configured","not supported","not installed","could not be read as an image","invalid","authentication failed","access denied","permission denied")
+ if any(item in text for item in permanent):return False
+ return any(item in text for item in RETRYABLE_HINTS) or not text
+
 def _retry(root:Path,job:dict,error:str):
  count=int(job.get("retry_count") or 0)+1
- if count>=40:_update(root,job["id"],status="failed",stage="Automatic recovery could not complete this video.",error=error[:1000],retry_count=count,lease_until=0);return
+ if not _retryable(error) or count>=20:_update(root,job["id"],status="failed",stage="Automatic recovery could not complete this video.",error=error[:1000],retry_count=count,lease_until=0);return
  delay=min(900,15*(2**min(count,5)));_update(root,job["id"],status="retrying",stage="Waiting for the provider media file before finishing your video…",error=error[:1000],retry_count=count,next_attempt_at=int(time.time())+delay,lease_until=0)
 def _official_logo(data: str) -> bytes | None:
  match=re.fullmatch(r"data:image/(?:png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\\r\\n]+)",str(data or ""))
@@ -86,14 +116,17 @@ async def process_one(root:Path,job:dict):
   payload=job.get("payload") or {}
   with tempfile.TemporaryDirectory(prefix="viralizer-durable-") as folder:
    source=Path(folder)/"source.mp4"
-   try:await _download(raw,source)
-   except MediaFinisherError as exc:
-    refreshed=_update(root,job["id"],raw_video_url="",status="retrying",stage="Refreshing the PixVerse media link…",lease_until=0) or job
-    _retry(root,refreshed,str(exc));return
    raw_key=str(job.get("raw_object_key") or f"raw_videos/{job['id']}.mp4")
-   if not await upload_file(source,raw_key,"video/mp4"):
-    raise ObjectStoreError("Permanent media storage is not configured.")
-   _update(root,job["id"],raw_object_key=raw_key,status="finishing",stage="Adding narration, branding, and final encoding…",lease_until=0)
+   restored=bool(job.get("raw_object_key")) and await restore_file(source,raw_key)
+   if not restored:
+    try:await _download(raw,source)
+    except MediaFinisherError as exc:
+     refreshed=_update(root,job["id"],raw_video_url="",status="retrying",stage="Refreshing the PixVerse media link…",lease_until=0) or job
+     _retry(root,refreshed,str(exc));return
+    if not await upload_file(source,raw_key,"video/mp4"):
+     raise ObjectStoreError("Permanent media storage is not configured.")
+    job=_update(root,job["id"],raw_object_key=raw_key,status="finishing",stage="Adding narration, branding, and final encoding…",lease_until=0) or job
+   else:_update(root,job["id"],status="finishing",stage="Resuming narration and final encoding from secured media…",lease_until=0)
    output=await finish_video(raw,str(payload.get("narration") or ""),str(payload.get("voice") or "coral"),(root/"static"/"viralizer-original-logo.png").read_bytes(),secondary_logo_bytes=_official_logo(str(payload.get("official_logo_data") or "")),source_path=source)
    if not await upload_file(output,f"finished_videos/{output.name}","video/mp4"):
     raise ObjectStoreError("Permanent media storage is not configured.")
@@ -103,12 +136,19 @@ async def process_one(root:Path,job:dict):
  except (MediaFinisherError,ObjectStoreError,VideoProviderError,OSError) as exc:_retry(root,job,str(exc))
  except Exception as exc:_retry(root,job,f"Unexpected media worker error: {exc}")
 async def scheduler(root:Path):
- last_cleanup=0
+ last_cleanup=0;worker_id=uuid.uuid4().hex
  while True:
   try:
+   await asyncio.to_thread(heartbeat,root,worker_id,"","idle")
    if time.time()-last_cleanup>=60:
     await asyncio.to_thread(collapse_duplicates,root);last_cleanup=time.time()
    jobs=await asyncio.to_thread(due,root)
-   for job in jobs:await process_one(root,job)
-  except Exception:pass
+   for job in jobs:
+    await asyncio.to_thread(heartbeat,root,worker_id,job["id"],"processing")
+    lease_task=asyncio.create_task(renew_lease(root,job["id"]))
+    try:await process_one(root,job)
+    finally:lease_task.cancel()
+  except Exception:
+   try:await asyncio.to_thread(heartbeat,root,worker_id,"","error")
+   except Exception:pass
   await asyncio.sleep(15)

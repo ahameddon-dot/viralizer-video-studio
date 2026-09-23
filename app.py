@@ -190,7 +190,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -801,6 +801,23 @@ async def storage_health():
     from creatorthon_store import database_health
 
     result = database_health(ROOT)
+    return JSONResponse(result, status_code=200 if result["ready"] else 503)
+
+
+@app.get("/health/media")
+async def media_pipeline_health():
+    """Secret-free readiness for the persistent media worker and R2."""
+    from creatorthon_store import database_health
+    from durable_media_pipeline import worker_health
+    from object_store import health as object_store_health
+
+    database = database_health(ROOT)
+    try:
+        worker = await asyncio.to_thread(worker_health, ROOT)
+    except Exception:
+        worker = {"ready": False, "state": "unavailable", "age_seconds": None}
+    storage = await object_store_health()
+    result = {"ready": bool(database["ready"] and worker["ready"] and storage["ready"]), "database": database, "worker": worker, "r2": storage}
     return JSONResponse(result, status_code=200 if result["ready"] else 503)
 
 

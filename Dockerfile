@@ -12,4 +12,4 @@ COPY . .
 RUN mkdir -p /app/data/daily_trends /app/output/pdf
 
 EXPOSE 8000
-CMD ["sh", "-c", "(while true; do python durable_media_worker.py; sleep 5; done) & exec uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
+CMD if [ "${RUN_MEDIA_WORKER_IN_WEB:-true}" = "true" ]; then (while true; do python durable_media_worker.py; sleep 5; done) & fi; exec uvicorn app:app --host 0.0.0.0 --port ${PORT}

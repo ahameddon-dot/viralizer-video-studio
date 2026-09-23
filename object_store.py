@@ -75,6 +75,28 @@ async def restore_file(path: Path, key: str) -> bool:
         return False
     return True
 
+
+async def health() -> dict[str, object]:
+    """Check R2 without exposing credentials or writing a test object."""
+    client = _client()
+    if client is None:
+        return {"configured": False, "ready": False, "error": "not_configured"}
+    try:
+        await asyncio.to_thread(client.head_bucket, Bucket=os.environ["R2_BUCKET_NAME"].strip())
+        return {"configured": True, "ready": True, "error": ""}
+    except Exception as exc:
+        message = str(exc).lower()
+        if "credential" in message or "signature" in message or "accessdenied" in message:
+            category = "authentication_failed"
+        elif "endpoint" in message or "connect" in message or "timeout" in message:
+            category = "connection_failed"
+        elif "nosuchbucket" in message or "not found" in message:
+            category = "bucket_not_found"
+        else:
+            category = type(exc).__name__.lower() or "storage_unavailable"
+        return {"configured": True, "ready": False, "error": category}
+
+
 def share_url(key: str, expires_in: int = 7 * 24 * 60 * 60) -> str:
     """Return a time-limited R2 URL which can be opened without app sign-in."""
     client = _client()
