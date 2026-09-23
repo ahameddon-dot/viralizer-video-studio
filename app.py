@@ -814,6 +814,21 @@ async def get_creatorthon_project(request: Request, project_id: str):
     return result
 
 
+@app.get("/api/creatorthon/projects/{project_id}/video")
+async def view_creatorthon_project_video(request: Request, project_id: str):
+    """Open a signed-in user's finished video without exposing another user's media."""
+    user = creatorthon_user(request)
+    result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
+    if not result:
+        raise HTTPException(404, "Creatorthon project not found.")
+    video_url = str(result.get("video_url") or "").strip()
+    if not video_url:
+        raise HTTPException(409, "This project's narrated video is still being prepared.")
+    if not video_url.startswith("/api/finished-video/"):
+        raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
+    return RedirectResponse(video_url, status_code=307)
+
+
 @app.post("/api/creatorthon/reports")
 async def store_creatorthon_report(request: Request, payload: CreatorthonReportRequest):
     user = creatorthon_user(request)
