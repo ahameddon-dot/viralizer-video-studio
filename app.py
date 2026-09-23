@@ -462,6 +462,7 @@ class GenerateRequest(BaseModel):
     background: str = "#0B1020"
     generation_type: str = "text_to_video"
     debug_prompt: bool = False
+    creator_concept: bool = False
     visual_mode: str = "AUTO"
     captions: bool = False
     heygen_style_id: str = ""
@@ -726,6 +727,12 @@ async def creatorthon_v1_login(request: Request):
     action = '<a class="google" href="/auth/google?next=/creatorthon"><b>G</b><span>Continue with Google</span></a>' if google_ready else '<p class="warning">Google sign-in is not configured yet.</p>'
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Creatorthon · Viralizer</title><style>
 *{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;background:radial-gradient(circle at top,#29154b,#090611 65%);color:#fff;font-family:Inter,system-ui,sans-serif}}body{{display:grid;place-items:center;padding:24px}}main{{width:min(520px,100%);padding:46px;border:1px solid #563483;border-radius:28px;background:#12101ccc;box-shadow:0 30px 90px #0008}}img{{width:188px;height:auto}}.tag{{display:inline-block;margin-top:42px;padding:8px 12px;border-radius:99px;background:#31194e;color:#d8b5ff;font-size:12px;font-weight:850}}h1{{font-size:clamp(42px,8vw,64px);line-height:.98;letter-spacing:-.06em;margin:18px 0}}p{{color:#c1b6d2;line-height:1.6}}.google{{display:flex;align-items:center;justify-content:center;gap:12px;min-height:64px;margin-top:32px;border-radius:18px;background:#fff;color:#16111c;text-decoration:none;font-weight:850}}.google b{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff;color:#4285f4;font-size:20px}}.warning{{padding:14px;border-radius:14px;background:#fff1f2;color:#a82035}}</style></head><body><main><img src="/static/viralizer-logo-white.png" alt="Viralizer"><span class="tag">CREATORTHON</span><h1>Start Viral Content Creation</h1><p>Discover timely topics, direct your video, add speech and branding, then publish—all in one guided journey.</p>{action}</main></body></html>""")
+
+@app.get("/creatorthon/concept")
+async def creatorthon_concept(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon/login?next=/creatorthon/concept", status_code=303)
+    return FileResponse(ROOT / "static" / "creatorthon-concept.html", headers={"Cache-Control": "no-store"})
 
 @app.get("/creatorthon-v2/login", response_class=HTMLResponse)
 async def creatorthon_v2_login(request: Request):
@@ -1188,14 +1195,14 @@ async def generate_video(request: GenerateRequest):
             request.content,
             request.duration,
             request.aspect_ratio,
-            require_openai=True,
+            require_openai=not request.creator_concept,
         )
     except Exception as exc:
         raise HTTPException(
             503,
             "OpenAI could not complete the selected topic analysis. No video credits were spent. Please try again.",
         ) from exc
-    if not openai_story_analysis_complete(content):
+    if not request.creator_concept and not openai_story_analysis_complete(content):
         raise HTTPException(
             503,
             "The selected topic did not receive a validated OpenAI story analysis. No video credits were spent.",
