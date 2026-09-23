@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -8,6 +9,9 @@ from pathlib import Path
 from typing import Any, Iterator
 
 _POSTGRES_READY = False
+_POSTGRES_POOL = None
+_POSTGRES_POOL_DSN = ""
+_POSTGRES_POOL_LOCK = threading.Lock()
 
 
 class _PostgresAdapter:
@@ -85,29 +89,41 @@ def _connect(root: Path) -> Iterator[Any]:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url:
         try:
-            import psycopg
             from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
         except ImportError as exc:
-            raise RuntimeError("DATABASE_URL is configured but psycopg is not installed.") from exc
-        # Supabase's transaction pooler does not support named prepared statements.
-        connection = psycopg.connect(database_url, row_factory=dict_row, connect_timeout=10, prepare_threshold=None)
-        db = _PostgresAdapter(connection)
-        global _POSTGRES_READY
-        try:
-            if not _POSTGRES_READY:
-                for statement in _schema_statements():
-                    db.execute(statement)
-                for name, declaration in _project_columns():
-                    _ensure_column(db, "creatorthon_projects", name, declaration)
+            raise RuntimeError("DATABASE_URL is configured but PostgreSQL pooling support is not installed.") from exc
+        global _POSTGRES_POOL, _POSTGRES_POOL_DSN, _POSTGRES_READY
+        if _POSTGRES_POOL is None or _POSTGRES_POOL_DSN != database_url:
+            with _POSTGRES_POOL_LOCK:
+                if _POSTGRES_POOL is None or _POSTGRES_POOL_DSN != database_url:
+                    if _POSTGRES_POOL is not None:
+                        _POSTGRES_POOL.close()
+                    _POSTGRES_POOL = ConnectionPool(
+                        conninfo=database_url,
+                        min_size=1,
+                        max_size=4,
+                        timeout=10,
+                        kwargs={"row_factory": dict_row, "prepare_threshold": None},
+                        open=True,
+                    )
+                    _POSTGRES_POOL_DSN = database_url
+                    _POSTGRES_READY = False
+        with _POSTGRES_POOL.connection(timeout=10) as connection:
+            db = _PostgresAdapter(connection)
+            try:
+                if not _POSTGRES_READY:
+                    for statement in _schema_statements():
+                        db.execute(statement)
+                    for name, declaration in _project_columns():
+                        _ensure_column(db, "creatorthon_projects", name, declaration)
+                    connection.commit()
+                    _POSTGRES_READY = True
+                yield db
                 connection.commit()
-                _POSTGRES_READY = True
-            yield db
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
+            except Exception:
+                connection.rollback()
+                raise
         return
     data_dir = Path(os.getenv("APP_DATA_DIR", str(root / "data")))
     data_dir.mkdir(parents=True, exist_ok=True)
