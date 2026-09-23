@@ -508,7 +508,14 @@
         }
         const providerName=providerCatalog.find(item=>item.id===videoProvider.value)?.name||videoProvider.value;
         status.textContent=`Sending the video concept to ${providerName}...`;
-        const job=await fetch('/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:videoProvider.value,content:outline,prompt:prompt.value.trim(),duration:Number(document.querySelector('#duration').value),quality:document.querySelector('#quality').value,quality_mode:qualityMode.checked,aspect_ratio:preparedAspectRatio,narration:videoNarration.value.trim(),avatar_id:heygenAvatar.value,voice_id:heygenVoice.value,background:heygenBackground.value,visual_mode:heygenVisualMode.value,captions:heygenCaptions.checked,heygen_style_id:heygenStyle.value})}).then(json);
+        const videoRequest={provider:videoProvider.value,content:outline,prompt:prompt.value.trim(),duration:Number(document.querySelector('#duration').value),quality:document.querySelector('#quality').value,quality_mode:qualityMode.checked,aspect_ratio:preparedAspectRatio,narration:videoNarration.value.trim(),avatar_id:heygenAvatar.value,voice_id:heygenVoice.value,background:heygenBackground.value,visual_mode:heygenVisualMode.value,captions:heygenCaptions.checked,heygen_style_id:heygenStyle.value};
+        let job;
+        try{job=await fetch('/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(videoRequest)}).then(json)}catch(error){
+          if(videoRequest.provider==='pixverse'&&videoRequest.quality_mode&&String(error.message||'').includes('did not pass story and storyboard approval')){
+            status.textContent='Advanced storyboard approval was unavailable. Continuing with standard PixVerse generation…';
+            job=await fetch('/api/video/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...videoRequest,quality_mode:false,allow_standard_fallback:true})}).then(json);
+          }else throw error;
+        }
         const maxVideoPolls=job.provider==='heygen'?360:120;for(let attempts=0;attempts<maxVideoPolls;attempts++){
           await wait(5000); status.textContent=qualityMode.checked?'Checking production progress...':`${providerName} is generating your video...`;
           const current=await fetch(`/api/video/${encodeURIComponent(job.provider)}/${encodeURIComponent(job.job_id)}`).then(json);if(current.stage)status.textContent=current.stage;if(developerMode&&current.shot_specification){motionDebugOutput.textContent=JSON.stringify(current,null,2);if(current.reference_image_url){motionDebugReference.src=current.reference_image_url+'?v='+Date.now();motionDebugReference.hidden=false}}
