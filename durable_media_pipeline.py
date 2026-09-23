@@ -25,7 +25,13 @@ def _row(row: Any)->dict[str,Any]:
 def enqueue(root:Path,user_id:str,*,project_id="",provider="",provider_job_id="",raw_video_url="",narration="",voice="coral",official_logo_data=""):
  job_id,now=uuid.uuid4().hex,int(time.time());payload={"narration":narration[:4096],"voice":voice[:40],"official_logo_data":official_logo_data}
  with _connect(root) as db:
-  _ensure(db);db.execute("INSERT INTO creatorthon_media_jobs (id,user_id,project_id,provider,provider_job_id,raw_video_url,payload_json,status,stage,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(job_id,user_id,project_id,provider,provider_job_id,raw_video_url,json.dumps(payload),"queued","Waiting for the provider media file…",now,now,now));row=db.execute("SELECT * FROM creatorthon_media_jobs WHERE id=?",(job_id,)).fetchone()
+  _ensure(db)
+  if provider_job_id:
+   statuses=(*ACTIVE,"completed")
+   marks=",".join("?" for _ in statuses)
+   existing=db.execute(f"SELECT * FROM creatorthon_media_jobs WHERE user_id=? AND provider=? AND provider_job_id=? AND status IN ({marks}) ORDER BY created_at DESC LIMIT 1",(user_id,provider,provider_job_id,*statuses)).fetchone()
+   if existing:return _row(existing)
+  db.execute("INSERT INTO creatorthon_media_jobs (id,user_id,project_id,provider,provider_job_id,raw_video_url,payload_json,status,stage,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(job_id,user_id,project_id,provider,provider_job_id,raw_video_url,json.dumps(payload),"queued","Waiting for the provider media file…",now,now,now));row=db.execute("SELECT * FROM creatorthon_media_jobs WHERE id=?",(job_id,)).fetchone()
  return _row(row)
 def get(root:Path,user_id:str,job_id:str):
  with _connect(root) as db:
@@ -36,12 +42,28 @@ def _update(root:Path,job_id:str,**values):
  with _connect(root) as db:
   _ensure(db);db.execute("UPDATE creatorthon_media_jobs SET "+",".join(f"{k}=?" for k in allowed)+" WHERE id=?",[*allowed.values(),job_id]);row=db.execute("SELECT * FROM creatorthon_media_jobs WHERE id=?",(job_id,)).fetchone()
  return _row(row) if row else None
-def due(root:Path,limit=4):
+def due(root:Path,limit=1):
  now=int(time.time())
  with _connect(root) as db:
   _ensure(db);marks=",".join("?" for _ in ACTIVE);rows=db.execute(f"SELECT * FROM creatorthon_media_jobs WHERE status IN ({marks}) AND next_attempt_at<=? AND lease_until<=? ORDER BY updated_at LIMIT ?",[*ACTIVE,now,now,limit]).fetchall();items=[_row(row) for row in rows]
   for item in items:db.execute("UPDATE creatorthon_media_jobs SET lease_until=?,updated_at=? WHERE id=?",(now+180,now,item["id"]))
  return items
+def collapse_duplicates(root:Path):
+ statuses=(*ACTIVE,"completed")
+ with _connect(root) as db:
+  _ensure(db);marks=",".join("?" for _ in statuses)
+  groups=db.execute(f"SELECT user_id,provider,provider_job_id FROM creatorthon_media_jobs WHERE provider_job_id<>'' AND status IN ({marks}) GROUP BY user_id,provider,provider_job_id HAVING COUNT(*)>1",statuses).fetchall()
+  for group in groups:
+   group=dict(group);rows=db.execute(f"SELECT * FROM creatorthon_media_jobs WHERE user_id=? AND provider=? AND provider_job_id=? AND status IN ({marks}) ORDER BY CASE WHEN status='completed' THEN 0 ELSE 1 END,created_at DESC",(group["user_id"],group["provider"],group["provider_job_id"],*statuses)).fetchall()
+   if not rows:continue
+   canonical=dict(rows[0])
+   for duplicate in rows[1:]:
+    duplicate=dict(duplicate)
+    if canonical["status"]=="completed":
+     db.execute("UPDATE creatorthon_media_jobs SET status='completed',stage=?,error='',output_url=?,lease_until=0,updated_at=? WHERE id=?",("Your narrated video is ready.",canonical.get("output_url") or "",int(time.time()),duplicate["id"]))
+    else:
+     db.execute("UPDATE creatorthon_media_jobs SET status='failed',stage=?,error=?,lease_until=0,updated_at=? WHERE id=?",("Duplicate finishing request was consolidated.","This duplicate request was replaced by the active finishing job; no new provider credit was used.",int(time.time()),duplicate["id"]))
+
 def _retry(root:Path,job:dict,error:str):
  count=int(job.get("retry_count") or 0)+1
  if count>=40:_update(root,job["id"],status="failed",stage="Automatic recovery could not complete this video.",error=error[:1000],retry_count=count,lease_until=0);return
@@ -79,8 +101,11 @@ async def process_one(root:Path,job:dict):
  except (MediaFinisherError,ObjectStoreError,VideoProviderError,OSError) as exc:_retry(root,job,str(exc))
  except Exception as exc:_retry(root,job,f"Unexpected media worker error: {exc}")
 async def scheduler(root:Path):
+ last_cleanup=0
  while True:
   try:
+   if time.time()-last_cleanup>=60:
+    await asyncio.to_thread(collapse_duplicates,root);last_cleanup=time.time()
    jobs=await asyncio.to_thread(due,root)
    for job in jobs:await process_one(root,job)
   except Exception:pass
