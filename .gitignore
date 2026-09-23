@@ -22,3 +22,4 @@ final_exact_pack/
 ui_master_pack/
 ui_reference_pack/
 viralizer-review-contact.png
+.env.worker

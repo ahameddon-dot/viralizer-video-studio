@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from creatorthon_store import _connect, update_project
 from media_finisher import MediaFinisherError, _download, finish_video
-from object_store import ObjectStoreError, restore_file, upload_file
+from object_store import ObjectStoreError, health as object_store_health, restore_file, upload_file
 from video_providers import VideoProviderError, video_status
 ACTIVE=("queued","waiting_provider","raw_archiving","finishing","retrying")
 RETRYABLE_HINTS=("timeout","timed out","temporar","connection","connect","429","rate limit","502","503","504","not available yet","publishing","endpoint")
@@ -70,8 +70,8 @@ def worker_health(root:Path)->dict[str,Any]:
  with _connect(root) as db:
   _ensure(db);row=db.execute("SELECT * FROM creatorthon_worker_heartbeat ORDER BY updated_at DESC LIMIT 1").fetchone()
  if not row:return {"ready":False,"state":"missing","age_seconds":None}
- item=dict(row);age=max(0,now-int(item.get("updated_at") or 0))
- return {"ready":age<=90,"state":str(item.get("state") or "unknown"),"age_seconds":age,"current_job":bool(item.get("current_job_id"))}
+ item=dict(row);age=max(0,now-int(item.get("updated_at") or 0));state=str(item.get("state") or "unknown")
+ return {"ready":age<=90 and not state.startswith("storage_error"),"state":state,"age_seconds":age,"current_job":bool(item.get("current_job_id"))}
 def collapse_duplicates(root:Path):
  statuses=(*ACTIVE,"completed")
  with _connect(root) as db:
@@ -136,10 +136,15 @@ async def process_one(root:Path,job:dict):
  except (MediaFinisherError,ObjectStoreError,VideoProviderError,OSError) as exc:_retry(root,job,str(exc))
  except Exception as exc:_retry(root,job,f"Unexpected media worker error: {exc}")
 async def scheduler(root:Path):
- last_cleanup=0;worker_id=uuid.uuid4().hex
+ last_cleanup=0;last_storage_check=0;worker_id=uuid.uuid4().hex;storage={"ready":False,"error":"starting"}
  while True:
   try:
-   await asyncio.to_thread(heartbeat,root,worker_id,"","idle")
+   if time.time()-last_storage_check>=60:
+    storage=await object_store_health();last_storage_check=time.time()
+   worker_state="idle" if storage.get("ready") else f"storage_error:{storage.get('error') or 'unavailable'}"
+   await asyncio.to_thread(heartbeat,root,worker_id,"",worker_state)
+   if not storage.get("ready"):
+    await asyncio.sleep(15);continue
    if time.time()-last_cleanup>=60:
     await asyncio.to_thread(collapse_duplicates,root);last_cleanup=time.time()
    jobs=await asyncio.to_thread(due,root)

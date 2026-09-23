@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -36,6 +37,7 @@ def _client():
         return None
     try:
         import boto3
+        from botocore.config import Config
     except ImportError as exc:
         raise ObjectStoreError("R2 support requires the boto3 package.") from exc
     return boto3.client(
@@ -44,6 +46,7 @@ def _client():
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"].strip(),
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"].strip(),
         region_name="auto",
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 
 
@@ -77,16 +80,21 @@ async def restore_file(path: Path, key: str) -> bool:
 
 
 async def health() -> dict[str, object]:
-    """Check R2 without exposing credentials or writing a test object."""
+    """Verify real object write/delete access without exposing credentials."""
     client = _client()
     if client is None:
         return {"configured": False, "ready": False, "error": "not_configured"}
+    bucket = os.environ["R2_BUCKET_NAME"].strip()
+    key = f"healthchecks/{uuid.uuid4().hex}.txt"
+    uploaded = False
     try:
-        await asyncio.to_thread(client.head_bucket, Bucket=os.environ["R2_BUCKET_NAME"].strip())
+        await asyncio.to_thread(client.put_object, Bucket=bucket, Key=key, Body=b"ok", ContentType="text/plain")
+        uploaded = True
+        await asyncio.to_thread(client.delete_object, Bucket=bucket, Key=key)
         return {"configured": True, "ready": True, "error": ""}
     except Exception as exc:
         message = str(exc).lower()
-        if "credential" in message or "signature" in message or "accessdenied" in message:
+        if "credential" in message or "signature" in message or "accessdenied" in message or "access denied" in message:
             category = "authentication_failed"
         elif "endpoint" in message or "connect" in message or "timeout" in message:
             category = "connection_failed"
@@ -94,6 +102,11 @@ async def health() -> dict[str, object]:
             category = "bucket_not_found"
         else:
             category = type(exc).__name__.lower() or "storage_unavailable"
+        if uploaded:
+            try:
+                await asyncio.to_thread(client.delete_object, Bucket=bucket, Key=key)
+            except Exception:
+                pass
         return {"configured": True, "ready": False, "error": category}
 
 
