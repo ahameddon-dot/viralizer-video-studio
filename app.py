@@ -562,7 +562,7 @@ class CreatorthonReportRequest(BaseModel):
 
 
 class CreatorthonFinishRequest(BaseModel):
-    video_url: str = Field(min_length=4, max_length=2000)
+    video_url: str = Field(default="", max_length=2000)
     narration: str = Field(default="", max_length=4096)
     voice: str = Field(default="coral", max_length=40)
     official_logo_data: str = Field(default="", max_length=14_000_000)
@@ -1666,9 +1666,26 @@ async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishR
 @app.post("/api/creatorthon/finish-async")
 async def start_creatorthon_finish_job(request: Request, payload: CreatorthonFinishRequest):
     user = creatorthon_user(request)
-    job = enqueue_durable_media_job(ROOT, str(user.get("sub", "")), project_id=payload.project_id, provider=payload.provider, provider_job_id=payload.provider_job_id, raw_video_url=payload.video_url, narration=payload.narration, voice=payload.voice, official_logo_data=payload.official_logo_data)
+    user_id = str(user.get("sub", ""))
+    project = update_project(ROOT, user_id, payload.project_id, {}) if payload.project_id else None
+    production = project.get("production") if isinstance(project, dict) and isinstance(project.get("production"), dict) else {}
+    narration_data = project.get("narration") if isinstance(project, dict) and isinstance(project.get("narration"), dict) else {}
+    provider = str(payload.provider or production.get("provider") or (project or {}).get("provider") or "").strip()
+    provider_job_id = str(payload.provider_job_id or production.get("provider_job_id") or production.get("job_id") or (project or {}).get("job_id") or "").strip()
+    raw_video_url = str(payload.video_url or production.get("raw_video_url") or "").strip()
+    narration = payload.narration or str(narration_data.get("text") or "")
+    voice = payload.voice or str(narration_data.get("voice") or "coral")
+    if not raw_video_url and not (provider and provider_job_id):
+        raise HTTPException(409, "The completed provider video reference is missing. Reopen the saved project so Viralizer can recover it; no new video will be generated.")
+    job = enqueue_durable_media_job(ROOT, user_id, project_id=payload.project_id, provider=provider, provider_job_id=provider_job_id, raw_video_url=raw_video_url, narration=narration, voice=voice, official_logo_data=payload.official_logo_data)
+    if project:
+        update_project(ROOT, user_id, payload.project_id, {
+            "status": "processing",
+            "production": {**production, "provider": provider, "provider_job_id": provider_job_id,
+                           "raw_video_url": raw_video_url, "media_job_id": job["id"],
+                           "finish_job_id": job["id"], "finish_status": "processing"},
+        })
     return {"job_id": job["id"], "status": job["status"], "stage": job["stage"], "durable": True}
-
 @app.get("/api/creatorthon/finish-async/{job_id}")
 async def creatorthon_finish_job_status(request: Request, job_id: str):
     user = creatorthon_user(request)
