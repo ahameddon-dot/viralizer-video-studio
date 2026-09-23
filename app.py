@@ -572,6 +572,12 @@ class CreatorthonFinishRequest(BaseModel):
     provider_job_id: str = Field(default="", max_length=160)
 
 
+class CreatorthonConceptGenerateRequest(GenerateRequest):
+    """Start a creator video and immediately hand its provider job to durable finishing."""
+    project_id: str = Field(min_length=8, max_length=64)
+    official_logo_data: str = Field(default="", max_length=14_000_000)
+
+
 class CreatorthonHashtagRequest(BaseModel):
     topic: dict[str, Any]
 
@@ -1262,6 +1268,33 @@ async def generate_video(request: GenerateRequest):
         return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video"}
     except VideoProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/creatorthon/concept/generate")
+async def generate_creatorthon_concept(request: Request, payload: CreatorthonConceptGenerateRequest):
+    """The browser starts one provider job; durable server storage owns every later step."""
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    started = await generate_video(payload)
+    provider = str(started.get("provider") or payload.provider)
+    provider_job_id = str(started.get("job_id") or "")
+    if not provider_job_id:
+        raise HTTPException(502, "The video provider did not return a job reference. No video credit was spent.")
+    try:
+        job = enqueue_durable_media_job(
+            ROOT, user_id, project_id=payload.project_id, provider=provider,
+            provider_job_id=provider_job_id, narration=payload.narration if payload.narration else "",
+            voice=payload.voice_id or "coral", official_logo_data=payload.official_logo_data,
+        )
+        update_project(ROOT, user_id, payload.project_id, {
+            "job_id": provider_job_id, "provider": provider, "status": "processing",
+            "production": {"provider": provider, "provider_job_id": provider_job_id,
+                           "media_job_id": job["id"], "status": "processing"},
+        })
+    except Exception as exc:
+        raise HTTPException(503, f"Video was accepted, but Viralizer could not secure its completion job: {type(exc).__name__}: {str(exc)[:240]}") from exc
+    return {"job_id": provider_job_id, "provider": provider, "media_job_id": job["id"],
+            "status": job["status"], "stage": job["stage"], "durable": True}
 
 
 @app.post("/api/video/image/generate")
