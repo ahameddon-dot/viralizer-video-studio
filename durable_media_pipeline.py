@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, base64, json, re, tempfile, time, uuid
+import asyncio, base64, json, re, tempfile, time, uuid, threading
 from pathlib import Path
 from typing import Any
 from creatorthon_store import _connect, update_project
@@ -7,9 +7,16 @@ from media_finisher import MediaFinisherError, _download, finish_video
 from object_store import ObjectStoreError, upload_file
 from video_providers import VideoProviderError, video_status
 ACTIVE=("queued","waiting_provider","raw_archiving","finishing","retrying")
+_SCHEMA_READY=False
+_SCHEMA_LOCK=threading.Lock()
 def _ensure(db: Any)->None:
- db.execute("""CREATE TABLE IF NOT EXISTS creatorthon_media_jobs (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '',provider_job_id TEXT NOT NULL DEFAULT '',raw_video_url TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'queued',stage TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',raw_object_key TEXT NOT NULL DEFAULT '',output_url TEXT NOT NULL DEFAULT '',retry_count BIGINT NOT NULL DEFAULT 0,next_attempt_at BIGINT NOT NULL DEFAULT 0,lease_until BIGINT NOT NULL DEFAULT 0,created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL)""")
- db.execute("CREATE INDEX IF NOT EXISTS idx_creatorthon_media_jobs_due ON creatorthon_media_jobs(status,next_attempt_at)")
+ global _SCHEMA_READY
+ if _SCHEMA_READY:return
+ with _SCHEMA_LOCK:
+  if _SCHEMA_READY:return
+  db.execute("""CREATE TABLE IF NOT EXISTS creatorthon_media_jobs (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,project_id TEXT NOT NULL DEFAULT '',provider TEXT NOT NULL DEFAULT '',provider_job_id TEXT NOT NULL DEFAULT '',raw_video_url TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'queued',stage TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',raw_object_key TEXT NOT NULL DEFAULT '',output_url TEXT NOT NULL DEFAULT '',retry_count BIGINT NOT NULL DEFAULT 0,next_attempt_at BIGINT NOT NULL DEFAULT 0,lease_until BIGINT NOT NULL DEFAULT 0,created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL)""")
+  db.execute("CREATE INDEX IF NOT EXISTS idx_creatorthon_media_jobs_due ON creatorthon_media_jobs(status,next_attempt_at)")
+  _SCHEMA_READY=True
 def _row(row: Any)->dict[str,Any]:
  item=dict(row)
  try:item["payload"]=json.loads(item.pop("payload_json") or "{}")
