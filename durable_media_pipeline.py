@@ -74,6 +74,7 @@ async def process_one(root:Path,job:dict):
 async def scheduler(root:Path):
  while True:
   try:
-   for job in due(root):await process_one(root,job)
+   jobs=await asyncio.to_thread(due,root)
+   for job in jobs:await process_one(root,job)
   except Exception:pass
   await asyncio.sleep(8)

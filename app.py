@@ -1656,7 +1656,10 @@ async def start_creatorthon_finish_job(request: Request, payload: CreatorthonFin
 @app.get("/api/creatorthon/finish-async/{job_id}")
 async def creatorthon_finish_job_status(request: Request, job_id: str):
     user = creatorthon_user(request)
-    job = get_durable_media_job(ROOT, str(user.get("sub", "")), job_id)
+    try:
+        job = await asyncio.to_thread(get_durable_media_job, ROOT, str(user.get("sub", "")), job_id)
+    except Exception:
+        return {"id": job_id, "status": "processing", "stage": "Viralizer is reconnecting to secure media storage…", "url": "", "durable": True}
     if job:
         response = {key: value for key, value in job.items() if key not in {"user_id", "payload"}}
         response["url"] = response.get("output_url", "")
