@@ -269,6 +269,39 @@ def update_project(root: Path, user_id: str, project_id: str, values: dict[str, 
     return _project(row) if row else None
 
 
+def delete_project_video(root: Path, user_id: str, project_id: str) -> dict[str, Any] | None:
+    """Clear one owner's video and video assets while preserving the editable project."""
+    with _connect(root) as db:
+        row = db.execute("SELECT * FROM creatorthon_projects WHERE id=? AND user_id=?", (project_id, user_id)).fetchone()
+        if not row:
+            return None
+        project = _project(row)
+        assets = db.execute("SELECT * FROM creatorthon_assets WHERE project_id=? AND user_id=? AND kind=?", (project_id, user_id, "video")).fetchall()
+        db.execute("DELETE FROM creatorthon_assets WHERE project_id=? AND user_id=? AND kind=?", (project_id, user_id, "video"))
+        production = dict(project.get("production") or {})
+        for key in ("raw_video_url", "raw_object_key", "media_job_id", "finish_job_id", "finish_status", "output_url", "completed_at", "error"):
+            production.pop(key, None)
+        status = "prepared" if project.get("prompt") else "draft"
+        db.execute("UPDATE creatorthon_projects SET video_url='',status=?,production_json=?,updated_at=? WHERE id=? AND user_id=?",
+                   (status, json.dumps(production, ensure_ascii=False), int(time.time()), project_id, user_id))
+    project["assets"] = [dict(asset) for asset in assets]
+    return project
+
+
+def delete_project(root: Path, user_id: str, project_id: str) -> dict[str, Any] | None:
+    """Delete one owner's project and its linked reports/assets."""
+    with _connect(root) as db:
+        row = db.execute("SELECT * FROM creatorthon_projects WHERE id=? AND user_id=?", (project_id, user_id)).fetchone()
+        if not row:
+            return None
+        project = _project(row)
+        assets = db.execute("SELECT * FROM creatorthon_assets WHERE project_id=? AND user_id=?", (project_id, user_id)).fetchall()
+        db.execute("DELETE FROM creatorthon_assets WHERE project_id=? AND user_id=?", (project_id, user_id))
+        db.execute("DELETE FROM creatorthon_reports WHERE project_id=? AND user_id=?", (project_id, user_id))
+        db.execute("DELETE FROM creatorthon_projects WHERE id=? AND user_id=?", (project_id, user_id))
+    project["assets"] = [dict(asset) for asset in assets]
+    return project
+
 def list_projects(root: Path, user_id: str, limit: int = 50, status: str = "") -> list[dict[str, Any]]:
     limit = max(1, min(int(limit), 100))
     query, params = "SELECT * FROM creatorthon_projects WHERE user_id=?", [user_id]

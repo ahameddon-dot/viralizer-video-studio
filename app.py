@@ -64,13 +64,13 @@ from release_dashboard import (
 )
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import (
-    add_asset, create_project, get_profile, list_assets, list_projects, list_reports,
+    add_asset, create_project, delete_project, delete_project_video, get_profile, list_assets, list_projects, list_reports,
     save_profile, save_report, update_project, workspace,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
-from object_store import ObjectStoreError, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
+from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
@@ -862,6 +862,68 @@ async def view_creatorthon_project_video_page(request: Request, project_id: str)
     if not video_url.startswith("/api/finished-video/"):
         raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
     return RedirectResponse(video_url, status_code=307)
+
+def _creatorthon_media_keys(project: dict[str, Any]) -> set[str]:
+    """Return only Viralizer-owned R2 keys attached to a project."""
+    keys: set[str] = set()
+    urls = [str(project.get("video_url") or "")]
+    urls.extend(str(asset.get("url") or "") for asset in project.get("assets") or [])
+    for url in urls:
+        match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", url.strip())
+        if match:
+            keys.add(f"finished_videos/{match.group(1)}")
+    production = project.get("production") if isinstance(project.get("production"), dict) else {}
+    raw_key = str(production.get("raw_object_key") or "").strip().lstrip("/")
+    if re.fullmatch(r"raw_videos/[A-Za-z0-9._-]+\.mp4", raw_key):
+        keys.add(raw_key)
+    return keys
+
+
+async def _delete_creatorthon_media(project: dict[str, Any]) -> list[str]:
+    keys = sorted(_creatorthon_media_keys(project))
+    for key in keys:
+        await delete_object_file(key)
+        if key.startswith("finished_videos/"):
+            filename = key.split("/", 1)[1]
+            local = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+            local.unlink(missing_ok=True)
+    return keys
+
+
+@app.delete("/api/creatorthon/projects/{project_id}/video")
+async def delete_creatorthon_project_video(request: Request, project_id: str):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    project = update_project(ROOT, user_id, project_id, {})
+    if not project:
+        raise HTTPException(404, "Creatorthon project not found.")
+    project["assets"] = [asset for asset in list_assets(ROOT, user_id) if asset.get("project_id") == project_id]
+    try:
+        deleted_keys = await _delete_creatorthon_media(project)
+    except ObjectStoreError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    deleted = delete_project_video(ROOT, user_id, project_id)
+    if not deleted:
+        raise HTTPException(404, "Creatorthon project not found.")
+    return {"deleted": True, "project_id": project_id, "media_deleted": len(deleted_keys)}
+
+
+@app.delete("/api/creatorthon/projects/{project_id}")
+async def delete_creatorthon_project(request: Request, project_id: str):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    project = update_project(ROOT, user_id, project_id, {})
+    if not project:
+        raise HTTPException(404, "Creatorthon project not found.")
+    project["assets"] = [asset for asset in list_assets(ROOT, user_id) if asset.get("project_id") == project_id]
+    try:
+        deleted_keys = await _delete_creatorthon_media(project)
+    except ObjectStoreError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    deleted = delete_project(ROOT, user_id, project_id)
+    if not deleted:
+        raise HTTPException(404, "Creatorthon project not found.")
+    return {"deleted": True, "project_id": project_id, "media_deleted": len(deleted_keys)}
 
 @app.get("/api/creatorthon/projects/{project_id}/share")
 async def share_creatorthon_project_video(request: Request, project_id: str):

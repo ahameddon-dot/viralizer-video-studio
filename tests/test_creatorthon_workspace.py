@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from creatorthon_store import add_asset, create_project, list_projects, save_report, update_project, workspace
+from creatorthon_store import add_asset, create_project, delete_project, delete_project_video, list_projects, save_report, update_project, workspace
 from object_store import _endpoint_url, configured
 
 
@@ -39,6 +39,35 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
             self.assertEqual([item["title"] for item in result["reports"]], ["My report"])
             self.assertEqual([item["url"] for item in result["assets"]], ["/mine.mp4"])
 
+    def test_video_delete_preserves_project_but_removes_video_assets(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ", {"APP_DATA_DIR": folder}):
+            project = create_project(ROOT, "user-1", {"title": "Keep my project"}, {
+                "prompt": {"text": "Keep this prompt"}, "status": "completed",
+                "video_url": "/api/finished-video/viralizer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+                "production": {"raw_object_key": "raw_videos/job-1.mp4", "media_job_id": "media-1"},
+            })
+            add_asset(ROOT, "user-1", {"project_id": project["id"], "kind": "video", "url": project["video_url"]})
+            deleted = delete_project_video(ROOT, "user-1", project["id"])
+            self.assertIsNotNone(deleted)
+            remaining = list_projects(ROOT, "user-1")
+            self.assertEqual(len(remaining), 1)
+            self.assertEqual(remaining[0]["video_url"], "")
+            self.assertEqual(remaining[0]["prompt"]["text"], "Keep this prompt")
+            self.assertNotIn("raw_object_key", remaining[0]["production"])
+
+    def test_project_delete_is_owner_scoped_and_removes_linked_records(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ", {"APP_DATA_DIR": folder}):
+            mine = create_project(ROOT, "user-1", {"title": "Delete mine"})
+            other = create_project(ROOT, "user-2", {"title": "Keep theirs"})
+            save_report(ROOT, "user-1", {"project_id": mine["id"], "title": "Delete report", "content": {}})
+            add_asset(ROOT, "user-1", {"project_id": mine["id"], "kind": "video", "url": "/mine.mp4"})
+            self.assertIsNone(delete_project(ROOT, "user-1", other["id"]))
+            self.assertIsNotNone(delete_project(ROOT, "user-1", mine["id"]))
+            mine_workspace = workspace(ROOT, {"sub": "user-1", "email": "me@example.com"})
+            self.assertEqual(mine_workspace["projects"], [])
+            self.assertEqual(mine_workspace["reports"], [])
+            self.assertEqual(mine_workspace["assets"], [])
+            self.assertEqual([item["title"] for item in list_projects(ROOT, "user-2")], ["Keep theirs"])
     def test_workspace_page_and_authenticated_routes_exist(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         page = (ROOT / "static" / "creatorthon-workspace.html").read_text(encoding="utf-8")
@@ -48,6 +77,10 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("My Workspace", page)
         self.assertIn("My videos", page)
         self.assertIn("/api/creatorthon/workspace", page)
+        self.assertIn("Delete video", page)
+        self.assertIn("Delete project", page)
+        self.assertIn('@app.delete("/api/creatorthon/projects/{project_id}/video")', app_source)
+        self.assertIn('@app.delete("/api/creatorthon/projects/{project_id}")', app_source)
 
     def test_all_creatorthon_versions_link_to_shared_workspace(self):
         for filename in ("creatorthon.html", "creatorthon-v2.html", "creatorthon-v3.html"):

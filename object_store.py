@@ -79,6 +79,24 @@ async def restore_file(path: Path, key: str) -> bool:
     return True
 
 
+async def delete_file(key: str) -> bool:
+    """Delete one known object-store key. Missing objects are treated as already deleted."""
+    key = str(key or "").strip().lstrip("/")
+    if not key or ".." in key.split("/"):
+        raise ObjectStoreError("Invalid media storage key.")
+    client = _client()
+    if client is None:
+        return False
+    try:
+        await asyncio.to_thread(
+            client.delete_object,
+            Bucket=os.environ["R2_BUCKET_NAME"].strip(),
+            Key=key,
+        )
+    except Exception as exc:
+        raise ObjectStoreError(f"Could not delete media from permanent storage: {exc}") from exc
+    return True
+
 async def health() -> dict[str, object]:
     """Verify real object write/delete access without exposing credentials."""
     client = _client()
