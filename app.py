@@ -71,7 +71,7 @@ from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashta
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
-from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job, scheduler as durable_media_scheduler
+from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -414,7 +414,6 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 @app.on_event("startup")
 async def start_daily_scheduler():
     asyncio.create_task(daily_trends.scheduler())
-    asyncio.create_task(durable_media_scheduler(ROOT))
 
 
 @app.get("/health")
