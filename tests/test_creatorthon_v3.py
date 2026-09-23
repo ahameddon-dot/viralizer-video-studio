@@ -96,8 +96,10 @@ class CreatorthonV3Tests(unittest.TestCase):
     def test_completed_video_is_finished_with_speech_and_mandatory_branding(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn("async function finishV3Video", page)
-        self.assertIn("/api/creatorthon/finish", page)
-        self.assertIn("const finalVideoUrl=await finishV3Video", page)
+        self.assertIn("/api/creatorthon/finish-async", page)
+        self.assertIn("const finalVideoUrl=await finishV3Video(rawVideoUrl,provider,job)", page)
+        self.assertIn("provider_job_id:providerJobId", page)
+        self.assertNotIn("api('/api/creatorthon/finish'", page)
         self.assertIn("nativeSpeech=['heygen','hybrid'].includes(provider)", page)
         self.assertIn("narration=nativeSpeech?'':", page)
         self.assertIn("Open narrated finished video", page)
