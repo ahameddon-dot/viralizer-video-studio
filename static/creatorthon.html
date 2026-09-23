@@ -88,8 +88,30 @@ async function loadDirectorHashtags(){if(!selected||!$('#directorHashtags')||$('
 const creatorthonBasePrepareProduction=prepareProduction;
 prepareProduction=async function(){if($('#promptMode')?.value==='custom'){$('#promptStatus').textContent='Your prompt will be used as-is';$('#generate').disabled=!$('#customPromptConfirm').checked||!$('#videoPrompt').value.trim();await loadDirectorHashtags();window.refreshDirectorSummaries?.();return}await creatorthonBasePrepareProduction();splitNarrationScript();await loadDirectorHashtags();window.refreshDirectorSummaries?.()};
 generate=async function(){try{const custom=$('#promptMode').value==='custom';if(custom&&!$('#customPromptConfirm').checked){error('Confirm that you want to use your own video prompt.');return}if(!$('#videoPrompt').value.trim()){error('Add a video prompt before generating.');return}show('generating');$('#generationStage').textContent='Planning your '+$('#targetPlatform').value+' video';const useSpeech=$('#speech').checked,narration=combinedNarrationScript();const saved={topic:selected,provider:$('#provider').value,prompt:{text:$('#videoPrompt').value.trim(),mode:custom?'custom':'viralizer'},narration:{text:useSpeech?narration:'',voice:$('#voice').value},configuration:{target_platform:$('#targetPlatform').value,speech:useSpeech},aspect_ratio:$('#format').value,quality:'720p'};const project=await api('/api/creatorthon/projects',{method:'POST',body:JSON.stringify(saved)});projectId=project.id;history.replaceState(null,'','/creatorthon?project='+encodeURIComponent(projectId));const payload={content:selected,provider:$('#provider').value,target_platform:$('#targetPlatform').value,prompt:$('#videoPrompt').value.trim(),narration:useSpeech?narration:'',duration:+$('#duration').value,quality:'720p',quality_mode:false,allow_standard_fallback:true,aspect_ratio:$('#format').value};const job=await api('/api/video/generate',{method:'POST',body:JSON.stringify(payload)});$('#generationStage').textContent=job.stage||'Generating your video';await api('/api/creatorthon/projects/'+projectId,{method:'PATCH',body:JSON.stringify({provider:job.provider,job_id:job.job_id,status:'processing',production:{duration:+$('#duration').value,target_platform:$('#targetPlatform').value}})});poll(job.provider,job.job_id)}catch(e){show('create');error(e.message)}};
-finishProduction=async function(rawUrl,provider){if(creatorthonFinishPromise)return creatorthonFinishPromise;creatorthonLastRawVideoUrl=rawUrl;creatorthonLastProvider=provider;creatorthonFinishPromise=(async()=>{const narration=$('#speech').checked&&!['heygen','hybrid'].includes(provider)?combinedNarrationScript():'';let lastError;for(let attempt=0;attempt<3;attempt++){try{$('#generationStage').textContent=attempt?'Retrying speech, branding, and secure video saving…':'Adding speech, official logo, watermark, and saving your video…';const finished=await api('/api/creatorthon/finish',{method:'POST',body:JSON.stringify({video_url:rawUrl,narration:narration,voice:$('#voice').value,official_logo_data:creatorthonOfficialLogoData})});await api('/api/creatorthon/projects/'+projectId,{method:'PATCH',body:JSON.stringify({video_url:finished.url,status:'completed',production:{provider,raw_video_url:rawUrl,completed_at:Date.now()}})});showResult(finished.url);return finished.url}catch(error){lastError=error;if(attempt<2)await new Promise(resolve=>setTimeout(resolve,(attempt+1)*4000))}}throw lastError})();try{return await creatorthonFinishPromise}finally{creatorthonFinishPromise=null}};
-const creatorthonBasePreparePublishing=preparePublishing;
+finishProduction=async function(rawUrl,provider){
+  if(creatorthonFinishPromise)return creatorthonFinishPromise;
+  creatorthonLastRawVideoUrl=rawUrl;
+  creatorthonLastProvider=provider;
+  creatorthonFinishPromise=(async()=>{
+    const narration=$('#speech').checked&&!['heygen','hybrid'].includes(provider)?combinedNarrationScript():'';
+    $('#generationStage').textContent='Preparing your narrated video…';
+    const started=await api('/api/creatorthon/finish-async',{method:'POST',body:JSON.stringify({video_url:rawUrl,narration,voice:$('#voice').value,official_logo_data:creatorthonOfficialLogoData})});
+    await api('/api/creatorthon/projects/'+projectId,{method:'PATCH',body:JSON.stringify({status:'processing',production:{provider,raw_video_url:rawUrl,finish_job_id:started.job_id,finish_status:'processing'}})});
+    for(let attempt=0;attempt<180;attempt++){
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      const state=await api('/api/creatorthon/finish-async/'+encodeURIComponent(started.job_id));
+      $('#generationStage').textContent=state.stage||'Finishing your narrated video…';
+      if(state.status==='completed'&&state.url){
+        await api('/api/creatorthon/projects/'+projectId,{method:'PATCH',body:JSON.stringify({video_url:state.url,status:'completed',production:{provider,raw_video_url:rawUrl,finish_job_id:started.job_id,finish_status:'completed',completed_at:Date.now()}})});
+        showResult(state.url);
+        return state.url;
+      }
+      if(state.status==='failed')throw new Error(state.error||'Could not finish your narrated video.');
+    }
+    throw new Error('Your video is still being finished. Reopen this saved project shortly; no new video will be generated.');
+  })();
+  try{return await creatorthonFinishPromise}finally{creatorthonFinishPromise=null}
+};const creatorthonBasePreparePublishing=preparePublishing;
 preparePublishing=async function(){await creatorthonBasePreparePublishing();const directorTags=$('#directorHashtags')?.value.trim();if(directorTags&&directorTags!=='Preparing relevant hashtags…')$('#hashtags').value=directorTags};
 setupCreatorthonProductionFeatures();$('#generate').onclick=generate;$('#duration').onchange=prepareProduction;$('#provider').onchange=prepareProduction;
 </script>

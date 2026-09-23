@@ -72,6 +72,10 @@ from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, restore_file as restore_object_file, upload_file as upload_object_file
 
+# Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
+# of the browser request prevents proxy timeouts while narration is rendered.
+CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
+
 
 async def prepare_article_intelligence_safely(
     content: dict[str, Any],
@@ -1497,22 +1501,51 @@ async def finish_generated_video(video_url: str = Form(...), narration: str = Fo
     return {"url": f"/api/finished-video/{output.name}"}
 
 
+def _official_creatorthon_logo(payload: CreatorthonFinishRequest) -> bytes | None:
+    if not payload.official_logo_data:
+        return None
+    match = re.fullmatch(r"data:image/(?:png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\r\n]+)", payload.official_logo_data)
+    if not match:
+        raise HTTPException(422, "Official logo must be a PNG, JPG, JPEG, or WebP image.")
+    try:
+        logo = base64.b64decode(match.group(1), validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(422, "Official logo data is invalid.") from exc
+    if len(logo) > 10 * 1024 * 1024:
+        raise HTTPException(422, "Official logo must be smaller than 10 MB.")
+    return logo
+
+
+async def _finish_creatorthon_job(
+    job_id: str,
+    payload: CreatorthonFinishRequest,
+    logo_bytes: bytes,
+    official_logo_bytes: bytes | None,
+) -> None:
+    job = CREATORTHON_FINISH_JOBS[job_id]
+    try:
+        job.update(status="processing", stage="Creating narration, branding, and saving your video…")
+        output = await finish_video(
+            payload.video_url,
+            payload.narration,
+            payload.voice,
+            logo_bytes,
+            secondary_logo_bytes=official_logo_bytes,
+        )
+        job.update(stage="Saving your narrated video to your library…")
+        await upload_object_file(output, f"finished_videos/{output.name}", "video/mp4")
+        job.update(status="completed", stage="Your narrated video is ready.", url=f"/api/finished-video/{output.name}")
+    except (MediaFinisherError, ObjectStoreError) as exc:
+        job.update(status="failed", stage="Could not finish your video.", error=str(exc))
+    except Exception:
+        job.update(status="failed", stage="Could not finish your video.", error="The finished video could not be prepared. Please try saving this completed video again.")
+
+
 @app.post("/api/creatorthon/finish")
 async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishRequest):
     creatorthon_user(request)
-    # Creatorthon branding is server-enforced. The client cannot omit or move it.
     logo_bytes = (ROOT / "static" / "viralizer-original-logo.png").read_bytes()
-    official_logo_bytes = None
-    if payload.official_logo_data:
-        match = re.fullmatch(r"data:image/(?:png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=\r\n]+)", payload.official_logo_data)
-        if not match:
-            raise HTTPException(422, "Official logo must be a PNG, JPG, JPEG, or WebP image.")
-        try:
-            official_logo_bytes = base64.b64decode(match.group(1), validate=True)
-        except (ValueError, binascii.Error) as exc:
-            raise HTTPException(422, "Official logo data is invalid.") from exc
-        if len(official_logo_bytes) > 10 * 1024 * 1024:
-            raise HTTPException(422, "Official logo must be smaller than 10 MB.")
+    official_logo_bytes = _official_creatorthon_logo(payload)
     try:
         output = await finish_video(payload.video_url, payload.narration, payload.voice, logo_bytes, secondary_logo_bytes=official_logo_bytes)
         await upload_object_file(output, f"finished_videos/{output.name}", "video/mp4")
@@ -1522,6 +1555,30 @@ async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishR
         raise HTTPException(502, str(exc)) from exc
     return {"url": f"/api/finished-video/{output.name}"}
 
+
+@app.post("/api/creatorthon/finish-async")
+async def start_creatorthon_finish_job(request: Request, payload: CreatorthonFinishRequest):
+    user = creatorthon_user(request)
+    logo_bytes = (ROOT / "static" / "viralizer-original-logo.png").read_bytes()
+    official_logo_bytes = _official_creatorthon_logo(payload)
+    job_id = uuid.uuid4().hex
+    CREATORTHON_FINISH_JOBS[job_id] = {
+        "user_id": str(user.get("sub", "")),
+        "status": "processing",
+        "stage": "Preparing your narrated video…",
+        "created_at": time.time(),
+    }
+    asyncio.create_task(_finish_creatorthon_job(job_id, payload, logo_bytes, official_logo_bytes))
+    return {"job_id": job_id, "status": "processing", "stage": "Preparing your narrated video…"}
+
+
+@app.get("/api/creatorthon/finish-async/{job_id}")
+async def creatorthon_finish_job_status(request: Request, job_id: str):
+    user = creatorthon_user(request)
+    job = CREATORTHON_FINISH_JOBS.get(job_id)
+    if not job or job.get("user_id") != str(user.get("sub", "")):
+        raise HTTPException(404, "Video finishing job not found.")
+    return {key: value for key, value in job.items() if key != "user_id"}
 
 @app.get("/api/finished-video/{filename}")
 async def finished_video(filename: str):
