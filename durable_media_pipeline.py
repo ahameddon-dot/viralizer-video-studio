@@ -87,7 +87,9 @@ async def process_one(root:Path,job:dict):
   with tempfile.TemporaryDirectory(prefix="viralizer-durable-") as folder:
    source=Path(folder)/"source.mp4"
    try:await _download(raw,source)
-   except MediaFinisherError as exc:_retry(root,job,str(exc));return
+   except MediaFinisherError as exc:
+    refreshed=_update(root,job["id"],raw_video_url="",status="retrying",stage="Refreshing the PixVerse media link…",lease_until=0) or job
+    _retry(root,refreshed,str(exc));return
    raw_key=str(job.get("raw_object_key") or f"raw_videos/{job['id']}.mp4")
    if not await upload_file(source,raw_key,"video/mp4"):
     raise ObjectStoreError("Permanent media storage is not configured.")
