@@ -209,7 +209,7 @@ async def require_password(request: Request, call_next):
             elif request.url.path.startswith("/creatorthon-v2"):
                 login_path = "/creatorthon-v2/login"
             else:
-                login_path = "/creatorthon/login"
+                login_path = "/creatorthon/login?next=" + quote(request.url.path + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&%")
             return RedirectResponse(login_path, status_code=303)
     if request.url.path not in public_paths and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
@@ -701,11 +701,12 @@ async def index():
 
 
 @app.get("/creatorthon/login", response_class=HTMLResponse)
-async def creatorthon_login(request: Request):
+async def creatorthon_login(request: Request, next: str = "/creatorthon"):
+    destination = next if next.startswith("/") and not next.startswith("//") else "/creatorthon"
     if read_google_session(request.cookies.get(AUTH_COOKIE, "")):
-        return RedirectResponse("/creatorthon", status_code=303)
+        return RedirectResponse(destination, status_code=303)
     google_ready = google_configured()
-    action = '<a class="google" href="/auth/google?next=/creatorthon"><b>G</b> Continue with Google</a>' if google_ready else '<p class="warning">Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_SESSION_SECRET to this service.</p>'
+    action = ('<a class="google" href="/auth/google?next='+quote(destination, safe='/')+'"><b>G</b> Continue with Google</a>') if google_ready else '<p class="warning">Google sign-in is not configured yet. Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_SESSION_SECRET to this service.</p>'
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Viralizer Creatorthon</title><link rel="preload" href="/static/viralizer-login-intro.mp4?v=1" as="video" type="video/mp4"><link rel="preload" href="/static/viralizer-logo-white.png" as="image"><link rel="stylesheet" href="/static/viralizer-intro.css?v=7"><style>
 *{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 18% 12%,#32135f,#080914 46%);color:#fff;font-family:Inter,system-ui,sans-serif}}main.card{{width:min(460px,calc(100% - 32px));padding:38px;border:1px solid #4b326e;border-radius:22px;background:#111324ee;box-shadow:0 30px 90px #0009}}.mark{{display:block;width:230px;max-width:78%;height:auto;object-fit:contain}}h1{{font-size:32px;letter-spacing:-.04em;margin:22px 0 10px}}p{{color:#adb4cf;line-height:1.6}}.google{{margin-top:25px;min-height:52px;border-radius:12px;background:#fff;color:#171824;text-decoration:none;font-weight:850;display:flex;align-items:center;justify-content:center;gap:11px}}.google b{{color:#4285f4;font-size:20px}}.warning{{padding:13px;border:1px solid #774755;border-radius:11px;background:#321722;color:#ffbeca;font-size:13px}}</style></head><body class="intro-active"><main class="card"><img class="mark" src="/static/viralizer-logo-white.png" alt="Viralizer"><h1>Viralizer Creatorthon</h1><p>Choose your interests, discover relevant worldwide topics, and turn one into a finished video through a simple guided journey.</p>{action}</main><script src="/static/viralizer-intro.js?v=7" defer></script></body></html>""")
 
@@ -813,6 +814,20 @@ async def get_creatorthon_project(request: Request, project_id: str):
         raise HTTPException(404, "Creatorthon project not found.")
     return result
 
+
+@app.get("/creatorthon/projects/{project_id}/video")
+async def view_creatorthon_project_video_page(request: Request, project_id: str):
+    """A browser-friendly, authenticated entry point for a saved video."""
+    user = creatorthon_user(request)
+    result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
+    if not result:
+        raise HTTPException(404, "Creatorthon project not found.")
+    video_url = str(result.get("video_url") or "").strip()
+    if not video_url:
+        raise HTTPException(409, "This project's narrated video is still being prepared.")
+    if not video_url.startswith("/api/finished-video/"):
+        raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
+    return RedirectResponse(video_url, status_code=307)
 
 @app.get("/api/creatorthon/projects/{project_id}/video")
 async def view_creatorthon_project_video(request: Request, project_id: str):
