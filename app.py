@@ -70,7 +70,7 @@ from creatorthon_store import (
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
-from object_store import ObjectStoreError, restore_file as restore_object_file, upload_file as upload_object_file
+from object_store import ObjectStoreError, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -828,6 +828,22 @@ async def view_creatorthon_project_video_page(request: Request, project_id: str)
     if not video_url.startswith("/api/finished-video/"):
         raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
     return RedirectResponse(video_url, status_code=307)
+
+@app.get("/api/creatorthon/projects/{project_id}/share")
+async def share_creatorthon_project_video(request: Request, project_id: str):
+    """Redirect the owner to a seven-day, no-password R2 video share link."""
+    user = creatorthon_user(request)
+    result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
+    if not result:
+        raise HTTPException(404, "Creatorthon project not found.")
+    video_url = str(result.get("video_url") or "").strip()
+    match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", video_url)
+    if not match:
+        raise HTTPException(409, "This project's finished video is not available for sharing yet.")
+    try:
+        return RedirectResponse(object_share_url(f"finished_videos/{match.group(1)}"), status_code=307)
+    except ObjectStoreError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 @app.get("/api/creatorthon/projects/{project_id}/video")
 async def view_creatorthon_project_video(request: Request, project_id: str):
