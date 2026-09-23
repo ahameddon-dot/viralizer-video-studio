@@ -150,12 +150,14 @@ def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="botto
     cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
     completed=subprocess.run(cmd,capture_output=True,text=True)
     if completed.returncode: raise MediaFinisherError("Could not add the selected speech, logo, or text overlay to the video.")
-async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None):
+async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None, source_path=None):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
     output=folder/f"viralizer-{uuid.uuid4().hex}.mp4"
     with tempfile.TemporaryDirectory(prefix="viralizer-finish-") as name:
         temp=Path(name); video=temp/"source.mp4"
-        if str(video_url).startswith('/api/finished-video/'):
+        if source_path is not None:
+            shutil.copy2(Path(source_path),video)
+        elif str(video_url).startswith('/api/finished-video/'):
             filename=Path(str(video_url)).name
             if not re.fullmatch(r'viralizer-[a-f0-9]{32}\.mp4',filename): raise MediaFinisherError("The generated video URL is invalid.")
             local=folder/filename

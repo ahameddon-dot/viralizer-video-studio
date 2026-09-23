@@ -71,6 +71,7 @@ from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashta
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
+from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job, scheduler as durable_media_scheduler
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -413,6 +414,7 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 @app.on_event("startup")
 async def start_daily_scheduler():
     asyncio.create_task(daily_trends.scheduler())
+    asyncio.create_task(durable_media_scheduler(ROOT))
 
 
 @app.get("/health")
@@ -565,6 +567,9 @@ class CreatorthonFinishRequest(BaseModel):
     narration: str = Field(default="", max_length=4096)
     voice: str = Field(default="coral", max_length=40)
     official_logo_data: str = Field(default="", max_length=14_000_000)
+    project_id: str = Field(default="", max_length=64)
+    provider: str = Field(default="", max_length=40)
+    provider_job_id: str = Field(default="", max_length=160)
 
 
 class CreatorthonHashtagRequest(BaseModel):
@@ -1612,27 +1617,21 @@ async def finish_creatorthon_video(request: Request, payload: CreatorthonFinishR
 @app.post("/api/creatorthon/finish-async")
 async def start_creatorthon_finish_job(request: Request, payload: CreatorthonFinishRequest):
     user = creatorthon_user(request)
-    logo_bytes = (ROOT / "static" / "viralizer-original-logo.png").read_bytes()
-    official_logo_bytes = _official_creatorthon_logo(payload)
-    job_id = uuid.uuid4().hex
-    CREATORTHON_FINISH_JOBS[job_id] = {
-        "user_id": str(user.get("sub", "")),
-        "status": "processing",
-        "stage": "Preparing your narrated video…",
-        "created_at": time.time(),
-    }
-    asyncio.create_task(_finish_creatorthon_job(job_id, payload, logo_bytes, official_logo_bytes))
-    return {"job_id": job_id, "status": "processing", "stage": "Preparing your narrated video…"}
-
+    job = enqueue_durable_media_job(ROOT, str(user.get("sub", "")), project_id=payload.project_id, provider=payload.provider, provider_job_id=payload.provider_job_id, raw_video_url=payload.video_url, narration=payload.narration, voice=payload.voice, official_logo_data=payload.official_logo_data)
+    return {"job_id": job["id"], "status": job["status"], "stage": job["stage"], "durable": True}
 
 @app.get("/api/creatorthon/finish-async/{job_id}")
 async def creatorthon_finish_job_status(request: Request, job_id: str):
     user = creatorthon_user(request)
-    job = CREATORTHON_FINISH_JOBS.get(job_id)
-    if not job or job.get("user_id") != str(user.get("sub", "")):
+    job = get_durable_media_job(ROOT, str(user.get("sub", "")), job_id)
+    if job:
+        response = {key: value for key, value in job.items() if key not in {"user_id", "payload"}}
+        response["url"] = response.get("output_url", "")
+        return response
+    legacy = CREATORTHON_FINISH_JOBS.get(job_id)
+    if not legacy or legacy.get("user_id") != str(user.get("sub", "")):
         raise HTTPException(404, "Video finishing job not found.")
-    return {key: value for key, value in job.items() if key != "user_id"}
-
+    return {key: value for key, value in legacy.items() if key != "user_id"}
 @app.get("/api/finished-video/{filename}")
 async def finished_video(filename: str):
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
