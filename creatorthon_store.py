@@ -81,6 +81,13 @@ def _schema_statements() -> list[str]:
           user_id TEXT PRIMARY KEY, refresh_token_ciphertext TEXT NOT NULL,
           channel_id TEXT NOT NULL, channel_title TEXT NOT NULL, oauth_email TEXT NOT NULL,
           created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_insight_jobs (
+          id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic_key TEXT NOT NULL,
+          topic_json TEXT NOT NULL, position INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
+          result_json TEXT NOT NULL DEFAULT '{}', error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+          created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
+          UNIQUE(user_id,topic_key))""",
+        "CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue ON creatorthon_insight_jobs(user_id,position)",
     ]
 
 
@@ -208,6 +215,15 @@ def _connect(root: Path) -> Iterator[Any]:
       channel_id TEXT NOT NULL, channel_title TEXT NOT NULL, oauth_email TEXT NOT NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS creatorthon_insight_jobs (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, topic_key TEXT NOT NULL,
+      topic_json TEXT NOT NULL, position INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
+      result_json TEXT NOT NULL DEFAULT '{}', error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      UNIQUE(user_id,topic_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue
+    ON creatorthon_insight_jobs(user_id,position);
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
@@ -348,6 +364,99 @@ def get_youtube_connection(root: Path, user_id: str) -> dict[str, Any] | None:
 def delete_youtube_connection(root: Path, user_id: str) -> bool:
     with _connect(root) as db:
         cursor = db.execute("DELETE FROM creatorthon_youtube_connections WHERE user_id=?", (user_id,))
+        return bool(cursor.rowcount)
+
+
+def _insight_job(row: Any) -> dict[str, Any]:
+    item = dict(row)
+    item["topic"] = _json_load(item.pop("topic_json", "{}"), {})
+    item["result"] = _json_load(item.pop("result_json", "{}"), {})
+    return item
+
+
+def list_insight_jobs(root: Path, user_id: str) -> list[dict[str, Any]]:
+    with _connect(root) as db:
+        rows = db.execute(
+            "SELECT * FROM creatorthon_insight_jobs WHERE user_id=? ORDER BY position,id", (user_id,)
+        ).fetchall()
+    return [_insight_job(row) for row in rows]
+
+
+def enqueue_insight_job(root: Path, user_id: str, topic: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    title = " ".join(str(topic.get("topic") or topic.get("title") or topic.get("name") or "").split())
+    if not title:
+        raise ValueError("A topic title is required.")
+    topic_key = __import__("hashlib").sha256(title.casefold().encode("utf-8")).hexdigest()
+    now, job_id = int(time.time()), uuid.uuid4().hex
+    with _connect(root) as db:
+        if getattr(db, "dialect", "sqlite") == "postgres":
+            db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-insights:{user_id}",))
+        else:
+            db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT * FROM creatorthon_insight_jobs WHERE user_id=? AND topic_key=?", (user_id, topic_key)
+        ).fetchone()
+        if existing:
+            return _insight_job(existing), False
+        row = db.execute(
+            "SELECT COALESCE(MAX(position),0) AS maximum FROM creatorthon_insight_jobs WHERE user_id=?", (user_id,)
+        ).fetchone()
+        position = int(dict(row).get("maximum") or 0) + 1
+        db.execute(
+            "INSERT INTO creatorthon_insight_jobs (id,user_id,topic_key,topic_json,position,status,created_at,updated_at) VALUES (?,?,?,?,?,'queued',?,?)",
+            (job_id, user_id, topic_key, json.dumps(topic, ensure_ascii=False), position, now, now),
+        )
+        created = db.execute("SELECT * FROM creatorthon_insight_jobs WHERE id=?", (job_id,)).fetchone()
+    return _insight_job(created), True
+
+
+def claim_next_insight_job(root: Path, user_id: str) -> dict[str, Any] | None:
+    now = int(time.time())
+    with _connect(root) as db:
+        if getattr(db, "dialect", "sqlite") == "postgres":
+            db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-insights:{user_id}",))
+        else:
+            db.execute("BEGIN IMMEDIATE")
+        # A crashed web process may leave a job in processing. It is safe to retry after five minutes.
+        db.execute(
+            "UPDATE creatorthon_insight_jobs SET status='queued',error='',updated_at=? WHERE user_id=? AND status='processing' AND updated_at<?",
+            (now, user_id, now - 300),
+        )
+        active = db.execute(
+            "SELECT id FROM creatorthon_insight_jobs WHERE user_id=? AND status='processing' LIMIT 1", (user_id,)
+        ).fetchone()
+        if active:
+            return None
+        row = db.execute(
+            "SELECT * FROM creatorthon_insight_jobs WHERE user_id=? AND status='queued' ORDER BY position,id LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return None
+        job_id = str(dict(row)["id"])
+        db.execute(
+            "UPDATE creatorthon_insight_jobs SET status='processing',attempts=attempts+1,error='',updated_at=? WHERE id=? AND user_id=?",
+            (now, job_id, user_id),
+        )
+        claimed = db.execute("SELECT * FROM creatorthon_insight_jobs WHERE id=?", (job_id,)).fetchone()
+    return _insight_job(claimed)
+
+
+def finish_insight_job(root: Path, user_id: str, job_id: str, result: dict[str, Any] | None = None, error: str = "") -> None:
+    with _connect(root) as db:
+        db.execute(
+            "UPDATE creatorthon_insight_jobs SET status=?,result_json=?,error=?,updated_at=? WHERE id=? AND user_id=?",
+            ("failed" if error else "completed", json.dumps(result or {}, ensure_ascii=False), str(error)[:1000],
+             int(time.time()), job_id, user_id),
+        )
+
+
+def retry_insight_job(root: Path, user_id: str, job_id: str) -> bool:
+    with _connect(root) as db:
+        cursor = db.execute(
+            "UPDATE creatorthon_insight_jobs SET status='queued',error='',updated_at=? WHERE id=? AND user_id=? AND status='failed'",
+            (int(time.time()), job_id, user_id),
+        )
         return bool(cursor.rowcount)
 
 

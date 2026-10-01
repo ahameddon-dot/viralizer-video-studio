@@ -68,6 +68,7 @@ from creatorthon_store import (
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     save_profile, save_report, save_youtube_connection, update_project, workspace,
+    claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
@@ -79,6 +80,7 @@ from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_author
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
 CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
+CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 
 
@@ -571,6 +573,10 @@ class CreatorthonInsightsRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=500)
 
 
+class CreatorthonInsightQueueRequest(BaseModel):
+    topic: dict[str, Any]
+
+
 class CreatorthonProjectRequest(BaseModel):
     topic: dict[str, Any]
     prompt: dict[str, Any] | str = Field(default_factory=dict)
@@ -1035,20 +1041,6 @@ def _report_hashtags(report: Any, outline: dict[str, Any]) -> list[str]:
         values, "hashtags and keywords", "hashtags", "hashtag"
     )
 
-
-@app.get("/privacy")
-async def privacy_policy():
-    return FileResponse(ROOT / "static" / "privacy.html")
-
-
-@app.get("/about")
-async def public_homepage():
-    return FileResponse(ROOT / "static" / "about.html")
-
-
-@app.get("/terms")
-async def terms_of_service():
-    return FileResponse(ROOT / "static" / "terms.html")
     if not raw:
         raw = _report_insight(report, "Hashtags") or _report_insight(report, "Hashtags and Keywords")
     if isinstance(raw, dict):
@@ -1067,6 +1059,21 @@ async def terms_of_service():
             if tag != "#" and tag.casefold() not in {item.casefold() for item in tags}:
                 tags.append(tag)
     return tags[:20]
+
+
+@app.get("/privacy")
+async def privacy_policy():
+    return FileResponse(ROOT / "static" / "privacy.html")
+
+
+@app.get("/about")
+async def public_homepage():
+    return FileResponse(ROOT / "static" / "about.html")
+
+
+@app.get("/terms")
+async def terms_of_service():
+    return FileResponse(ROOT / "static" / "terms.html")
 
 
 def _public_project(project: dict[str, Any]) -> dict[str, Any]:
@@ -1243,15 +1250,13 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     return {"topics": topics, "count": len(topics), "source": "Worldwide public news sources"}
 
 
-@app.post("/api/creatorthon/proprietary-insights")
-async def creatorthon_proprietary_insights(request: Request, payload: CreatorthonInsightsRequest):
-    creatorthon_user(request)
+async def _proprietary_insight_payload(topic: str) -> dict[str, Any]:
     try:
-        report = await get_full_report_from_mcp(payload.topic)
+        report = await get_full_report_from_mcp(topic)
     except MCPOutlineError as exc:
-        raise HTTPException(502, str(exc)) from exc
+        raise exc
     try:
-        outline = outline_from_full_report(report, payload.topic)
+        outline = outline_from_full_report(report, topic)
     except MCPOutlineError:
         # Insights reports are valid even when the optional video-outline section is absent.
         outline = {}
@@ -1267,13 +1272,76 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
         "resonance": _first_report_value(values, "resonance") or outline.get("estimated_resonance", ""),
     }
     return {
-        "topic": payload.topic,
+        "topic": topic,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
         "creator_insight": creator,
         "hashtags": hashtags,
         "source": "Viralizer MCP",
     }
+
+
+async def _run_creatorthon_insight_queue(user_id: str) -> None:
+    try:
+        while True:
+            job = claim_next_insight_job(ROOT, user_id)
+            if not job:
+                return
+            try:
+                result = await _proprietary_insight_payload(str(job.get("topic", {}).get("topic") or job.get("topic", {}).get("title") or job.get("topic", {}).get("name") or ""))
+                finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
+            except Exception as exc:
+                finish_insight_job(ROOT, user_id, str(job["id"]), error=str(exc) or "Viralizer intelligence could not complete this topic.")
+    finally:
+        CREATORTHON_INSIGHT_TASKS.pop(user_id, None)
+
+
+def _start_creatorthon_insight_queue(user_id: str) -> None:
+    task = CREATORTHON_INSIGHT_TASKS.get(user_id)
+    if task and not task.done():
+        return
+    CREATORTHON_INSIGHT_TASKS[user_id] = asyncio.create_task(_run_creatorthon_insight_queue(user_id))
+
+
+@app.post("/api/creatorthon/proprietary-insights")
+async def creatorthon_proprietary_insights(request: Request, payload: CreatorthonInsightsRequest):
+    creatorthon_user(request)
+    try:
+        return await _proprietary_insight_payload(payload.topic)
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/creatorthon/insight-queue")
+async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsightQueueRequest):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    try:
+        job, created = enqueue_insight_job(ROOT, user_id, payload.topic)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    _start_creatorthon_insight_queue(user_id)
+    return {"job": job, "created": created, "jobs": list_insight_jobs(ROOT, user_id)}
+
+
+@app.get("/api/creatorthon/insight-queue")
+async def get_creatorthon_insight_queue(request: Request):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    jobs = list_insight_jobs(ROOT, user_id)
+    if any(job.get("status") in {"queued", "processing"} for job in jobs):
+        _start_creatorthon_insight_queue(user_id)
+    return {"jobs": jobs}
+
+
+@app.post("/api/creatorthon/insight-queue/{job_id}/retry")
+async def retry_creatorthon_insight(request: Request, job_id: str):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    if not retry_insight_job(ROOT, user_id, job_id):
+        raise HTTPException(409, "Only a failed topic analysis can be retried.")
+    _start_creatorthon_insight_queue(user_id)
+    return {"jobs": list_insight_jobs(ROOT, user_id)}
 
 
 @app.get("/api/creatorthon/event-status")
