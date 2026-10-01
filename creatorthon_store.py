@@ -72,7 +72,7 @@ def _schema_statements() -> list[str]:
           url TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at BIGINT NOT NULL)""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC)",
         """CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
-          event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at BIGINT NOT NULL,
+          event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at BIGINT NOT NULL, seat_number INTEGER NOT NULL DEFAULT 0,
           generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
           generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
           generation_updated_at BIGINT NOT NULL DEFAULT 0,
@@ -87,6 +87,32 @@ def _project_columns() -> tuple[tuple[str, str], ...]:
         ("article_intelligence_json", "TEXT NOT NULL DEFAULT '{}'"), ("production_json", "TEXT NOT NULL DEFAULT '{}'"),
         ("qc_json", "TEXT NOT NULL DEFAULT '{}'"), ("thumbnail_url", "TEXT NOT NULL DEFAULT ''"),
         ("aspect_ratio", "TEXT NOT NULL DEFAULT ''"), ("quality", "TEXT NOT NULL DEFAULT ''"),
+    )
+
+
+def _ensure_event_account_schema(db: Any) -> None:
+    _ensure_column(db, "creatorthon_event_accounts", "seat_number", "INTEGER NOT NULL DEFAULT 0")
+    rows = db.execute(
+        "SELECT event_key,user_id,seat_number FROM creatorthon_event_accounts ORDER BY event_key,admitted_at,user_id"
+    ).fetchall()
+    used: dict[str, set[int]] = {}
+    for row in rows:
+        item = dict(row)
+        key = str(item["event_key"])
+        number = int(item.get("seat_number") or 0)
+        occupied = used.setdefault(key, set())
+        if number > 0:
+            occupied.add(number)
+            continue
+        number = next(candidate for candidate in range(1, len(rows) + 2) if candidate not in occupied)
+        db.execute(
+            "UPDATE creatorthon_event_accounts SET seat_number=? WHERE event_key=? AND user_id=?",
+            (number, key, str(item["user_id"])),
+        )
+        occupied.add(number)
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_creatorthon_event_seat "
+        "ON creatorthon_event_accounts(event_key,seat_number) WHERE seat_number > 0"
     )
 
 
@@ -123,6 +149,7 @@ def _connect(root: Path) -> Iterator[Any]:
                         db.execute(statement)
                     for name, declaration in _project_columns():
                         _ensure_column(db, "creatorthon_projects", name, declaration)
+                    _ensure_event_account_schema(db)
                     connection.commit()
                     _POSTGRES_READY = True
                 yield db
@@ -166,6 +193,7 @@ def _connect(root: Path) -> Iterator[Any]:
     CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
       event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at INTEGER NOT NULL,
+      seat_number INTEGER NOT NULL DEFAULT 0,
       generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
       generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
       generation_updated_at INTEGER NOT NULL DEFAULT 0,
@@ -174,6 +202,7 @@ def _connect(root: Path) -> Iterator[Any]:
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
+    _ensure_event_account_schema(db)
     try:
         yield db
         db.commit()
@@ -233,8 +262,17 @@ def claim_event_seat(root: Path, user_id: str, limit: int = 50) -> dict[str, Any
         total = int(dict(count_row).get("total", 0) if hasattr(count_row, "keys") else count_row[0])
         if total >= max(1, int(limit)):
             raise RuntimeError("The 50-user Creatorthon event capacity has been reached.")
-        db.execute("INSERT INTO creatorthon_event_accounts (event_key,user_id,admitted_at) VALUES (?,?,?)", (key, user_id, now))
-        return {"event_key": key, "user_id": user_id, "admitted_at": now, "generation_status": ""}
+        occupied_rows = db.execute(
+            "SELECT seat_number FROM creatorthon_event_accounts WHERE event_key=? AND seat_number>0",
+            (key,),
+        ).fetchall()
+        occupied = {int(dict(item).get("seat_number") or 0) for item in occupied_rows}
+        seat_number = next(number for number in range(1, max(1, int(limit)) + 1) if number not in occupied)
+        db.execute(
+            "INSERT INTO creatorthon_event_accounts (event_key,user_id,admitted_at,seat_number) VALUES (?,?,?,?)",
+            (key, user_id, now, seat_number),
+        )
+        return {"event_key": key, "user_id": user_id, "admitted_at": now, "seat_number": seat_number, "generation_status": ""}
 
 
 def generation_entitlement(root: Path, user_id: str) -> dict[str, Any]:

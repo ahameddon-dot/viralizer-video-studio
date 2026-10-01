@@ -76,6 +76,8 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn('@app.post("/api/creatorthon/reports")', app_source)
         self.assertIn("My Workspace", page)
         self.assertIn("My videos", page)
+        self.assertIn("participantBadge", page)
+        self.assertIn("participant_label", page)
         self.assertIn("/api/creatorthon/workspace", page)
         self.assertIn("Delete video", page)
         self.assertIn("Delete project", page)
@@ -98,6 +100,12 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         for filename in ("creatorthon.html", "creatorthon-v2.html", "creatorthon-v3.html"):
             page = (ROOT / "static" / filename).read_text(encoding="utf-8")
             self.assertIn('/creatorthon/workspace', page, filename)
+
+    def test_standard_creatorthon_displays_event_participant_number(self):
+        page = (ROOT / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("participantBadge", page)
+        self.assertIn("/api/creatorthon/event-status", page)
+        self.assertIn("participant_label", page)
 
     def test_cloud_storage_is_optional_for_local_development(self):
         with patch.dict("os.environ", {}, clear=True):

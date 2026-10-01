@@ -1217,10 +1217,16 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
 @app.get("/api/creatorthon/event-status")
 async def creatorthon_event_status(request: Request):
     user = creatorthon_user(request)
+    capacity = int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50"))
     if _unlimited_creatorthon_user(user):
-        return {"generation_used": False, "generation_status": "unlimited", "unlimited": True}
+        return {"generation_used": False, "generation_status": "unlimited", "unlimited": True,
+                "participant_number": None, "capacity": capacity, "participant_label": "Organizer"}
     status = generation_entitlement(ROOT, str(user.get("sub", "")))
-    return {"generation_used": status.get("generation_status") == "accepted", "generation_status": status.get("generation_status") or "available", "unlimited": False}
+    seat_number = int(status.get("seat_number") or 0)
+    return {"generation_used": status.get("generation_status") == "accepted",
+            "generation_status": status.get("generation_status") or "available", "unlimited": False,
+            "participant_number": seat_number, "capacity": capacity,
+            "participant_label": f"Participant #{seat_number} of {capacity}"}
 
 
 @app.post("/api/creatorthon/projects")

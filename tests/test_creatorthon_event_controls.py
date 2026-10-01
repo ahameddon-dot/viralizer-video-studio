@@ -32,9 +32,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
             clear=False,
         ):
             root = Path(directory)
-            claim_event_seat(root, "one", 2)
-            claim_event_seat(root, "two", 2)
-            claim_event_seat(root, "one", 2)
+            first = claim_event_seat(root, "one", 2)
+            second = claim_event_seat(root, "two", 2)
+            returning = claim_event_seat(root, "one", 2)
+            self.assertEqual(first["seat_number"], 1)
+            self.assertEqual(second["seat_number"], 2)
+            self.assertEqual(returning["seat_number"], 1)
             with self.assertRaisesRegex(RuntimeError, "50-user"):
                 claim_event_seat(root, "three", 2)
 
