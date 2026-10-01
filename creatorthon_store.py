@@ -71,6 +71,12 @@ def _schema_statements() -> list[str]:
           id TEXT PRIMARY KEY, user_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL,
           url TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at BIGINT NOT NULL)""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC)",
+        """CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
+          event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at BIGINT NOT NULL,
+          generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
+          generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
+          generation_updated_at BIGINT NOT NULL DEFAULT 0,
+          PRIMARY KEY (event_key, user_id))""",
     ]
 
 
@@ -158,6 +164,13 @@ def _connect(root: Path) -> Iterator[Any]:
       kind TEXT NOT NULL, url TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC);
+    CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
+      event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at INTEGER NOT NULL,
+      generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
+      generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
+      generation_updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (event_key, user_id)
+    );
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
@@ -199,6 +212,64 @@ def database_health(root: Path) -> dict[str, Any]:
         else:
             category = "database_unavailable"
         return {"configured": configured, "backend": backend, "ready": False, "error": category}
+
+
+def event_key() -> str:
+    return os.getenv("CREATORTHON_EVENT_KEY", "creatorthon-event-2026").strip() or "creatorthon-event-2026"
+
+
+def claim_event_seat(root: Path, user_id: str, limit: int = 50) -> dict[str, Any]:
+    """Atomically admit one account to the configured event, up to the shared cap."""
+    key, now = event_key(), int(time.time())
+    with _connect(root) as db:
+        if getattr(db, "dialect", "sqlite") == "postgres":
+            db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-seat:{key}",))
+        else:
+            db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, user_id)).fetchone()
+        if row:
+            return dict(row)
+        count_row = db.execute("SELECT COUNT(*) AS total FROM creatorthon_event_accounts WHERE event_key=?", (key,)).fetchone()
+        total = int(dict(count_row).get("total", 0) if hasattr(count_row, "keys") else count_row[0])
+        if total >= max(1, int(limit)):
+            raise RuntimeError("The 50-user Creatorthon event capacity has been reached.")
+        db.execute("INSERT INTO creatorthon_event_accounts (event_key,user_id,admitted_at) VALUES (?,?,?)", (key, user_id, now))
+        return {"event_key": key, "user_id": user_id, "admitted_at": now, "generation_status": ""}
+
+
+def generation_entitlement(root: Path, user_id: str) -> dict[str, Any]:
+    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+    with _connect(root) as db:
+        row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (event_key(), user_id)).fetchone()
+    return dict(row) if row else {}
+
+
+def reserve_event_generation(root: Path, user_id: str, project_id: str, provider: str) -> dict[str, Any]:
+    """Reserve the one generation slot. Failed provider starts can release it safely."""
+    key, now = event_key(), int(time.time())
+    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+    with _connect(root) as db:
+        if getattr(db, "dialect", "sqlite") == "postgres":
+            db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-generation:{key}:{user_id}",))
+        else:
+            db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, user_id)).fetchone()
+        item = dict(row)
+        status = str(item.get("generation_status") or "")
+        if status in {"reserved", "accepted"}:
+            return {**item, "allowed": False}
+        db.execute("UPDATE creatorthon_event_accounts SET generation_status='reserved',generation_project_id=?,generation_provider=?,generation_updated_at=? WHERE event_key=? AND user_id=?", (project_id, provider, now, key, user_id))
+    return {"allowed": True, "generation_status": "reserved", "generation_project_id": project_id}
+
+
+def release_event_generation(root: Path, user_id: str, project_id: str) -> None:
+    with _connect(root) as db:
+        db.execute("UPDATE creatorthon_event_accounts SET generation_status='',generation_project_id='',generation_provider='',generation_job_id='',generation_updated_at=? WHERE event_key=? AND user_id=? AND generation_status='reserved' AND generation_project_id=?", (int(time.time()), event_key(), user_id, project_id))
+
+
+def accept_event_generation(root: Path, user_id: str, project_id: str, provider: str, job_id: str) -> None:
+    with _connect(root) as db:
+        db.execute("UPDATE creatorthon_event_accounts SET generation_status='accepted',generation_provider=?,generation_job_id=?,generation_updated_at=? WHERE event_key=? AND user_id=? AND generation_project_id=?", (provider, job_id, int(time.time()), event_key(), user_id, project_id))
 
 
 def get_profile(root: Path, user: dict[str, Any]) -> dict[str, Any]:

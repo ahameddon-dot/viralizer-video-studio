@@ -52,6 +52,17 @@ def publishing_status() -> dict[str, dict[str, Any]]:
             "configured": bool(os.getenv("LINKEDIN_ACCESS_TOKEN", "").strip()) and bool(os.getenv("LINKEDIN_AUTHOR_URN", "").strip()),
             "label": "LinkedIn",
         },
+        "youtube": {
+            "configured": bool(
+                os.getenv("YOUTUBE_ACCESS_TOKEN", "").strip()
+                or (
+                    os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+                    and os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+                    and os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+                )
+            ),
+            "label": "YouTube",
+        },
     }
 
 
@@ -172,14 +183,63 @@ async def _linkedin(caption: str, hashtags: list[str], video_path: Path) -> dict
         return {"status": "published", "id": post.headers.get("x-restli-id", "")}
 
 
+async def _youtube_access_token(client: httpx.AsyncClient) -> str:
+    refresh = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+    client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+    if refresh and client_id and client_secret:
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={"client_id": client_id, "client_secret": client_secret, "refresh_token": refresh, "grant_type": "refresh_token"},
+        )
+        if response.is_error or not response.json().get("access_token"):
+            raise SocialPublishError("Viralizer could not refresh its YouTube connection. Reconnect the YouTube account.")
+        return str(response.json()["access_token"])
+    return os.getenv("YOUTUBE_ACCESS_TOKEN", "").strip()
+
+
+async def _youtube(caption: str, hashtags: list[str], video_path: Path) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=300) as client:
+        token = await _youtube_access_token(client)
+    if not token:
+        raise SocialPublishError("YouTube publishing is not configured.")
+    title = next((line.strip() for line in caption.splitlines() if line.strip()), "Viralizer video")[:100]
+    description = _caption(caption, hashtags)[:5000]
+    privacy = os.getenv("YOUTUBE_PRIVACY_STATUS", "public").strip().lower()
+    if privacy not in {"public", "unlisted", "private"}:
+        privacy = "public"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": "video/mp4",
+        "X-Upload-Content-Length": str(video_path.stat().st_size),
+    }
+    async with httpx.AsyncClient(timeout=300) as client:
+        initialized = await client.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos",
+            params={"uploadType": "resumable", "part": "snippet,status"},
+            headers=headers,
+            json={"snippet": {"title": title, "description": description}, "status": {"privacyStatus": privacy}},
+        )
+        if initialized.is_error or not initialized.headers.get("location"):
+            raise SocialPublishError("YouTube could not initialize the video upload. Reconnect the Viralizer YouTube account.")
+        with video_path.open("rb") as source:
+            uploaded = await client.put(initialized.headers["location"], content=source.read(), headers={"Content-Type": "video/mp4"})
+        if uploaded.is_error:
+            raise SocialPublishError("YouTube could not complete the video upload.")
+        video_id = str(uploaded.json().get("id") or "")
+        return {"status": "published", "id": video_id, "url": f"https://youtu.be/{video_id}" if video_id else ""}
+
+
 async def publish_all(video_path: Path, video_url: str, caption: str, hashtags: list[str], platforms: list[str]) -> dict[str, Any]:
-    selected = [value.lower() for value in platforms if value.lower() in {"instagram", "facebook", "linkedin"}]
+    selected = [value.lower() for value in platforms if value.lower() in {"instagram", "facebook", "linkedin", "youtube"}]
     if not selected:
         raise SocialPublishError("Select at least one social platform.")
     handlers = {
         "instagram": lambda: _instagram(caption, hashtags, video_url),
         "facebook": lambda: _facebook(caption, hashtags, video_path),
         "linkedin": lambda: _linkedin(caption, hashtags, video_path),
+        "youtube": lambda: _youtube(caption, hashtags, video_path),
     }
     results = {}
     for platform in selected:

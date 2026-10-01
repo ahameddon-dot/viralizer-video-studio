@@ -1,0 +1,62 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import app
+from creatorthon_store import (
+    accept_event_generation,
+    claim_event_seat,
+    generation_entitlement,
+    release_event_generation,
+    reserve_event_generation,
+)
+
+
+class CreatorthonEventControlTests(unittest.TestCase):
+    def test_event_capacity_is_shared_and_atomic_in_store(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"APP_DATA_DIR": directory, "CREATORTHON_EVENT_KEY": "test-event"},
+            clear=False,
+        ):
+            root = Path(directory)
+            claim_event_seat(root, "one", 2)
+            claim_event_seat(root, "two", 2)
+            claim_event_seat(root, "one", 2)
+            with self.assertRaisesRegex(RuntimeError, "50-user"):
+                claim_event_seat(root, "three", 2)
+
+    def test_generation_is_released_before_acceptance_and_locked_after(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"APP_DATA_DIR": directory, "CREATORTHON_EVENT_KEY": "generation-test"},
+            clear=False,
+        ):
+            root = Path(directory)
+            self.assertTrue(reserve_event_generation(root, "user", "project-a", "pixverse")["allowed"])
+            self.assertFalse(reserve_event_generation(root, "user", "project-b", "pixverse")["allowed"])
+            release_event_generation(root, "user", "project-a")
+            self.assertTrue(reserve_event_generation(root, "user", "project-b", "pixverse")["allowed"])
+            accept_event_generation(root, "user", "project-b", "pixverse", "job-1")
+            self.assertEqual(generation_entitlement(root, "user")["generation_status"], "accepted")
+            self.assertFalse(reserve_event_generation(root, "user", "project-c", "pixverse")["allowed"])
+
+    def test_non_english_topics_are_excluded(self):
+        self.assertTrue(app._english_topic({"topic": "PlayStation 5 creator trends", "language": "en"}))
+        self.assertFalse(app._english_topic({"topic": "விளையாட்டு செய்திகள்"}))
+        self.assertFalse(app._english_topic({"topic": "English title", "language": "fr"}))
+
+    def test_public_project_never_exposes_private_prompt(self):
+        result = app._public_project({
+            "id": "p1",
+            "topic": {"topic": "PlayStation 5"},
+            "prompt": {"text": "SECRET DETAILED PRODUCTION PROMPT", "concept": "Console reveal"},
+        })
+        self.assertEqual(result["prompt"]["text"], "Console reveal")
+        self.assertNotIn("SECRET", str(result))
+
+
+if __name__ == "__main__":
+    unittest.main()

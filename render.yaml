@@ -60,6 +60,18 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         value: viralizer-media
+      - key: CREATORTHON_EVENT_KEY
+        value: creatorthon-event-2026
+      - key: CREATORTHON_EVENT_USER_LIMIT
+        value: 50
+      - key: YOUTUBE_CLIENT_ID
+        sync: false
+      - key: YOUTUBE_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_REFRESH_TOKEN
+        sync: false
+      - key: YOUTUBE_PRIVACY_STATUS
+        value: public
       - key: DAILY_TRENDS_ENABLED
         value: false
       - key: RUN_MEDIA_WORKER_IN_WEB

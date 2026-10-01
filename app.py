@@ -64,8 +64,9 @@ from release_dashboard import (
 )
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import (
-    add_asset, create_project, delete_project, delete_project_video, get_profile, list_assets, list_projects, list_reports,
-    save_profile, save_report, update_project, workspace,
+    accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
+    generation_entitlement, get_profile, list_assets, list_projects, list_reports, release_event_generation,
+    reserve_event_generation, save_profile, save_report, update_project, workspace,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
@@ -523,6 +524,10 @@ class CreatorthonTopicsRequest(BaseModel):
     interests: list[str] = Field(min_length=1, max_length=4)
 
 
+class CreatorthonInsightsRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=500)
+
+
 class CreatorthonProjectRequest(BaseModel):
     topic: dict[str, Any]
     prompt: dict[str, Any] | str = Field(default_factory=dict)
@@ -577,6 +582,10 @@ class CreatorthonConceptGenerateRequest(GenerateRequest):
     official_logo_data: str = Field(default="", max_length=14_000_000)
 
 
+class CreatorthonPrepareRequest(GenerateRequest):
+    project_id: str = Field(default="", max_length=64)
+
+
 class CreatorthonHashtagRequest(BaseModel):
     topic: dict[str, Any]
 
@@ -586,7 +595,7 @@ class CreatorthonPublishRequest(BaseModel):
     video_url: str = Field(min_length=4, max_length=2000)
     caption: str = Field(default="", max_length=3000)
     hashtags: list[str] = Field(default_factory=list, max_length=30)
-    platforms: list[str] = Field(default_factory=list, max_length=3)
+    platforms: list[str] = Field(default_factory=list, max_length=4)
 
 
 class DailyDiscoveryRequest(BaseModel):
@@ -825,19 +834,74 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if not user:
         raise HTTPException(401, "Google sign-in required.")
+    try:
+        claim_event_seat(ROOT, str(user.get("sub", "")), int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+    except RuntimeError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return user
+
+
+def _english_topic(item: dict[str, Any]) -> bool:
+    language = str(item.get("language") or item.get("lang") or "").strip().lower()
+    if language and language not in {"en", "en-us", "en-gb", "english"}:
+        return False
+    text = " ".join(str(item.get(key) or "") for key in ("topic", "title", "summary", "description"))
+    return not bool(re.search(r"[\u0400-\u052f\u0600-\u06ff\u0750-\u077f\u0900-\u0dff\u3040-\u30ff\u3400-\u9fff]", text))
+
+
+def _report_values(value: Any, found: dict[str, Any] | None = None) -> dict[str, Any]:
+    found = found or {}
+    if isinstance(value, dict):
+        label = str(value.get("key") or value.get("label") or value.get("title") or "").strip().casefold()
+        data = value.get("data")
+        if label and data not in (None, "", [], {}):
+            found[label] = data
+        for key, child in value.items():
+            normalized = str(key).replace("_", " ").strip().casefold()
+            if child not in (None, "", [], {}) and normalized not in {"data", "key", "label", "title"}:
+                found.setdefault(normalized, child)
+            _report_values(child, found)
+    elif isinstance(value, list):
+        for child in value:
+            _report_values(child, found)
+    return found
+
+
+def _first_report_value(values: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        wanted = name.casefold()
+        for key, value in values.items():
+            if key == wanted or wanted in key:
+                if value not in (None, "", [], {}):
+                    return value
+    return ""
+
+
+def _public_project(project: dict[str, Any]) -> dict[str, Any]:
+    """Remove proprietary production prompts from every browser-facing project payload."""
+    result = dict(project)
+    stored = project.get("prompt") if isinstance(project.get("prompt"), dict) else {}
+    concept = str(stored.get("concept") or (project.get("topic") or {}).get("topic") or (project.get("topic") or {}).get("title") or "Video concept")
+    result["prompt"] = {"concept": concept, "text": concept[:180], "secured": True}
+    return result
+
+
+def _public_workspace(data: dict[str, Any]) -> dict[str, Any]:
+    result = dict(data)
+    result["projects"] = [_public_project(project) for project in data.get("projects", [])]
+    return result
 
 
 @app.get("/api/creatorthon/profile")
 async def creatorthon_profile(request: Request):
     user = creatorthon_user(request)
-    return {"profile": get_profile(ROOT, user), "projects": list_projects(ROOT, str(user.get("sub", "")))}
+    return {"profile": get_profile(ROOT, user), "projects": [_public_project(item) for item in list_projects(ROOT, str(user.get("sub", "")))]}
 
 
 @app.get("/api/creatorthon/workspace")
 async def creatorthon_workspace(request: Request):
     """Return the signed-in user's complete, account-scoped creation history."""
-    return workspace(ROOT, creatorthon_user(request))
+    return _public_workspace(workspace(ROOT, creatorthon_user(request)))
 
 
 @app.get("/api/creatorthon/projects/{project_id}")
@@ -846,7 +910,7 @@ async def get_creatorthon_project(request: Request, project_id: str):
     result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
     if not result:
         raise HTTPException(404, "Creatorthon project not found.")
-    return result
+    return _public_project(result)
 
 
 @app.get("/creatorthon/projects/{project_id}/video")
@@ -983,8 +1047,42 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
         topics = await discover_category_topics(queries, 24)
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide topics: {exc}") from exc
-    topics = annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything")
+    topics = [item for item in annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything") if _english_topic(item)]
     return {"topics": topics, "count": len(topics), "source": "Worldwide public news sources"}
+
+
+@app.post("/api/creatorthon/proprietary-insights")
+async def creatorthon_proprietary_insights(request: Request, payload: CreatorthonInsightsRequest):
+    creatorthon_user(request)
+    try:
+        report = await get_full_report_from_mcp(payload.topic)
+        outline = outline_from_full_report(report, payload.topic)
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    values = _report_values(report)
+    audience = _first_report_value(values, "audience detected", "audience insight", "audience")
+    creator = _first_report_value(values, "creator insight", "creator insights")
+    metrics = {
+        "viral_topic_rank": outline.get("viral_rank") or _first_report_value(values, "viral topic rank"),
+        "total_audience": outline.get("total_audience") or _first_report_value(values, "total audience"),
+        "estimated_remaining_views": outline.get("remaining_reach") or _first_report_value(values, "estimated remaining views", "remaining views", "remaining reach"),
+        "boost": _first_report_value(values, "boost"),
+        "resonance": _first_report_value(values, "resonance") or outline.get("estimated_resonance", ""),
+    }
+    return {
+        "topic": payload.topic,
+        "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
+        "audience_insight": audience,
+        "creator_insight": creator,
+        "source": "Viralizer MCP",
+    }
+
+
+@app.get("/api/creatorthon/event-status")
+async def creatorthon_event_status(request: Request):
+    user = creatorthon_user(request)
+    status = generation_entitlement(ROOT, str(user.get("sub", "")))
+    return {"generation_used": status.get("generation_status") == "accepted", "generation_status": status.get("generation_status") or "available"}
 
 
 @app.post("/api/creatorthon/projects")
@@ -993,7 +1091,7 @@ async def new_creatorthon_project(request: Request, payload: CreatorthonProjectR
     if not str(payload.topic.get("topic") or payload.topic.get("title") or "").strip():
         raise HTTPException(422, "Choose a valid topic.")
     values = payload.model_dump(exclude={"topic"}, exclude_defaults=True)
-    return create_project(ROOT, str(user.get("sub", "")), payload.topic, values)
+    return _public_project(create_project(ROOT, str(user.get("sub", "")), payload.topic, values))
 
 
 @app.patch("/api/creatorthon/projects/{project_id}")
@@ -1009,7 +1107,7 @@ async def patch_creatorthon_project(request: Request, project_id: str, payload: 
         if not existing:
             add_asset(ROOT, user_id, {"project_id": project_id, "kind": "video", "url": changes["video_url"],
                                       "metadata": {"provider": result.get("provider", ""), "status": result.get("status", "")}})
-    return result
+    return _public_project(result)
 
 
 @app.get("/api/creatorthon/publishing/status")
@@ -1030,6 +1128,11 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     project = update_project(ROOT, str(user.get("sub", "")), payload.project_id, {})
     if not project:
         raise HTTPException(404, "Creatorthon project not found.")
+    production = dict(project.get("production") or {})
+    published = dict(production.get("published") or {})
+    requested = {value.lower() for value in payload.platforms}
+    if "youtube" in requested and published.get("youtube", {}).get("status") == "published":
+        raise HTTPException(409, "This video has already been published to YouTube.")
     match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", payload.video_url)
     if not match:
         raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
@@ -1043,9 +1146,11 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
         result = await publish_all(video_path, payload.video_url, payload.caption, hashtags, payload.platforms)
     except SocialPublishError as exc:
         raise HTTPException(422, str(exc)) from exc
+    published.update(result.get("results") or {})
+    production["published"] = published
     update_project(
         ROOT, str(user.get("sub", "")), payload.project_id,
-        {"status": "published" if result["all_published"] else "publish-partial"},
+        {"status": "published" if result["all_published"] else "publish-partial", "production": production},
     )
     return {**result, "hashtags": hashtags}
 
@@ -1353,11 +1458,31 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
     """The browser starts one provider job; durable server storage owns every later step."""
     user = creatorthon_user(request)
     user_id = str(user.get("sub", ""))
-    started = await generate_video(payload)
+    project = update_project(ROOT, user_id, payload.project_id, {})
+    if not project:
+        raise HTTPException(404, "Creatorthon project not found.")
+    private_prompt = str((project.get("prompt") or {}).get("text") or "").strip()
+    if not private_prompt:
+        raise HTTPException(409, "Prepare this concept before generating the video.")
+    payload.prompt = private_prompt
+    payload.content = project.get("topic") or payload.content
+    reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider)
+    if not reservation.get("allowed"):
+        detail = "This Creatorthon account has already used its one video generation. Open My Workspace to view or recover that video."
+        if reservation.get("generation_status") == "reserved":
+            detail = "A video generation is already starting for this account. Please wait and recover it from My Workspace instead of starting another."
+        raise HTTPException(409, detail)
+    try:
+        started = await generate_video(payload)
+    except Exception:
+        release_event_generation(ROOT, user_id, payload.project_id)
+        raise
     provider = str(started.get("provider") or payload.provider)
     provider_job_id = str(started.get("job_id") or "")
     if not provider_job_id:
+        release_event_generation(ROOT, user_id, payload.project_id)
         raise HTTPException(502, "The video provider did not return a job reference. No video credit was spent.")
+    accept_event_generation(ROOT, user_id, payload.project_id, provider, provider_job_id)
     try:
         job = enqueue_durable_media_job(
             ROOT, user_id, project_id=payload.project_id, provider=provider,
@@ -1373,6 +1498,37 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
         raise HTTPException(503, f"Video was accepted, but Viralizer could not secure its completion job: {type(exc).__name__}: {str(exc)[:240]}") from exc
     return {"job_id": provider_job_id, "provider": provider, "media_job_id": job["id"],
             "status": job["status"], "stage": job["stage"], "durable": True}
+
+
+@app.post("/api/creatorthon/prepare-prompt")
+async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepareRequest):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    prepared = await video_prompt(payload)
+    title = str(payload.content.get("topic") or payload.content.get("title") or "Selected topic").strip()
+    concept = str(payload.content.get("selected_alternate_concept") or payload.prompt or title).strip()
+    values = {
+        "provider": payload.provider,
+        "status": "prepared",
+        "aspect_ratio": payload.aspect_ratio,
+        "quality": payload.quality,
+        "prompt": {"text": prepared.get("prompt", ""), "concept": concept},
+        "narration": {"text": prepared.get("narration", ""), "heygen_script": prepared.get("heygen_script", "")},
+        "article_intelligence": prepared.get("article_intelligence") or {},
+    }
+    if payload.project_id:
+        project = update_project(ROOT, user_id, payload.project_id, values)
+        if not project:
+            raise HTTPException(404, "Creatorthon project not found.")
+    else:
+        project = create_project(ROOT, user_id, payload.content, values)
+    return {
+        "project_id": project["id"],
+        "concept_line": concept[:180],
+        "narration": prepared.get("narration", ""),
+        "heygen_script": prepared.get("heygen_script", ""),
+        "provider": payload.provider,
+    }
 
 
 @app.post("/api/video/image/generate")
