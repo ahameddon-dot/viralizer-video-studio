@@ -57,6 +57,19 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertEqual(result["prompt"]["text"], "Console reveal")
         self.assertNotIn("SECRET", str(result))
 
+    def test_nested_report_values_are_accumulated_without_video_outline(self):
+        report = {
+            "topicAnalysis": [
+                {"key": "marketMetrics", "data": {"Viral Topic Rank": "#17", "Total Audience": "44.0M", "Est. Remaining Views": "29.9M"}},
+                {"key": "Audience Detected", "data": "A tech-savvy gamer aged 18-35."},
+                {"key": "Creator Insight", "data": {"Themes": "Vloggers (68%), Games (56%)"}},
+            ]
+        }
+        values = app._report_values(report)
+        self.assertEqual(values["audience detected"], "A tech-savvy gamer aged 18-35.")
+        self.assertEqual(values["viral topic rank"], "#17")
+        self.assertIn("creator insight", values)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -850,7 +850,8 @@ def _english_topic(item: dict[str, Any]) -> bool:
 
 
 def _report_values(value: Any, found: dict[str, Any] | None = None) -> dict[str, Any]:
-    found = found or {}
+    if found is None:
+        found = {}
     if isinstance(value, dict):
         label = str(value.get("key") or value.get("label") or value.get("title") or "").strip().casefold()
         data = value.get("data")
@@ -1056,16 +1057,20 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
     creatorthon_user(request)
     try:
         report = await get_full_report_from_mcp(payload.topic)
-        outline = outline_from_full_report(report, payload.topic)
     except MCPOutlineError as exc:
         raise HTTPException(502, str(exc)) from exc
+    try:
+        outline = outline_from_full_report(report, payload.topic)
+    except MCPOutlineError:
+        # Insights reports are valid even when the optional video-outline section is absent.
+        outline = {}
     values = _report_values(report)
     audience = _first_report_value(values, "audience detected", "audience insight", "audience")
     creator = _first_report_value(values, "creator insight", "creator insights")
     metrics = {
         "viral_topic_rank": outline.get("viral_rank") or _first_report_value(values, "viral topic rank"),
         "total_audience": outline.get("total_audience") or _first_report_value(values, "total audience"),
-        "estimated_remaining_views": outline.get("remaining_reach") or _first_report_value(values, "estimated remaining views", "remaining views", "remaining reach"),
+        "estimated_remaining_views": outline.get("remaining_reach") or _first_report_value(values, "estimated remaining views", "est. remaining views", "est remaining views", "remaining views", "remaining reach"),
         "boost": _first_report_value(values, "boost"),
         "resonance": _first_report_value(values, "resonance") or outline.get("estimated_resonance", ""),
     }
