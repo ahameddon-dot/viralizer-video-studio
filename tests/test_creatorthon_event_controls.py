@@ -70,6 +70,30 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertEqual(values["viral topic rank"], "#17")
         self.assertIn("creator insight", values)
 
+    def test_rich_report_sections_prefer_real_insights_over_placeholders(self):
+        report = {
+            "suggestedAudience": [
+                {"sections": [{"text": "Audience Insight", "type": "BOLD"}]},
+                {"sections": [{"text": "Audience insight is currently not available for this topic.", "type": "NORMAL"}]},
+                {"sections": [{"text": "Creator Insight", "type": "BOLD"}]},
+                {"sections": [{"text": "Creator insight is currently not available for this topic.", "type": "NORMAL"}]},
+            ],
+            "marketResearch": [
+                {"sections": [{"text": "Audience Insight", "type": "BOLD"}]},
+                {"sections": [{"text": "A fashion-forward person aged 18-35 who values sustainability.", "type": "NORMAL"}]},
+                {"sections": [{"text": "Creator Insight", "type": "BOLD"}]},
+                {"sections": [{"text": "Themes: Fashion (50%), News (50%)", "type": "NORMAL"}]},
+                {"sections": [{"text": "Countries: United States (45%), Italy (9%)", "type": "NORMAL"}]},
+            ],
+        }
+        self.assertEqual(
+            app._report_insight(report, "Audience Insight"),
+            "A fashion-forward person aged 18-35 who values sustainability.",
+        )
+        self.assertIn("Themes: Fashion", app._report_insight(report, "Creator Insight"))
+        self.assertNotIn("not available", app._report_insight(report, "Creator Insight"))
+        self.assertEqual(app._report_insight({"audienceInsight": "Direct insight"}, "Audience Insight"), "Direct insight")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -878,6 +878,94 @@ def _first_report_value(values: dict[str, Any], *names: str) -> Any:
     return ""
 
 
+def _plain_report_text(value: Any) -> str:
+    """Convert MCP rich-text/report values into readable text, never JSON."""
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return "\n".join(filter(None, (_plain_report_text(item) for item in value)))
+    if isinstance(value, dict):
+        if isinstance(value.get("text"), str):
+            return value["text"].strip()
+        lines: list[str] = []
+        ignored = {"type", "style", "id", "key", "label", "title"}
+        for key, child in value.items():
+            if str(key).casefold() in ignored or child in (None, "", [], {}):
+                continue
+            text = _plain_report_text(child)
+            if not text:
+                continue
+            readable_key = re.sub(r"(?<!^)(?=[A-Z])", " ", str(key)).replace("_", " ").strip()
+            if isinstance(child, (str, int, float, bool)) and readable_key.casefold() not in {"data", "value", "content", "sections"}:
+                lines.append(f"{readable_key.title()}: {text}")
+            else:
+                lines.append(text)
+        return "\n".join(lines)
+    return str(value).strip()
+
+
+def _usable_insight(text: str, heading: str) -> str:
+    cleaned = re.sub(rf"^\s*{re.escape(heading)}\s*[:\-]?\s*", "", text.strip(), flags=re.IGNORECASE)
+    lowered = cleaned.casefold()
+    unavailable = ("currently not available", "currently unavailable", "not available for this topic", "no insight available")
+    return "" if not cleaned or any(marker in lowered for marker in unavailable) else cleaned
+
+
+def _report_insight(report: Any, heading: str) -> str:
+    """Find the best named insight in MCP report fields or rich-text sections."""
+    wanted = heading.casefold()
+    candidates: list[str] = []
+
+    def normalized_key(value: Any) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", " ", str(value)).replace("_", " ").strip().casefold()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            label = normalized_key(value.get("key") or value.get("label") or value.get("title") or "")
+            if label == wanted or wanted in label:
+                data = value.get("data", value.get("value", value.get("content", value)))
+                candidates.append(_plain_report_text(data))
+            for key, child in value.items():
+                normalized = normalized_key(key)
+                if normalized == wanted or wanted in normalized:
+                    candidates.append(_plain_report_text(child))
+                visit(child)
+        elif isinstance(value, list):
+            blocks: list[tuple[str, bool]] = []
+            for item in value:
+                if not isinstance(item, dict) or not isinstance(item.get("sections"), list):
+                    continue
+                sections = item["sections"]
+                text = " ".join(
+                    str(section.get("text") or "").strip()
+                    for section in sections
+                    if isinstance(section, dict) and str(section.get("text") or "").strip()
+                ).strip()
+                bold = any(str(section.get("type") or "").upper() == "BOLD" for section in sections if isinstance(section, dict))
+                if text:
+                    blocks.append((text, bold))
+            for index, (text, _) in enumerate(blocks):
+                if text.strip().casefold().rstrip(":") != wanted:
+                    continue
+                body: list[str] = []
+                for following, is_heading in blocks[index + 1:]:
+                    if is_heading:
+                        break
+                    body.append(following)
+                candidates.append("\n".join(body))
+            for child in value:
+                visit(child)
+
+    visit(report)
+    usable = [_usable_insight(candidate, heading) for candidate in candidates]
+    usable = [candidate for candidate in usable if candidate]
+    return max(usable, key=len, default="")
+
+
 def _public_project(project: dict[str, Any]) -> dict[str, Any]:
     """Remove proprietary production prompts from every browser-facing project payload."""
     result = dict(project)
@@ -1065,8 +1153,8 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
         # Insights reports are valid even when the optional video-outline section is absent.
         outline = {}
     values = _report_values(report)
-    audience = _first_report_value(values, "audience detected", "audience insight", "audience")
-    creator = _first_report_value(values, "creator insight", "creator insights")
+    audience = _report_insight(report, "Audience Insight") or _plain_report_text(_first_report_value(values, "audience detected"))
+    creator = _report_insight(report, "Creator Insight")
     metrics = {
         "viral_topic_rank": outline.get("viral_rank") or _first_report_value(values, "viral topic rank"),
         "total_audience": outline.get("total_audience") or _first_report_value(values, "total audience"),
