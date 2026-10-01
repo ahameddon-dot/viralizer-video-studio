@@ -79,6 +79,9 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("/api/creatorthon/workspace", page)
         self.assertIn("Delete video", page)
         self.assertIn("Delete project", page)
+        self.assertIn("Publish to YouTube", page)
+        self.assertIn("/api/creatorthon/publishing/status", page)
+        self.assertIn("/api/creatorthon/publish", page)
         self.assertIn('@app.delete("/api/creatorthon/projects/{project_id}/video")', app_source)
         self.assertIn('@app.delete("/api/creatorthon/projects/{project_id}")', app_source)
 
