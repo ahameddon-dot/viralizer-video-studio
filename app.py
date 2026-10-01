@@ -1452,14 +1452,17 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
         hashtags.insert(0, MANDATORY_HASHTAG)
     youtube_connection = get_youtube_connection(ROOT, str(user.get("sub", ""))) if "youtube" in requested else None
     youtube_refresh_token = ""
+    publish_video_url = payload.video_url
     try:
+        if "instagram" in requested:
+            publish_video_url = object_share_url(f"finished_videos/{match.group(1)}", expires_in=3600)
         if youtube_connection:
             youtube_refresh_token = decrypt_refresh_token(str(youtube_connection.get("refresh_token_ciphertext") or ""))
         result = await publish_all(
-            video_path, payload.video_url, payload.caption, hashtags, payload.platforms,
+            video_path, publish_video_url, payload.caption, hashtags, payload.platforms,
             youtube_refresh_token=youtube_refresh_token,
         )
-    except (SocialPublishError, YouTubeOAuthError) as exc:
+    except (ObjectStoreError, SocialPublishError, YouTubeOAuthError) as exc:
         raise HTTPException(422, str(exc)) from exc
     if youtube_connection and result.get("results", {}).get("youtube", {}).get("status") == "published":
         result["results"]["youtube"].update({

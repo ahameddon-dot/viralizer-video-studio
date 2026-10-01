@@ -28,6 +28,15 @@ class SocialPublisherTests(unittest.TestCase):
         self.assertFalse(status["facebook"]["configured"])
         self.assertFalse(status["linkedin"]["configured"])
 
+    def test_instagram_is_configured_with_account_credentials_and_signed_media_urls(self):
+        with patch.dict(os.environ, {
+            "META_ACCESS_TOKEN": "secret-token",
+            "INSTAGRAM_USER_ID": "17841400000000000",
+            "PUBLIC_BASE_URL": "",
+        }, clear=False):
+            status = publishing_status()
+        self.assertTrue(status["instagram"]["configured"])
+
 
 if __name__ == "__main__":
     unittest.main()

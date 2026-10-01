@@ -41,7 +41,7 @@ def publishing_status() -> dict[str, dict[str, Any]]:
     meta_token = bool(os.getenv("META_ACCESS_TOKEN", "").strip())
     return {
         "instagram": {
-            "configured": meta_token and bool(os.getenv("INSTAGRAM_USER_ID", "").strip()) and bool(os.getenv("PUBLIC_BASE_URL", "").strip()),
+            "configured": meta_token and bool(os.getenv("INSTAGRAM_USER_ID", "").strip()),
             "label": "Instagram",
         },
         "facebook": {
@@ -77,12 +77,14 @@ async def _instagram(caption: str, hashtags: list[str], video_url: str) -> dict[
     token = os.getenv("META_ACCESS_TOKEN", "").strip()
     user_id = os.getenv("INSTAGRAM_USER_ID", "").strip()
     public_base = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
-    if not token or not user_id or not public_base:
+    if not token or not user_id:
         raise SocialPublishError("Instagram publishing is not configured.")
-    if public_base.startswith(("http://localhost", "http://127.0.0.1")):
-        raise SocialPublishError("Instagram requires PUBLIC_BASE_URL to be a public HTTPS address.")
+    if not video_url.startswith("https://"):
+        if not public_base or public_base.startswith(("http://localhost", "http://127.0.0.1")):
+            raise SocialPublishError("Instagram requires a public HTTPS video address.")
+        video_url = public_base + "/" + video_url.lstrip("/")
     graph = os.getenv("META_GRAPH_VERSION", "v24.0").strip()
-    public_video = video_url if video_url.startswith("https://") else public_base + "/" + video_url.lstrip("/")
+    public_video = video_url
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.post(
             f"https://graph.facebook.com/{graph}/{user_id}/media",
@@ -111,7 +113,16 @@ async def _instagram(caption: str, hashtags: list[str], video_url: str) -> dict[
         )
         if published.is_error:
             raise SocialPublishError(published.json().get("error", {}).get("message") or "Instagram could not publish the reel.")
-        return {"status": "published", "id": published.json().get("id", "")}
+        media_id = str(published.json().get("id") or "")
+        permalink = ""
+        if media_id:
+            details = await client.get(
+                f"https://graph.facebook.com/{graph}/{media_id}",
+                params={"fields": "permalink", "access_token": token},
+            )
+            if not details.is_error:
+                permalink = str(details.json().get("permalink") or "")
+        return {"status": "published", "id": media_id, "url": permalink}
 
 
 async def _facebook(caption: str, hashtags: list[str], video_path: Path) -> dict[str, Any]:
