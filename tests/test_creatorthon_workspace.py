@@ -107,6 +107,12 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("/api/creatorthon/event-status", page)
         self.assertIn("participant_label", page)
 
+    def test_standard_creatorthon_limits_visible_platforms_to_instagram_and_youtube(self):
+        page = (ROOT / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("restrictEventPlatforms", page)
+        self.assertIn("new Set(['Instagram','YouTube'])", page)
+        self.assertIn("input.closest('label')?.remove()", page)
+
     def test_cloud_storage_is_optional_for_local_development(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertFalse(configured())
