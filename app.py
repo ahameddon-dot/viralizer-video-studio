@@ -797,7 +797,7 @@ async def creatorthon_v3(request: Request):
 @app.get("/creatorthon/workspace")
 async def creatorthon_workspace_page(request: Request):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
-        return RedirectResponse("/creatorthon-v3/login?next=/creatorthon/workspace", status_code=303)
+        return RedirectResponse("/creatorthon/login", status_code=303)
     return FileResponse(
         ROOT / "static" / "creatorthon-workspace.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
