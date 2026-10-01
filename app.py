@@ -194,7 +194,7 @@ def require_admin(request: Request) -> None:
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
-    public_paths = {"/login", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -1039,6 +1039,11 @@ def _report_hashtags(report: Any, outline: dict[str, Any]) -> list[str]:
 @app.get("/privacy")
 async def privacy_policy():
     return FileResponse(ROOT / "static" / "privacy.html")
+
+
+@app.get("/about")
+async def public_homepage():
+    return FileResponse(ROOT / "static" / "about.html")
 
 
 @app.get("/terms")
