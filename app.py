@@ -830,10 +830,25 @@ async def media_pipeline_health():
     return JSONResponse(result, status_code=200 if result["ready"] else 503)
 
 
+CREATORTHON_UNLIMITED_EMAILS = frozenset({"ahamed.don@gmail.com", "yusufiid@gmail.com"})
+
+
+def _unlimited_creatorthon_user(user: dict[str, Any]) -> bool:
+    email = str(user.get("email") or "").strip().lower()
+    configured = {
+        value.strip().lower()
+        for value in os.getenv("CREATORTHON_UNLIMITED_EMAILS", "").split(",")
+        if value.strip()
+    }
+    return email in CREATORTHON_UNLIMITED_EMAILS or email in configured
+
+
 def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if not user:
         raise HTTPException(401, "Google sign-in required.")
+    if _unlimited_creatorthon_user(user):
+        return user
     try:
         claim_event_seat(ROOT, str(user.get("sub", "")), int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
     except RuntimeError as exc:
@@ -1202,8 +1217,10 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
 @app.get("/api/creatorthon/event-status")
 async def creatorthon_event_status(request: Request):
     user = creatorthon_user(request)
+    if _unlimited_creatorthon_user(user):
+        return {"generation_used": False, "generation_status": "unlimited", "unlimited": True}
     status = generation_entitlement(ROOT, str(user.get("sub", "")))
-    return {"generation_used": status.get("generation_status") == "accepted", "generation_status": status.get("generation_status") or "available"}
+    return {"generation_used": status.get("generation_status") == "accepted", "generation_status": status.get("generation_status") or "available", "unlimited": False}
 
 
 @app.post("/api/creatorthon/projects")
@@ -1587,23 +1604,28 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
         raise HTTPException(409, "Prepare this concept before generating the video.")
     payload.prompt = private_prompt
     payload.content = project.get("topic") or payload.content
-    reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider)
-    if not reservation.get("allowed"):
-        detail = "This Creatorthon account has already used its one video generation. Open My Workspace to view or recover that video."
-        if reservation.get("generation_status") == "reserved":
-            detail = "A video generation is already starting for this account. Please wait and recover it from My Workspace instead of starting another."
-        raise HTTPException(409, detail)
+    unlimited = _unlimited_creatorthon_user(user)
+    if not unlimited:
+        reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider)
+        if not reservation.get("allowed"):
+            detail = "This Creatorthon account has already used its one video generation. Open My Workspace to view or recover that video."
+            if reservation.get("generation_status") == "reserved":
+                detail = "A video generation is already starting for this account. Please wait and recover it from My Workspace instead of starting another."
+            raise HTTPException(409, detail)
     try:
         started = await generate_video(payload)
     except Exception:
-        release_event_generation(ROOT, user_id, payload.project_id)
+        if not unlimited:
+            release_event_generation(ROOT, user_id, payload.project_id)
         raise
     provider = str(started.get("provider") or payload.provider)
     provider_job_id = str(started.get("job_id") or "")
     if not provider_job_id:
-        release_event_generation(ROOT, user_id, payload.project_id)
+        if not unlimited:
+            release_event_generation(ROOT, user_id, payload.project_id)
         raise HTTPException(502, "The video provider did not return a job reference. No video credit was spent.")
-    accept_event_generation(ROOT, user_id, payload.project_id, provider, provider_job_id)
+    if not unlimited:
+        accept_event_generation(ROOT, user_id, payload.project_id, provider, provider_job_id)
     try:
         job = enqueue_durable_media_job(
             ROOT, user_id, project_id=payload.project_id, provider=provider,

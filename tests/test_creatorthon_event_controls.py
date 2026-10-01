@@ -15,6 +15,16 @@ from creatorthon_store import (
 
 
 class CreatorthonEventControlTests(unittest.TestCase):
+    def test_only_configured_emails_have_unlimited_creatorthon_access(self):
+        with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
+            self.assertTrue(app._unlimited_creatorthon_user({"email": " AHAMED.DON@GMAIL.COM "}))
+            self.assertTrue(app._unlimited_creatorthon_user({"email": "yusufiid@gmail.com"}))
+            self.assertFalse(app._unlimited_creatorthon_user({"email": "other@example.com"}))
+
+    def test_environment_can_add_an_unlimited_email(self):
+        with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": "owner@example.com"}, clear=False):
+            self.assertTrue(app._unlimited_creatorthon_user({"email": "OWNER@example.com"}))
+
     def test_event_capacity_is_shared_and_atomic_in_store(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
