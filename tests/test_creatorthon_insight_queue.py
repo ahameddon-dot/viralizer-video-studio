@@ -42,7 +42,7 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         finish_insight_job(self.root, "user-1", first["id"], result={"topic": "First topic"})
         self.assertEqual(claim_next_insight_job(self.root, "user-1")["id"], second["id"])
 
-    def test_failed_job_can_be_retried_without_reordering(self):
+    def test_failed_or_completed_job_can_be_retried_without_reordering(self):
         job, _ = enqueue_insight_job(self.root, "user-1", {"topic": "Retry topic"})
         claim_next_insight_job(self.root, "user-1")
         finish_insight_job(self.root, "user-1", job["id"], error="temporary failure")
@@ -50,6 +50,10 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         retried = list_insight_jobs(self.root, "user-1")[0]
         self.assertEqual(retried["status"], "queued")
         self.assertEqual(retried["position"], 1)
+        claimed = claim_next_insight_job(self.root, "user-1")
+        finish_insight_job(self.root, "user-1", claimed["id"], result={"parser_version": 1})
+        self.assertTrue(retry_insight_job(self.root, "user-1", job["id"]))
+        self.assertEqual(list_insight_jobs(self.root, "user-1")[0]["position"], 1)
 
 
 if __name__ == "__main__":

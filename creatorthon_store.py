@@ -454,7 +454,7 @@ def finish_insight_job(root: Path, user_id: str, job_id: str, result: dict[str, 
 def retry_insight_job(root: Path, user_id: str, job_id: str) -> bool:
     with _connect(root) as db:
         cursor = db.execute(
-            "UPDATE creatorthon_insight_jobs SET status='queued',error='',updated_at=? WHERE id=? AND user_id=? AND status='failed'",
+            "UPDATE creatorthon_insight_jobs SET status='queued',error='',updated_at=? WHERE id=? AND user_id=? AND status IN ('failed','completed')",
             (int(time.time()), job_id, user_id),
         )
         return bool(cursor.rowcount)

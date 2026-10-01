@@ -987,6 +987,11 @@ def _report_insight(report: Any, heading: str) -> str:
     """Find the best named insight in MCP report fields or rich-text sections."""
     wanted = heading.casefold()
     candidates: list[str] = []
+    peer_headings = {
+        "audience insight", "sponsor insight", "creator insight", "market research",
+        "overview", "performance", "related content ideas", "related thumbnails",
+        "related caption hooks", "example content idea", "hashtags",
+    }
 
     def normalized_key(value: Any) -> str:
         return re.sub(r"(?<!^)(?=[A-Z])", " ", str(value)).replace("_", " ").strip().casefold()
@@ -1021,7 +1026,10 @@ def _report_insight(report: Any, heading: str) -> str:
                     continue
                 body: list[str] = []
                 for following, is_heading in blocks[index + 1:]:
-                    if is_heading:
+                    following_heading = following.strip().casefold().rstrip(":")
+                    # Rich reports frequently bold Themes, Countries and Languages inside
+                    # Creator Insight. Only a real peer section heading ends the insight.
+                    if following_heading in peer_headings or (is_heading and following_heading.endswith(" insight")):
                         break
                     body.append(following)
                 candidates.append("\n".join(body))
@@ -1273,6 +1281,7 @@ async def _proprietary_insight_payload(topic: str) -> dict[str, Any]:
     }
     return {
         "topic": topic,
+        "parser_version": 2,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
         "creator_insight": creator,
@@ -1329,6 +1338,14 @@ async def get_creatorthon_insight_queue(request: Request):
     user = creatorthon_user(request)
     user_id = str(user.get("sub", ""))
     jobs = list_insight_jobs(ROOT, user_id)
+    legacy_jobs = [
+        job for job in jobs
+        if job.get("status") == "completed" and int((job.get("result") or {}).get("parser_version") or 0) < 2
+    ]
+    for job in legacy_jobs:
+        retry_insight_job(ROOT, user_id, str(job["id"]))
+    if legacy_jobs:
+        jobs = list_insight_jobs(ROOT, user_id)
     if any(job.get("status") in {"queued", "processing"} for job in jobs):
         _start_creatorthon_insight_queue(user_id)
     return {"jobs": jobs}

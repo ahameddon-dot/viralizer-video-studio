@@ -96,16 +96,24 @@ class CreatorthonEventControlTests(unittest.TestCase):
                 {"sections": [{"text": "Audience Insight", "type": "BOLD"}]},
                 {"sections": [{"text": "A fashion-forward person aged 18-35 who values sustainability.", "type": "NORMAL"}]},
                 {"sections": [{"text": "Creator Insight", "type": "BOLD"}]},
-                {"sections": [{"text": "Themes: Fashion (50%), News (50%)", "type": "NORMAL"}]},
-                {"sections": [{"text": "Countries: United States (45%), Italy (9%)", "type": "NORMAL"}]},
+                {"sections": [{"text": "By analyzing the top creators, the representative distributions are:", "type": "NORMAL"}]},
+                {"sections": [{"text": "Themes:", "type": "BOLD"}, {"text": "Fashion (50%), News (50%)", "type": "NORMAL"}]},
+                {"sections": [{"text": "Countries:", "type": "BOLD"}, {"text": "United States (45%), Italy (9%)", "type": "NORMAL"}]},
+                {"sections": [{"text": "Languages:", "type": "BOLD"}, {"text": "en (57%), en-US (28%), ko (7%)", "type": "NORMAL"}]},
+                {"sections": [{"text": "Related Content Ideas", "type": "BOLD"}]},
+                {"sections": [{"text": "This must not be part of Creator Insight.", "type": "NORMAL"}]},
             ],
         }
         self.assertEqual(
             app._report_insight(report, "Audience Insight"),
             "A fashion-forward person aged 18-35 who values sustainability.",
         )
-        self.assertIn("Themes: Fashion", app._report_insight(report, "Creator Insight"))
-        self.assertNotIn("not available", app._report_insight(report, "Creator Insight"))
+        creator = app._report_insight(report, "Creator Insight")
+        self.assertIn("Themes: Fashion", creator)
+        self.assertIn("Countries: United States", creator)
+        self.assertIn("Languages: en", creator)
+        self.assertNotIn("not available", creator)
+        self.assertNotIn("must not be part", creator)
         self.assertEqual(app._report_insight({"audienceInsight": "Direct insight"}, "Audience Insight"), "Direct insight")
 
     def test_report_hashtags_are_cleaned_for_display(self):
