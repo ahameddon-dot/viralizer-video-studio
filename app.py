@@ -1034,6 +1034,16 @@ def _report_hashtags(report: Any, outline: dict[str, Any]) -> list[str]:
     raw: Any = outline.get("hashtags") or _first_report_value(
         values, "hashtags and keywords", "hashtags", "hashtag"
     )
+
+
+@app.get("/privacy")
+async def privacy_policy():
+    return FileResponse(ROOT / "static" / "privacy.html")
+
+
+@app.get("/terms")
+async def terms_of_service():
+    return FileResponse(ROOT / "static" / "terms.html")
     if not raw:
         raw = _report_insight(report, "Hashtags") or _report_insight(report, "Hashtags and Keywords")
     if isinstance(raw, dict):
