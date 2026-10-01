@@ -966,6 +966,32 @@ def _report_insight(report: Any, heading: str) -> str:
     return max(usable, key=len, default="")
 
 
+def _report_hashtags(report: Any, outline: dict[str, Any]) -> list[str]:
+    """Return the MCP report's hashtags as clean, display-ready tags."""
+    values = _report_values(report)
+    raw: Any = outline.get("hashtags") or _first_report_value(
+        values, "hashtags and keywords", "hashtags", "hashtag"
+    )
+    if not raw:
+        raw = _report_insight(report, "Hashtags") or _report_insight(report, "Hashtags and Keywords")
+    if isinstance(raw, dict):
+        raw = raw.get("data", raw.get("value", raw.get("content", raw)))
+    entries = raw if isinstance(raw, list) else re.split(r"[,\n]+", _plain_report_text(raw))
+    tags: list[str] = []
+    for entry in entries:
+        text = _plain_report_text(entry).strip()
+        text = re.sub(r"^hashtags?(?:\s+and\s+keywords)?\s*:\s*", "", text, flags=re.IGNORECASE)
+        fragments = re.findall(r"#[A-Za-z0-9_.]+", text)
+        if not fragments and text:
+            words = re.findall(r"[A-Za-z0-9]+", text)
+            if words:
+                fragments = ["#" + "".join(word[:1].upper() + word[1:] for word in words)[:64]]
+        for tag in fragments:
+            if tag != "#" and tag.casefold() not in {item.casefold() for item in tags}:
+                tags.append(tag)
+    return tags[:20]
+
+
 def _public_project(project: dict[str, Any]) -> dict[str, Any]:
     """Remove proprietary production prompts from every browser-facing project payload."""
     result = dict(project)
@@ -1155,6 +1181,7 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
     values = _report_values(report)
     audience = _report_insight(report, "Audience Insight") or _plain_report_text(_first_report_value(values, "audience detected"))
     creator = _report_insight(report, "Creator Insight")
+    hashtags = _report_hashtags(report, outline)
     metrics = {
         "viral_topic_rank": outline.get("viral_rank") or _first_report_value(values, "viral topic rank"),
         "total_audience": outline.get("total_audience") or _first_report_value(values, "total audience"),
@@ -1167,6 +1194,7 @@ async def creatorthon_proprietary_insights(request: Request, payload: Creatortho
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
         "creator_insight": creator,
+        "hashtags": hashtags,
         "source": "Viralizer MCP",
     }
 

@@ -94,6 +94,17 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertNotIn("not available", app._report_insight(report, "Creator Insight"))
         self.assertEqual(app._report_insight({"audienceInsight": "Direct insight"}, "Audience Insight"), "Direct insight")
 
+    def test_report_hashtags_are_cleaned_for_display(self):
+        report = {
+            "topicAnalysis": [
+                {"key": "hashtags", "data": ["#StellaMcCartney", "Sustainable fashion", "#Spring2027"]}
+            ]
+        }
+        self.assertEqual(
+            app._report_hashtags(report, {}),
+            ["#StellaMcCartney", "#SustainableFashion", "#Spring2027"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
