@@ -77,6 +77,10 @@ def _schema_statements() -> list[str]:
           generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
           generation_updated_at BIGINT NOT NULL DEFAULT 0,
           PRIMARY KEY (event_key, user_id))""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_youtube_connections (
+          user_id TEXT PRIMARY KEY, refresh_token_ciphertext TEXT NOT NULL,
+          channel_id TEXT NOT NULL, channel_title TEXT NOT NULL, oauth_email TEXT NOT NULL,
+          created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)""",
     ]
 
 
@@ -199,6 +203,11 @@ def _connect(root: Path) -> Iterator[Any]:
       generation_updated_at INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (event_key, user_id)
     );
+    CREATE TABLE IF NOT EXISTS creatorthon_youtube_connections (
+      user_id TEXT PRIMARY KEY, refresh_token_ciphertext TEXT NOT NULL,
+      channel_id TEXT NOT NULL, channel_title TEXT NOT NULL, oauth_email TEXT NOT NULL,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
@@ -308,6 +317,38 @@ def release_event_generation(root: Path, user_id: str, project_id: str) -> None:
 def accept_event_generation(root: Path, user_id: str, project_id: str, provider: str, job_id: str) -> None:
     with _connect(root) as db:
         db.execute("UPDATE creatorthon_event_accounts SET generation_status='accepted',generation_provider=?,generation_job_id=?,generation_updated_at=? WHERE event_key=? AND user_id=? AND generation_project_id=?", (provider, job_id, int(time.time()), event_key(), user_id, project_id))
+
+
+def save_youtube_connection(root: Path, user_id: str, connection: dict[str, Any]) -> dict[str, Any]:
+    now = int(time.time())
+    with _connect(root) as db:
+        existing = db.execute("SELECT created_at FROM creatorthon_youtube_connections WHERE user_id=?", (user_id,)).fetchone()
+        created_at = int(dict(existing).get("created_at") or now) if existing else now
+        if existing:
+            db.execute(
+                "UPDATE creatorthon_youtube_connections SET refresh_token_ciphertext=?,channel_id=?,channel_title=?,oauth_email=?,updated_at=? WHERE user_id=?",
+                (connection["refresh_token_ciphertext"], connection["channel_id"], connection["channel_title"],
+                 connection["oauth_email"], now, user_id),
+            )
+        else:
+            db.execute(
+                "INSERT INTO creatorthon_youtube_connections (user_id,refresh_token_ciphertext,channel_id,channel_title,oauth_email,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                (user_id, connection["refresh_token_ciphertext"], connection["channel_id"], connection["channel_title"],
+                 connection["oauth_email"], created_at, now),
+            )
+    return {**connection, "user_id": user_id, "created_at": created_at, "updated_at": now}
+
+
+def get_youtube_connection(root: Path, user_id: str) -> dict[str, Any] | None:
+    with _connect(root) as db:
+        row = db.execute("SELECT * FROM creatorthon_youtube_connections WHERE user_id=?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_youtube_connection(root: Path, user_id: str) -> bool:
+    with _connect(root) as db:
+        cursor = db.execute("DELETE FROM creatorthon_youtube_connections WHERE user_id=?", (user_id,))
+        return bool(cursor.rowcount)
 
 
 def get_profile(root: Path, user: dict[str, Any]) -> dict[str, Any]:

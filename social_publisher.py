@@ -183,8 +183,8 @@ async def _linkedin(caption: str, hashtags: list[str], video_path: Path) -> dict
         return {"status": "published", "id": post.headers.get("x-restli-id", "")}
 
 
-async def _youtube_access_token(client: httpx.AsyncClient) -> str:
-    refresh = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+async def _youtube_access_token(client: httpx.AsyncClient, refresh_token: str = "") -> str:
+    refresh = refresh_token.strip() or os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
     client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
     client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
     if refresh and client_id and client_secret:
@@ -198,9 +198,9 @@ async def _youtube_access_token(client: httpx.AsyncClient) -> str:
     return os.getenv("YOUTUBE_ACCESS_TOKEN", "").strip()
 
 
-async def _youtube(caption: str, hashtags: list[str], video_path: Path) -> dict[str, Any]:
+async def _youtube(caption: str, hashtags: list[str], video_path: Path, refresh_token: str = "") -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=300) as client:
-        token = await _youtube_access_token(client)
+        token = await _youtube_access_token(client, refresh_token)
     if not token:
         raise SocialPublishError("YouTube publishing is not configured.")
     title = next((line.strip() for line in caption.splitlines() if line.strip()), "Viralizer video")[:100]
@@ -231,7 +231,7 @@ async def _youtube(caption: str, hashtags: list[str], video_path: Path) -> dict[
         return {"status": "published", "id": video_id, "url": f"https://youtu.be/{video_id}" if video_id else ""}
 
 
-async def publish_all(video_path: Path, video_url: str, caption: str, hashtags: list[str], platforms: list[str]) -> dict[str, Any]:
+async def publish_all(video_path: Path, video_url: str, caption: str, hashtags: list[str], platforms: list[str], *, youtube_refresh_token: str = "") -> dict[str, Any]:
     selected = [value.lower() for value in platforms if value.lower() in {"instagram", "facebook", "linkedin", "youtube"}]
     if not selected:
         raise SocialPublishError("Select at least one social platform.")
@@ -239,7 +239,7 @@ async def publish_all(video_path: Path, video_url: str, caption: str, hashtags: 
         "instagram": lambda: _instagram(caption, hashtags, video_url),
         "facebook": lambda: _facebook(caption, hashtags, video_path),
         "linkedin": lambda: _linkedin(caption, hashtags, video_path),
-        "youtube": lambda: _youtube(caption, hashtags, video_path),
+        "youtube": lambda: _youtube(caption, hashtags, video_path, youtube_refresh_token),
     }
     results = {}
     for platform in selected:

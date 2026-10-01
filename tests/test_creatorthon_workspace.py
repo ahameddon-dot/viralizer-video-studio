@@ -82,6 +82,10 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("Delete video", page)
         self.assertIn("Delete project", page)
         self.assertIn("Publish to YouTube", page)
+        self.assertIn("Connect YouTube", page)
+        self.assertIn("youtubeAccountControl", page)
+        self.assertIn("/auth/youtube/connect", page)
+        self.assertIn("/api/creatorthon/youtube/disconnect", page)
         self.assertIn("View on YouTube", page)
         self.assertIn("YouTube URL:", page)
         self.assertIn("Copy link", page)
@@ -106,6 +110,8 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("participantBadge", page)
         self.assertIn("/api/creatorthon/event-status", page)
         self.assertIn("participant_label", page)
+        self.assertIn("Connect my YouTube", page)
+        self.assertIn("loadYouTubeConnection", page)
 
     def test_standard_creatorthon_limits_visible_platforms_to_instagram_and_youtube(self):
         page = (ROOT / "static" / "creatorthon.html").read_text(encoding="utf-8")

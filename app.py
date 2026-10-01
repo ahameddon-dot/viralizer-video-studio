@@ -38,7 +38,7 @@ from heygen_client import HeyGenClient, HeyGenError
 from heygen_director import build_heygen_script, build_presenter_direction
 from heygen_video_director import build_heygen_plan, compile_heygen_request
 from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
-from google_auth import GoogleAuthError, authorization_url as google_authorization_url, configured as google_configured, exchange_code as google_exchange_code, new_state as google_new_state, read_session as read_google_session, read_signed_payload as read_google_state, redirect_uri as google_redirect_uri, session_token as google_session_token, user_allowed as google_user_allowed
+from google_auth import GoogleAuthError, authorization_url as google_authorization_url, configured as google_configured, exchange_code as google_exchange_code, new_state as google_new_state, read_session as read_google_session, read_signed_payload as read_google_state, redirect_uri as google_redirect_uri, session_token as google_session_token, signed_payload as google_signed_payload, user_allowed as google_user_allowed
 from daily_trends import daily_trends
 from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, discover_global_sources, suggest_logos_for_content
 from mcp_outline_client import (
@@ -65,18 +65,21 @@ from release_dashboard import (
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
-    generation_entitlement, get_profile, list_assets, list_projects, list_reports, release_event_generation,
-    reserve_event_generation, save_profile, save_report, update_project, workspace,
+    delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
+    list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
+    save_profile, save_report, save_youtube_connection, update_project, workspace,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
+from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
 CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
+YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 
 
 async def prepare_article_intelligence_safely(
@@ -303,6 +306,46 @@ async def logout(next: str = "/login"):
     response = RedirectResponse(destination, status_code=303)
     response.delete_cookie(AUTH_COOKIE)
     response.delete_cookie(GOOGLE_STATE_COOKIE)
+    return response
+
+
+@app.get("/auth/youtube/connect")
+async def connect_youtube_account(request: Request):
+    user = creatorthon_user(request)
+    if not youtube_oauth_configured():
+        raise HTTPException(503, "YouTube OAuth is not configured in Render.")
+    state = google_signed_payload({"sub": str(user.get("sub", "")), "iat": int(time.time())})
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc)).split(",")[0].strip()
+    callback = youtube_redirect_uri(scheme, host)
+    response = RedirectResponse(
+        youtube_authorization_url(callback, state, str(user.get("email") or "")),
+        status_code=302,
+    )
+    response.set_cookie(YOUTUBE_STATE_COOKIE, state, max_age=600, httponly=True, secure=scheme == "https", samesite="lax")
+    return response
+
+
+@app.get("/auth/youtube/callback")
+async def youtube_oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    user = creatorthon_user(request)
+    expected_state = request.cookies.get(YOUTUBE_STATE_COOKIE, "")
+    state_payload = read_google_state(state, max_age=600) if state and hmac.compare_digest(state, expected_state) else None
+    if error or not code:
+        return RedirectResponse("/creatorthon/workspace?youtube=denied", status_code=303)
+    if not state_payload or str(state_payload.get("sub") or "") != str(user.get("sub") or ""):
+        return RedirectResponse("/creatorthon/workspace?youtube=state", status_code=303)
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc)).split(",")[0].strip()
+    try:
+        connection = await exchange_youtube_connection(
+            code, youtube_redirect_uri(scheme, host), str(user.get("email") or "")
+        )
+        save_youtube_connection(ROOT, str(user.get("sub", "")), connection)
+    except YouTubeOAuthError:
+        return RedirectResponse("/creatorthon/workspace?youtube=failed", status_code=303)
+    response = RedirectResponse("/creatorthon/workspace?youtube=connected", status_code=303)
+    response.delete_cookie(YOUTUBE_STATE_COOKIE)
     return response
 
 
@@ -1260,8 +1303,40 @@ async def patch_creatorthon_project(request: Request, project_id: str, payload: 
 
 @app.get("/api/creatorthon/publishing/status")
 async def creatorthon_publishing_status(request: Request):
-    creatorthon_user(request)
-    return {"platforms": publishing_status(), "mandatory_hashtag": MANDATORY_HASHTAG}
+    user = creatorthon_user(request)
+    platforms = publishing_status()
+    connection = get_youtube_connection(ROOT, str(user.get("sub", "")))
+    if connection:
+        platforms["youtube"] = {
+            "configured": True,
+            "label": str(connection.get("channel_title") or "Your YouTube channel"),
+            "account_type": "user",
+        }
+    elif not _unlimited_creatorthon_user(user):
+        platforms["youtube"] = {"configured": False, "label": "Connect your YouTube channel", "account_type": "user_required"}
+    return {"platforms": platforms, "mandatory_hashtag": MANDATORY_HASHTAG}
+
+
+@app.get("/api/creatorthon/youtube/status")
+async def creatorthon_youtube_status(request: Request):
+    user = creatorthon_user(request)
+    connection = get_youtube_connection(ROOT, str(user.get("sub", "")))
+    return {
+        "connected": bool(connection),
+        "channel_id": str((connection or {}).get("channel_id") or ""),
+        "channel_title": str((connection or {}).get("channel_title") or ""),
+        "oauth_email": str((connection or {}).get("oauth_email") or ""),
+        "central_fallback_configured": bool(
+            _unlimited_creatorthon_user(user) and publishing_status()["youtube"]["configured"]
+        ),
+    }
+
+
+@app.post("/api/creatorthon/youtube/disconnect")
+async def creatorthon_youtube_disconnect(request: Request):
+    user = creatorthon_user(request)
+    delete_youtube_connection(ROOT, str(user.get("sub", "")))
+    return {"disconnected": True}
 
 
 @app.post("/api/creatorthon/hashtags")
@@ -1281,6 +1356,8 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     requested = {value.lower() for value in payload.platforms}
     if "youtube" in requested and published.get("youtube", {}).get("status") == "published":
         raise HTTPException(409, "This video has already been published to YouTube.")
+    if "youtube" in requested and not get_youtube_connection(ROOT, str(user.get("sub", ""))) and not _unlimited_creatorthon_user(user):
+        raise HTTPException(409, "Connect your YouTube channel before publishing.")
     match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", payload.video_url)
     if not match:
         raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
@@ -1290,10 +1367,23 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     hashtags = list(dict.fromkeys(value.strip() for value in payload.hashtags if value.strip()))
     if MANDATORY_HASHTAG.lower() not in {value.lower() for value in hashtags}:
         hashtags.insert(0, MANDATORY_HASHTAG)
+    youtube_connection = get_youtube_connection(ROOT, str(user.get("sub", ""))) if "youtube" in requested else None
+    youtube_refresh_token = ""
     try:
-        result = await publish_all(video_path, payload.video_url, payload.caption, hashtags, payload.platforms)
-    except SocialPublishError as exc:
+        if youtube_connection:
+            youtube_refresh_token = decrypt_refresh_token(str(youtube_connection.get("refresh_token_ciphertext") or ""))
+        result = await publish_all(
+            video_path, payload.video_url, payload.caption, hashtags, payload.platforms,
+            youtube_refresh_token=youtube_refresh_token,
+        )
+    except (SocialPublishError, YouTubeOAuthError) as exc:
         raise HTTPException(422, str(exc)) from exc
+    if youtube_connection and result.get("results", {}).get("youtube", {}).get("status") == "published":
+        result["results"]["youtube"].update({
+            "channel_id": youtube_connection.get("channel_id", ""),
+            "channel_title": youtube_connection.get("channel_title", ""),
+            "account_type": "user",
+        })
     published.update(result.get("results") or {})
     production["published"] = published
     update_project(

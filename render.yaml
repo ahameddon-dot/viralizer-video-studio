@@ -70,6 +70,8 @@ services:
         sync: false
       - key: YOUTUBE_REFRESH_TOKEN
         sync: false
+      - key: YOUTUBE_REDIRECT_URI
+        value: https://viralizer-video-studio-ui-preview.onrender.com/auth/youtube/callback
       - key: YOUTUBE_PRIVACY_STATUS
         value: public
       - key: DAILY_TRENDS_ENABLED
