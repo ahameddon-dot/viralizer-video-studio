@@ -19,6 +19,7 @@ class CreatorthonEventControlTests(unittest.TestCase):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
             self.assertTrue(app._unlimited_creatorthon_user({"email": " AHAMED.DON@GMAIL.COM "}))
             self.assertTrue(app._unlimited_creatorthon_user({"email": "yusufiid@gmail.com"}))
+            self.assertTrue(app._unlimited_creatorthon_user({"email": "ansariarif1@gmail.com"}))
             self.assertFalse(app._unlimited_creatorthon_user({"email": "other@example.com"}))
 
     def test_environment_can_add_an_unlimited_email(self):

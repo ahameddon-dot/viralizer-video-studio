@@ -830,7 +830,11 @@ async def media_pipeline_health():
     return JSONResponse(result, status_code=200 if result["ready"] else 503)
 
 
-CREATORTHON_UNLIMITED_EMAILS = frozenset({"ahamed.don@gmail.com", "yusufiid@gmail.com"})
+CREATORTHON_UNLIMITED_EMAILS = frozenset({
+    "ahamed.don@gmail.com",
+    "yusufiid@gmail.com",
+    "ansariarif1@gmail.com",
+})
 
 
 def _unlimited_creatorthon_user(user: dict[str, Any]) -> bool:
