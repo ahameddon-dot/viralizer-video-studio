@@ -127,6 +127,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
             ["#StellaMcCartney", "#SustainableFashion", "#Spring2027"],
         )
 
+    def test_review_hashtag_cache_is_scoped_to_the_selected_topic(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("creatorthonHashtagTopicKey===topicKey", page)
+        self.assertIn("insightTopicKey(selected)!==topicKey", page)
+        self.assertIn("body:JSON.stringify({topic:topicSnapshot})", page)
+
 
 if __name__ == "__main__":
     unittest.main()
