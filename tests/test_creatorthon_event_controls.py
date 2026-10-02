@@ -150,6 +150,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("insightTopicKey(selected)!==topicKey", page)
         self.assertIn("body:JSON.stringify({topic:topicSnapshot})", page)
 
+    def test_insight_queue_preserves_scroll_position_when_rerendered(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("panelTop=current?.scrollTop", page)
+        self.assertIn("replacement.scrollTop=Math.min(panelTop", page)
+        self.assertIn("window.scrollTo({top:pageTop", page)
+
 
 if __name__ == "__main__":
     unittest.main()
