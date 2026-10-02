@@ -9,8 +9,10 @@ from creatorthon_store import (
     accept_event_generation,
     claim_event_seat,
     generation_entitlement,
+    get_workflow_state,
     release_event_generation,
     reserve_event_generation,
+    save_workflow_state,
 )
 
 
@@ -56,6 +58,21 @@ class CreatorthonEventControlTests(unittest.TestCase):
             accept_event_generation(root, "user", "project-b", "pixverse", "job-1")
             self.assertEqual(generation_entitlement(root, "user")["generation_status"], "accepted")
             self.assertFalse(reserve_event_generation(root, "user", "project-c", "pixverse")["allowed"])
+
+    def test_workflow_step_and_selected_topic_survive_reload(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": ""}, clear=False
+        ):
+            root = Path(directory)
+            saved = save_workflow_state(root, "user", {
+                "step": "create",
+                "topics": [{"topic": "First"}, {"topic": "Chosen"}],
+                "selected_topic": {"topic": "Chosen"},
+            })
+            restored = get_workflow_state(root, "user")
+            self.assertEqual(saved["step"], "create")
+            self.assertEqual(restored["topics"][1]["topic"], "Chosen")
+            self.assertEqual(restored["selected_topic"]["topic"], "Chosen")
 
     def test_non_english_topics_are_excluded(self):
         self.assertTrue(app._english_topic({"topic": "PlayStation 5 creator trends", "language": "en"}))

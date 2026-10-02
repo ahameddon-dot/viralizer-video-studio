@@ -67,7 +67,7 @@ from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
-    save_profile, save_report, save_youtube_connection, update_project, workspace,
+    get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
@@ -567,6 +567,12 @@ class CreatorthonProfileRequest(BaseModel):
 
 class CreatorthonTopicsRequest(BaseModel):
     interests: list[str] = Field(min_length=1, max_length=4)
+
+
+class CreatorthonWorkflowRequest(BaseModel):
+    step: str = Field(pattern=r"^(profile|interests|topics|create)$")
+    topics: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
+    selected_topic: dict[str, Any] = Field(default_factory=dict)
 
 
 class CreatorthonInsightsRequest(BaseModel):
@@ -1239,6 +1245,18 @@ async def update_creatorthon_profile(request: Request, payload: CreatorthonProfi
     if payload.onboarding_complete and not payload.interests:
         raise HTTPException(422, "Select at least one interest.")
     return {"profile": save_profile(ROOT, user, payload.model_dump())}
+
+
+@app.get("/api/creatorthon/workflow")
+async def get_creatorthon_workflow(request: Request):
+    user = creatorthon_user(request)
+    return {"workflow": get_workflow_state(ROOT, str(user.get("sub", "")))}
+
+
+@app.put("/api/creatorthon/workflow")
+async def update_creatorthon_workflow(request: Request, payload: CreatorthonWorkflowRequest):
+    user = creatorthon_user(request)
+    return {"workflow": save_workflow_state(ROOT, str(user.get("sub", "")), payload.model_dump())}
 
 
 @app.post("/api/creatorthon/topics")

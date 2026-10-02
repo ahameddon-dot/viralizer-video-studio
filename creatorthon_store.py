@@ -88,6 +88,10 @@ def _schema_statements() -> list[str]:
           created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
           UNIQUE(user_id,topic_key))""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue ON creatorthon_insight_jobs(user_id,position)",
+        """CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
+          user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
+          topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
+          updated_at BIGINT NOT NULL)""",
     ]
 
 
@@ -224,6 +228,11 @@ def _connect(root: Path) -> Iterator[Any]:
     );
     CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue
     ON creatorthon_insight_jobs(user_id,position);
+    CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
+      user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
+      topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL
+    );
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
@@ -490,6 +499,43 @@ def save_profile(root: Path, user: dict[str, Any], profile: dict[str, Any]) -> d
         interests_json=excluded.interests_json,onboarding_complete=excluded.onboarding_complete,
         updated_at=excluded.updated_at""", values)
     return get_profile(root, user)
+
+
+def get_workflow_state(root: Path, user_id: str) -> dict[str, Any]:
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT step,topics_json,selected_topic_json,updated_at "
+            "FROM creatorthon_workflow_states WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return {"step": "", "topics": [], "selected_topic": {}, "updated_at": 0}
+    result = dict(row)
+    return {
+        "step": str(result.get("step") or ""),
+        "topics": _json_load(result.get("topics_json"), []),
+        "selected_topic": _json_load(result.get("selected_topic_json"), {}),
+        "updated_at": int(result.get("updated_at") or 0),
+    }
+
+
+def save_workflow_state(root: Path, user_id: str, state: dict[str, Any]) -> dict[str, Any]:
+    allowed_steps = {"profile", "interests", "topics", "create"}
+    step = str(state.get("step") or "").strip().lower()
+    if step not in allowed_steps:
+        step = "interests"
+    topics = [item for item in state.get("topics", []) if isinstance(item, dict)][:30]
+    selected = state.get("selected_topic") if isinstance(state.get("selected_topic"), dict) else {}
+    now = int(time.time())
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_workflow_states
+            (user_id,step,topics_json,selected_topic_json,updated_at) VALUES (?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET step=excluded.step,topics_json=excluded.topics_json,
+            selected_topic_json=excluded.selected_topic_json,updated_at=excluded.updated_at""",
+            (user_id, step, json.dumps(topics, ensure_ascii=False), json.dumps(selected, ensure_ascii=False), now),
+        )
+    return get_workflow_state(root, user_id)
 
 
 def _project(row: Any) -> dict[str, Any]:
