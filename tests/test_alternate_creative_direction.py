@@ -1,6 +1,6 @@
 import unittest
 
-from app import apply_selected_alternate_direction
+from app import _creatorthon_user_variation, _creatorthon_variation_narration, apply_selected_alternate_direction
 from pixverse_client import build_video_prompt
 
 
@@ -52,6 +52,25 @@ class AlternateCreativeDirectionTests(unittest.TestCase):
         self.assertNotEqual(hero_prompt, human_prompt)
         self.assertIn("pullback", hero_prompt.lower())
         self.assertIn("eye-level tracking", human_prompt.lower())
+
+    def test_same_topic_gets_stable_but_diverse_user_variations(self):
+        topic = {"topic": "Macy's Unveils Its 2026 Fall Fashion Campaign"}
+        first = _creatorthon_user_variation("user-1", topic)
+        self.assertEqual(first, _creatorthon_user_variation("user-1", topic))
+        variations = {_creatorthon_user_variation(f"user-{index}", topic)["creator_angle"] for index in range(20)}
+        self.assertGreaterEqual(len(variations), 18)
+        self.assertTrue(all("Macy's" in angle for angle in variations))
+
+    def test_variation_changes_narration_hook_and_hashtags(self):
+        topic = {"topic": "Macy's Unveils Its 2026 Fall Fashion Campaign"}
+        first = _creatorthon_user_variation("user-1", topic)
+        second = _creatorthon_user_variation("user-2", topic)
+        script = "This campaign is changing the conversation for American fashion audiences today."
+        self.assertNotEqual(
+            _creatorthon_variation_narration(script, first),
+            _creatorthon_variation_narration(script, second),
+        )
+        self.assertEqual(len(first["variation_hashtags"]), 2)
 
 
 if __name__ == "__main__":

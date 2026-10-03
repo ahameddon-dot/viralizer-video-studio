@@ -143,6 +143,64 @@ def apply_selected_alternate_direction(content: dict[str, Any], user_direction: 
     return updated
 
 
+def _creatorthon_user_variation(user_id: str, content: dict[str, Any]) -> dict[str, Any]:
+    """Create a stable, factual creative lens for one user/topic pair."""
+    title = " ".join(str(content.get("topic") or content.get("title") or "Selected topic").split())
+    digest = hashlib.sha256(f"{user_id.strip()}|{title.casefold()}".encode("utf-8")).digest()
+    concepts = ("Hero reveal", "Human impact", "Before and after", "Process in motion", "Editorial spotlight")
+    focuses = (
+        "campaign reveal", "human reaction", "behind-the-scenes process", "signature design detail",
+        "audience perspective", "business significance", "cultural context", "craft and preparation",
+        "real-world impact", "future implication",
+    )
+    openings = (
+        "one article-specific close detail", "the clearest real person or subject", "the visible result before its cause",
+        "a grounded environmental context", "one decisive action already beginning",
+    )
+    endings = (
+        "a clean hero view", "a natural human reaction", "the completed process", "the strongest sourced detail",
+        "a clear visual consequence",
+    )
+    concept, focus, opening, ending = (
+        concepts[digest[0] % len(concepts)], focuses[digest[1] % len(focuses)],
+        openings[digest[2] % len(openings)], endings[digest[3] % len(endings)],
+    )
+    updated = dict(content)
+    updated.update({
+        "selected_alternate_concept": concept,
+        "creator_angle": (
+            f"Use a {focus} angle for {title}. Open with {opening}, develop one factual action supported by the topic, "
+            f"and end on {ending}. Keep every person, product, place, and claim grounded in the supplied story."
+        ),
+        "variation_label": focus.title(),
+        "variation_hashtags": [
+            "#" + "".join(word.title() for word in focus.replace("-", " ").split()),
+            "#" + "".join(word.title() for word in concept.split()),
+        ],
+        "variation_key": digest[:8].hex(),
+    })
+    return updated
+
+
+def _creatorthon_variation_narration(narration: str, content: dict[str, Any]) -> str:
+    """Replace the generic opening with a stable angle-specific hook without lengthening the script."""
+    original = " ".join(str(narration or "").split())
+    focus = str(content.get("variation_label") or "the story").casefold()
+    concept = str(content.get("selected_alternate_concept") or "editorial spotlight").casefold()
+    hooks = {
+        "hero reveal": f"Watch the {focus} take shape.",
+        "human impact": f"See the human side of {focus}.",
+        "before and after": f"See what changes through {focus}.",
+        "process in motion": f"Follow the {focus} in motion.",
+        "editorial spotlight": f"Look closer at the {focus}.",
+    }
+    hook = hooks.get(concept, f"Look closer at the {focus}.")
+    if not original:
+        return hook
+    words, hook_words = original.split(), hook.split()
+    return " ".join((hook_words + words[min(len(words), len(hook_words)):])[:len(words)])
+
+
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 app = FastAPI(title="Viralizer + PixVerse")
@@ -1568,8 +1626,14 @@ async def creatorthon_youtube_disconnect(request: Request):
 
 @app.post("/api/creatorthon/hashtags")
 async def creatorthon_hashtags(request: Request, payload: CreatorthonHashtagRequest):
-    creatorthon_user(request)
-    return {"hashtags": build_hashtags(payload.topic), "mandatory_hashtag": MANDATORY_HASHTAG}
+    user = creatorthon_user(request)
+    varied = _creatorthon_user_variation(str(user.get("sub", "")), payload.topic)
+    tags = build_hashtags(varied)
+    for variation_tag in reversed(varied.get("variation_hashtags") or []):
+        if variation_tag and variation_tag.casefold() not in {tag.casefold() for tag in tags}:
+            tags.insert(4, variation_tag)
+    return {"hashtags": tags[:14], "mandatory_hashtag": MANDATORY_HASHTAG,
+            "variation": str(varied.get("variation_label") or "")}
 
 
 @app.post("/api/creatorthon/publish")
@@ -1987,9 +2051,14 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
 async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepareRequest):
     user = creatorthon_user(request)
     user_id = str(user.get("sub", ""))
+    payload.content = _creatorthon_user_variation(user_id, payload.content)
     prepared = await video_prompt(payload)
+    prepared["narration"] = _creatorthon_variation_narration(str(prepared.get("narration") or ""), payload.content)
+    if prepared.get("heygen_script"):
+        prepared["heygen_script"] = _creatorthon_variation_narration(str(prepared.get("heygen_script") or ""), payload.content)
     title = str(payload.content.get("topic") or payload.content.get("title") or "Selected topic").strip()
-    concept = str(payload.content.get("selected_alternate_concept") or payload.prompt or title).strip()
+    angle = str(payload.content.get("variation_label") or payload.content.get("selected_alternate_concept") or "").strip()
+    concept = str(payload.prompt or (f"{title} · {angle}" if angle else title)).strip()
     values = {
         "provider": payload.provider,
         "status": "prepared",
