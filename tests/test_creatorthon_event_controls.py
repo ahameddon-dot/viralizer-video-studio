@@ -150,6 +150,15 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertEqual(result["prompt"]["text"], "Console reveal")
         self.assertNotIn("SECRET", str(result))
 
+    def test_explicit_user_prompt_replaces_secured_prompt_for_generation(self):
+        project = {"prompt": {"text": "PRIVATE VIRALIZER PROMPT"}}
+        prompt, custom = app._creatorthon_generation_prompt(project, "  My exact video prompt  ")
+        self.assertEqual(prompt, "My exact video prompt")
+        self.assertTrue(custom)
+        prompt, custom = app._creatorthon_generation_prompt(project, "")
+        self.assertEqual(prompt, "PRIVATE VIRALIZER PROMPT")
+        self.assertFalse(custom)
+
     def test_nested_report_values_are_accumulated_without_video_outline(self):
         report = {
             "topicAnalysis": [
@@ -211,6 +220,13 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("creatorthonHashtagTopicKey===topicKey", page)
         self.assertIn("insightTopicKey(selected)!==topicKey", page)
         self.assertIn("body:JSON.stringify({topic:topicSnapshot})", page)
+
+    def test_custom_prompt_editor_is_visible_and_sent_to_secured_generation(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("custom-prompt-field", page)
+        self.assertIn("Describe your video", page)
+        self.assertIn("prompt:custom?customText:''", page)
+        self.assertIn("Create a ${duration}-second short video", page)
 
     def test_insight_queue_preserves_scroll_position_when_rerendered(self):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")

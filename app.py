@@ -1141,6 +1141,15 @@ def _public_workspace(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _creatorthon_generation_prompt(project: dict[str, Any], submitted_prompt: str | None) -> tuple[str, bool]:
+    """Use an explicit participant prompt when supplied; otherwise keep the secured server prompt."""
+    custom = str(submitted_prompt or "").strip()
+    if custom:
+        return custom, True
+    stored = project.get("prompt") if isinstance(project.get("prompt"), dict) else {}
+    return str(stored.get("text") or "").strip(), False
+
+
 @app.get("/api/creatorthon/profile")
 async def creatorthon_profile(request: Request):
     user = creatorthon_user(request)
@@ -1896,9 +1905,13 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
     project = update_project(ROOT, user_id, payload.project_id, {})
     if not project:
         raise HTTPException(404, "Creatorthon project not found.")
-    private_prompt = str((project.get("prompt") or {}).get("text") or "").strip()
+    private_prompt, custom_prompt = _creatorthon_generation_prompt(project, payload.prompt)
     if not private_prompt:
         raise HTTPException(409, "Prepare this concept before generating the video.")
+    if custom_prompt:
+        update_project(ROOT, user_id, payload.project_id, {
+            "prompt": {"text": private_prompt, "concept": private_prompt[:180], "mode": "custom"}
+        })
     payload.prompt = private_prompt
     payload.content = project.get("topic") or payload.content
     unlimited = _unlimited_creatorthon_user(user)
