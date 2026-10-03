@@ -27,5 +27,27 @@ async function grantVideo(email,button){if(!email)return;button.disabled=true;tr
 $('#admitForm').onsubmit=async event=>{event.preventDefault();const email=$('#admitEmail').value.trim(),message=$('#admitMessage');message.className='message';message.textContent='Saving admission…';try{await api('/api/creatorthon/admin/admit',{method:'POST',body:JSON.stringify({email})});message.textContent=email+' can now enter the event.';$('#admitEmail').value='';await load()}catch(error){message.className='message fail';message.textContent=error.message}};
 $('#search').oninput=render;load().catch(error=>{$('#users').innerHTML='<tr><td colspan="8" class="loading">'+error.message+'</td></tr>'});
 </script>
+<style>
+.actions{display:flex;gap:7px;align-items:center}.remove{min-height:33px;border:1px solid #8e334b;border-radius:10px;background:#31121d;color:#ff9bb3;padding:0 12px;font-weight:850;cursor:pointer;white-space:nowrap}.remove:disabled{opacity:.55;cursor:wait}
+</style>
+<script>
+const baseAdminRender=render;
+render=function(){
+  baseAdminRender();
+  [...document.querySelectorAll('#users tr')].forEach((row,index)=>{
+    const user=(state.users||[]).filter(item=>{const query=$('#search').value.trim().toLowerCase();return !query||(item.email+' '+item.full_name).toLowerCase().includes(query)})[index];
+    const cell=row.lastElementChild;
+    if(!user||!cell||cell.querySelector('.remove'))return;
+    cell.classList.add('actions');
+    const button=document.createElement('button');button.className='remove';button.textContent='Remove user';button.onclick=()=>removeUser(user.email,button);cell.append(button);
+  });
+  [...document.querySelectorAll('#audit .row')].forEach((row,index)=>{const item=(state.audit||[])[index],label=row.querySelector('b');if(item?.action==='remove_user'&&label)label.textContent='Removed user'});
+};
+async function removeUser(email,button){
+  if(!email||!confirm('Remove '+email+' from this event? Their projects and videos will be preserved, but their event access will be revoked.'))return;
+  button.disabled=true;
+  try{await api('/api/creatorthon/admin/users',{method:'DELETE',body:JSON.stringify({email})});await load()}catch(error){alert(error.message)}finally{button.disabled=false}
+}
+</script>
 </body>
 </html>

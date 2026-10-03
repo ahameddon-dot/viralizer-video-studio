@@ -12,6 +12,7 @@ from creatorthon_store import (
     event_admin_state,
     grant_event_admission,
     grant_extra_generation,
+    remove_event_user,
     get_workflow_state,
     release_event_generation,
     reserve_event_generation,
@@ -102,6 +103,23 @@ class CreatorthonEventControlTests(unittest.TestCase):
             state = event_admin_state(root, 1)
             self.assertEqual(state["admitted_count"], 2)
             self.assertEqual(state["audit"][0]["action"], "admit_user")
+
+    def test_admin_can_remove_user_free_seat_and_readmit_later(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "remove-test"}, clear=False
+        ):
+            root = Path(directory)
+            claim_event_seat(root, "first", 1, "first@example.com")
+            result = remove_event_user(root, "first@example.com", "ahamed.don@gmail.com")
+            self.assertTrue(result["removed"])
+            replacement = claim_event_seat(root, "second", 1, "second@example.com")
+            self.assertEqual(replacement["seat_number"], 1)
+            with self.assertRaisesRegex(RuntimeError, "removed by an organizer"):
+                claim_event_seat(root, "first", 1, "first@example.com")
+            grant_event_admission(root, "first@example.com", "ahamed.don@gmail.com")
+            restored = claim_event_seat(root, "first", 1, "first@example.com")
+            self.assertTrue(restored["admission_override"])
+            self.assertEqual(event_admin_state(root, 1)["admitted_count"], 2)
 
     def test_workflow_step_and_selected_topic_survive_reload(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(

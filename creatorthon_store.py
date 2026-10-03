@@ -93,6 +93,9 @@ def _schema_statements() -> list[str]:
           event_key TEXT NOT NULL, email TEXT NOT NULL, granted_by TEXT NOT NULL,
           created_at BIGINT NOT NULL, used_at BIGINT NOT NULL DEFAULT 0,
           PRIMARY KEY(event_key,email))""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_event_denials (
+          event_key TEXT NOT NULL, email TEXT NOT NULL, removed_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL, PRIMARY KEY(event_key,email))""",
         """CREATE TABLE IF NOT EXISTS creatorthon_admin_audit (
           id TEXT PRIMARY KEY, event_key TEXT NOT NULL, admin_email TEXT NOT NULL,
           action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
@@ -256,6 +259,10 @@ def _connect(root: Path) -> Iterator[Any]:
       created_at INTEGER NOT NULL, used_at INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY(event_key,email)
     );
+    CREATE TABLE IF NOT EXISTS creatorthon_event_denials (
+      event_key TEXT NOT NULL, email TEXT NOT NULL, removed_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL, PRIMARY KEY(event_key,email)
+    );
     CREATE TABLE IF NOT EXISTS creatorthon_admin_audit (
       id TEXT PRIMARY KEY, event_key TEXT NOT NULL, admin_email TEXT NOT NULL,
       action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
@@ -327,6 +334,13 @@ def claim_event_seat(root: Path, user_id: str, limit: int = 50, email: str = "")
                 )
                 return {**dict(row), "email": normalized_email}
             return dict(row)
+        if normalized_email:
+            denied = db.execute(
+                "SELECT 1 FROM creatorthon_event_denials WHERE event_key=? AND lower(email)=?",
+                (key, normalized_email),
+            ).fetchone()
+            if denied:
+                raise RuntimeError("Your Creatorthon event access was removed by an organizer.")
         override = None
         if normalized_email:
             override = db.execute(
@@ -407,6 +421,10 @@ def grant_event_admission(root: Path, target_email: str, admin_email: str) -> di
     email, key, now = target_email.strip().lower(), event_key(), int(time.time())
     with _connect(root) as db:
         db.execute(
+            "DELETE FROM creatorthon_event_denials WHERE event_key=? AND lower(email)=?",
+            (key, email),
+        )
+        db.execute(
             """INSERT INTO creatorthon_event_admission_overrides (event_key,email,granted_by,created_at,used_at)
             VALUES (?,?,?,?,0) ON CONFLICT(event_key,email) DO UPDATE SET granted_by=excluded.granted_by,
             created_at=excluded.created_at""",
@@ -414,6 +432,33 @@ def grant_event_admission(root: Path, target_email: str, admin_email: str) -> di
         )
         _record_admin_audit(db, admin_email, "admit_user", email)
     return {"email": email, "admitted": True}
+
+
+def remove_event_user(root: Path, target_email: str, admin_email: str) -> dict[str, Any]:
+    """Remove an event participant while preserving their profile, projects, assets, and videos."""
+    email, key, now = target_email.strip().lower(), event_key(), int(time.time())
+    with _connect(root) as db:
+        row = db.execute(
+            """SELECT a.user_id,a.generation_status FROM creatorthon_event_accounts a
+            LEFT JOIN creatorthon_profiles p ON p.user_id=a.user_id
+            WHERE a.event_key=? AND lower(COALESCE(NULLIF(a.email,''),p.email,''))=?""",
+            (key, email),
+        ).fetchone()
+        if not row:
+            raise LookupError("This email is not an admitted Creatorthon user.")
+        account = dict(row)
+        if str(account.get("generation_status") or "") == "reserved":
+            raise RuntimeError("This user cannot be removed while a video generation is starting. Try again shortly.")
+        db.execute(
+            """INSERT INTO creatorthon_event_denials (event_key,email,removed_by,created_at)
+            VALUES (?,?,?,?) ON CONFLICT(event_key,email) DO UPDATE SET
+            removed_by=excluded.removed_by,created_at=excluded.created_at""",
+            (key, email, admin_email.strip().lower(), now),
+        )
+        db.execute("DELETE FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, account["user_id"]))
+        db.execute("DELETE FROM creatorthon_event_admission_overrides WHERE event_key=? AND lower(email)=?", (key, email))
+        _record_admin_audit(db, admin_email, "remove_user", email, {"projects_preserved": True})
+    return {"email": email, "removed": True, "projects_preserved": True}
 
 
 def grant_extra_generation(root: Path, target_email: str, admin_email: str) -> dict[str, Any]:

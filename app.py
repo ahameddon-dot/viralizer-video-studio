@@ -66,7 +66,7 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
-    event_admin_state, grant_event_admission, grant_extra_generation,
+    event_admin_state, grant_event_admission, grant_extra_generation, remove_event_user,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
@@ -1457,6 +1457,17 @@ async def creatorthon_admin_grant_video(request: Request, payload: CreatorthonAd
     allowance = 1 + int(account.get("extra_generation_credits") or 0)
     return {"email": payload.email.strip().lower(), "videos_used": used,
             "total_allowance": allowance, "credits_remaining": max(0, allowance - used)}
+
+
+@app.delete("/api/creatorthon/admin/users")
+async def creatorthon_admin_remove_user(request: Request, payload: CreatorthonAdminEmailRequest):
+    admin = creatorthon_admin_user(request)
+    try:
+        return remove_event_user(ROOT, payload.email, str(admin.get("email") or ""))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.post("/api/creatorthon/projects")
