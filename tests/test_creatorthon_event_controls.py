@@ -159,6 +159,11 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertEqual(prompt, "PRIVATE VIRALIZER PROMPT")
         self.assertFalse(custom)
 
+    def test_custom_prompt_topic_alignment_detects_match_and_mismatch(self):
+        topic = {"topic": "PlayStation 5 gaming console update"}
+        self.assertTrue(app._creatorthon_prompt_matches_topic(topic, "Show a gamer unboxing a PlayStation 5 console."))
+        self.assertFalse(app._creatorthon_prompt_matches_topic(topic, "Show a chef decorating a chocolate wedding cake."))
+
     def test_nested_report_values_are_accumulated_without_video_outline(self):
         report = {
             "topicAnalysis": [
@@ -227,6 +232,9 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("Describe your video", page)
         self.assertIn("prompt:custom?customText:''", page)
         self.assertIn("Create a ${duration}-second short video", page)
+        self.assertIn("I reviewed and updated the speech script", page)
+        self.assertIn("Use this prompt despite the topic mismatch", page)
+        self.assertIn("speech_script_reviewed", page)
 
     def test_insight_queue_preserves_scroll_position_when_rerendered(self):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")

@@ -640,6 +640,10 @@ class CreatorthonConceptGenerateRequest(GenerateRequest):
     """Start a creator video and immediately hand its provider job to durable finishing."""
     project_id: str = Field(min_length=8, max_length=64)
     official_logo_data: str = Field(default="", max_length=14_000_000)
+    custom_prompt_confirmed: bool = False
+    speech_script_reviewed: bool = False
+    hashtags_reviewed: bool = False
+    topic_mismatch_acknowledged: bool = False
 
 
 class CreatorthonPrepareRequest(GenerateRequest):
@@ -1148,6 +1152,23 @@ def _creatorthon_generation_prompt(project: dict[str, Any], submitted_prompt: st
         return custom, True
     stored = project.get("prompt") if isinstance(project.get("prompt"), dict) else {}
     return str(stored.get("text") or "").strip(), False
+
+
+def _creatorthon_prompt_matches_topic(topic: dict[str, Any], prompt: str) -> bool:
+    """Conservatively flag custom prompts with no meaningful lexical connection to the chosen topic."""
+    stop = {
+        "about", "after", "before", "best", "create", "during", "from", "into", "latest", "make",
+        "news", "scene", "short", "show", "that", "their", "this", "through", "topic", "video", "with",
+    }
+    title = str(topic.get("topic") or topic.get("title") or "").casefold()
+    custom = str(prompt or "").casefold()
+    words = lambda value: {word for word in re.findall(r"[a-z0-9]+", value) if len(word) >= 3 and word not in stop}
+    topic_words, prompt_words = words(title), words(custom)
+    if not topic_words or not prompt_words:
+        return False
+    if title.strip() and title.strip() in custom:
+        return True
+    return bool(topic_words & prompt_words)
 
 
 @app.get("/api/creatorthon/profile")
@@ -1909,6 +1930,12 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
     if not private_prompt:
         raise HTTPException(409, "Prepare this concept before generating the video.")
     if custom_prompt:
+        if not payload.custom_prompt_confirmed:
+            raise HTTPException(422, "Confirm that you want to use your own video prompt.")
+        if not payload.speech_script_reviewed or not payload.hashtags_reviewed:
+            raise HTTPException(422, "Review the speech script and hashtags before using a custom prompt.")
+        if not _creatorthon_prompt_matches_topic(project.get("topic") or {}, private_prompt) and not payload.topic_mismatch_acknowledged:
+            raise HTTPException(422, "This prompt may not match the selected topic. Edit it or confirm the topic mismatch.")
         update_project(ROOT, user_id, payload.project_id, {
             "prompt": {"text": private_prompt, "concept": private_prompt[:180], "mode": "custom"}
         })
