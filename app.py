@@ -1157,8 +1157,9 @@ def _creatorthon_generation_prompt(project: dict[str, Any], submitted_prompt: st
 def _creatorthon_prompt_matches_topic(topic: dict[str, Any], prompt: str) -> bool:
     """Conservatively flag custom prompts with no meaningful lexical connection to the chosen topic."""
     stop = {
-        "about", "after", "before", "best", "create", "during", "from", "into", "latest", "make",
-        "news", "scene", "short", "show", "that", "their", "this", "through", "topic", "video", "with",
+        "about", "after", "before", "best", "campaign", "celebration", "commercial", "create", "during",
+        "featuring", "from", "into", "latest", "make", "news", "premium", "scene", "seconds", "short",
+        "show", "that", "their", "this", "through", "topic", "video", "with",
     }
     title = str(topic.get("topic") or topic.get("title") or "").casefold()
     custom = str(prompt or "").casefold()
@@ -1168,7 +1169,9 @@ def _creatorthon_prompt_matches_topic(topic: dict[str, Any], prompt: str) -> boo
         return False
     if title.strip() and title.strip() in custom:
         return True
-    return bool(topic_words & prompt_words)
+    overlap = topic_words & prompt_words
+    required = 1 if len(topic_words) <= 2 else 2
+    return len(overlap) >= required
 
 
 @app.get("/api/creatorthon/profile")

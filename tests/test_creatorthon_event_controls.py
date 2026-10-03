@@ -163,6 +163,10 @@ class CreatorthonEventControlTests(unittest.TestCase):
         topic = {"topic": "PlayStation 5 gaming console update"}
         self.assertTrue(app._creatorthon_prompt_matches_topic(topic, "Show a gamer unboxing a PlayStation 5 console."))
         self.assertFalse(app._creatorthon_prompt_matches_topic(topic, "Show a chef decorating a chocolate wedding cake."))
+        self.assertFalse(app._creatorthon_prompt_matches_topic(
+            {"topic": "Macy's Unveils Its 2026 Fall Fashion Campaign Featuring a Celebration of American Fashion"},
+            "Create a premium commercial featuring a sleek Audi performance sedan.",
+        ))
 
     def test_nested_report_values_are_accumulated_without_video_outline(self):
         report = {
@@ -235,6 +239,7 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("I reviewed and updated the speech script", page)
         self.assertIn("Use this prompt despite the topic mismatch", page)
         self.assertIn("speech_script_reviewed", page)
+        self.assertIn("custom-prompt-field>label:before", page)
 
     def test_insight_queue_preserves_scroll_position_when_rerendered(self):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
