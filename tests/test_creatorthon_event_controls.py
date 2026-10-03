@@ -9,6 +9,9 @@ from creatorthon_store import (
     accept_event_generation,
     claim_event_seat,
     generation_entitlement,
+    event_admin_state,
+    grant_event_admission,
+    grant_extra_generation,
     get_workflow_state,
     release_event_generation,
     reserve_event_generation,
@@ -27,6 +30,13 @@ class CreatorthonEventControlTests(unittest.TestCase):
     def test_environment_can_add_an_unlimited_email(self):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": "owner@example.com"}, clear=False):
             self.assertTrue(app._unlimited_creatorthon_user({"email": "OWNER@example.com"}))
+            self.assertFalse(app._creatorthon_admin_user({"email": "OWNER@example.com"}))
+
+    def test_only_the_three_organizer_emails_have_admin_access(self):
+        self.assertTrue(app._creatorthon_admin_user({"email": "ahamed.don@gmail.com"}))
+        self.assertTrue(app._creatorthon_admin_user({"email": "yusufiid@gmail.com"}))
+        self.assertTrue(app._creatorthon_admin_user({"email": "ansariarif1@gmail.com"}))
+        self.assertFalse(app._creatorthon_admin_user({"email": "other@example.com"}))
 
     def test_event_capacity_is_shared_and_atomic_in_store(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -58,6 +68,40 @@ class CreatorthonEventControlTests(unittest.TestCase):
             accept_event_generation(root, "user", "project-b", "pixverse", "job-1")
             self.assertEqual(generation_entitlement(root, "user")["generation_status"], "accepted")
             self.assertFalse(reserve_event_generation(root, "user", "project-c", "pixverse")["allowed"])
+
+    def test_admin_can_grant_exactly_one_more_video(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "credit-test"}, clear=False
+        ):
+            root = Path(directory)
+            claim_event_seat(root, "user", 50, "person@example.com")
+            self.assertTrue(reserve_event_generation(root, "user", "one", "pixverse")["allowed"])
+            accept_event_generation(root, "user", "one", "pixverse", "job-1")
+            self.assertFalse(reserve_event_generation(root, "user", "two", "pixverse")["allowed"])
+            grant_extra_generation(root, "person@example.com", "ahamed.don@gmail.com")
+            self.assertTrue(reserve_event_generation(root, "user", "two", "pixverse")["allowed"])
+            accept_event_generation(root, "user", "two", "pixverse", "job-2")
+            self.assertFalse(reserve_event_generation(root, "user", "three", "pixverse")["allowed"])
+            account = event_admin_state(root)["users"][0]
+            self.assertEqual(account["videos_used"], 2)
+            self.assertEqual(account["total_allowance"], 2)
+            self.assertEqual(account["credits_remaining"], 0)
+
+    def test_admin_can_admit_named_email_after_capacity(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "admit-test"}, clear=False
+        ):
+            root = Path(directory)
+            claim_event_seat(root, "first", 1, "first@example.com")
+            with self.assertRaisesRegex(RuntimeError, "50-user"):
+                claim_event_seat(root, "second", 1, "second@example.com")
+            grant_event_admission(root, "second@example.com", "ahamed.don@gmail.com")
+            admitted = claim_event_seat(root, "second", 1, "second@example.com")
+            self.assertEqual(admitted["seat_number"], 2)
+            self.assertEqual(admitted["admission_override"], 1)
+            state = event_admin_state(root, 1)
+            self.assertEqual(state["admitted_count"], 2)
+            self.assertEqual(state["audit"][0]["action"], "admit_user")
 
     def test_workflow_step_and_selected_topic_survive_reload(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(

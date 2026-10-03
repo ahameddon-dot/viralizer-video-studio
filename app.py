@@ -66,6 +66,7 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
+    event_admin_state, grant_event_admission, grant_extra_generation,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
@@ -575,6 +576,10 @@ class CreatorthonWorkflowRequest(BaseModel):
     selected_topic: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreatorthonAdminEmailRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
 class CreatorthonInsightsRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=500)
 
@@ -790,6 +795,7 @@ async def creatorthon_login(request: Request, next: str = "/creatorthon"):
 async def creatorthon(request: Request):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
         return RedirectResponse("/creatorthon/login", status_code=303)
+    creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon.html", headers={"Cache-Control": "no-store"})
 
 
@@ -806,6 +812,7 @@ async def creatorthon_v1_login(request: Request):
 async def creatorthon_concept(request: Request):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
         return RedirectResponse("/creatorthon/login?next=/creatorthon/concept", status_code=303)
+    creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon-concept.html", headers={"Cache-Control": "no-store"})
 
 @app.get("/creatorthon-v2/login", response_class=HTMLResponse)
@@ -853,8 +860,22 @@ async def creatorthon_v3(request: Request):
 async def creatorthon_workspace_page(request: Request):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
         return RedirectResponse("/creatorthon/login", status_code=303)
+    creatorthon_user(request)
     return FileResponse(
         ROOT / "static" / "creatorthon-workspace.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/creatorthon/admin")
+async def creatorthon_admin_page(request: Request):
+    user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if not user:
+        return RedirectResponse("/creatorthon/login?next=/creatorthon/admin", status_code=303)
+    if not _creatorthon_admin_user(user):
+        raise HTTPException(403, "Creatorthon organizer access required.")
+    return FileResponse(
+        ROOT / "static" / "creatorthon-admin.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
 
@@ -890,6 +911,7 @@ CREATORTHON_UNLIMITED_EMAILS = frozenset({
     "yusufiid@gmail.com",
     "ansariarif1@gmail.com",
 })
+CREATORTHON_ADMIN_EMAILS = CREATORTHON_UNLIMITED_EMAILS
 
 
 def _unlimited_creatorthon_user(user: dict[str, Any]) -> bool:
@@ -902,6 +924,19 @@ def _unlimited_creatorthon_user(user: dict[str, Any]) -> bool:
     return email in CREATORTHON_UNLIMITED_EMAILS or email in configured
 
 
+def _creatorthon_admin_user(user: dict[str, Any]) -> bool:
+    return str(user.get("email") or "").strip().lower() in CREATORTHON_ADMIN_EMAILS
+
+
+def creatorthon_admin_user(request: Request) -> dict[str, Any]:
+    user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if not user:
+        raise HTTPException(401, "Google sign-in required.")
+    if not _creatorthon_admin_user(user):
+        raise HTTPException(403, "Creatorthon organizer access required.")
+    return user
+
+
 def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if not user:
@@ -909,7 +944,7 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
     if _unlimited_creatorthon_user(user):
         return user
     try:
-        claim_event_seat(ROOT, str(user.get("sub", "")), int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+        claim_event_seat(ROOT, str(user.get("sub", "")), int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")), str(user.get("email") or ""))
     except RuntimeError as exc:
         raise HTTPException(403, str(exc)) from exc
     return user
@@ -1054,6 +1089,7 @@ def _report_hashtags(report: Any, outline: dict[str, Any]) -> list[str]:
     raw: Any = outline.get("hashtags") or _first_report_value(
         values, "hashtags and keywords", "hashtags", "hashtag"
     )
+
 
     if not raw:
         raw = _report_insight(report, "Hashtags") or _report_insight(report, "Hashtags and Keywords")
@@ -1385,13 +1421,42 @@ async def creatorthon_event_status(request: Request):
     capacity = int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50"))
     if _unlimited_creatorthon_user(user):
         return {"generation_used": False, "generation_status": "unlimited", "unlimited": True,
-                "participant_number": None, "capacity": capacity, "participant_label": "Organizer"}
-    status = generation_entitlement(ROOT, str(user.get("sub", "")))
+                "admin": _creatorthon_admin_user(user), "participant_number": None,
+                "capacity": capacity, "participant_label": "Organizer"}
+    status = generation_entitlement(ROOT, str(user.get("sub", "")), str(user.get("email") or ""))
     seat_number = int(status.get("seat_number") or 0)
-    return {"generation_used": status.get("generation_status") == "accepted",
-            "generation_status": status.get("generation_status") or "available", "unlimited": False,
+    used = int(status.get("generation_count") or 0)
+    allowance = 1 + int(status.get("extra_generation_credits") or 0)
+    return {"generation_used": used >= allowance,
+            "generation_status": status.get("generation_status") or "available", "unlimited": False, "admin": False,
+            "videos_used": used, "total_allowance": allowance, "credits_remaining": max(0, allowance - used),
             "participant_number": seat_number, "capacity": capacity,
             "participant_label": f"Participant #{seat_number} of {capacity}"}
+
+
+@app.get("/api/creatorthon/admin/state")
+async def creatorthon_admin_state(request: Request):
+    creatorthon_admin_user(request)
+    return event_admin_state(ROOT, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+
+
+@app.post("/api/creatorthon/admin/admit")
+async def creatorthon_admin_admit(request: Request, payload: CreatorthonAdminEmailRequest):
+    admin = creatorthon_admin_user(request)
+    return grant_event_admission(ROOT, payload.email, str(admin.get("email") or ""))
+
+
+@app.post("/api/creatorthon/admin/grant-video")
+async def creatorthon_admin_grant_video(request: Request, payload: CreatorthonAdminEmailRequest):
+    admin = creatorthon_admin_user(request)
+    try:
+        account = grant_extra_generation(ROOT, payload.email, str(admin.get("email") or ""))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    used = int(account.get("generation_count") or 0)
+    allowance = 1 + int(account.get("extra_generation_credits") or 0)
+    return {"email": payload.email.strip().lower(), "videos_used": used,
+            "total_allowance": allowance, "credits_remaining": max(0, allowance - used)}
 
 
 @app.post("/api/creatorthon/projects")
@@ -1827,9 +1892,9 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
     payload.content = project.get("topic") or payload.content
     unlimited = _unlimited_creatorthon_user(user)
     if not unlimited:
-        reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider)
+        reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider, str(user.get("email") or ""))
         if not reservation.get("allowed"):
-            detail = "This Creatorthon account has already used its one video generation. Open My Workspace to view or recover that video."
+            detail = "This Creatorthon account has used all available video credits. Ask an organizer for one more video or open My Workspace to view the existing video."
             if reservation.get("generation_status") == "reserved":
                 detail = "A video generation is already starting for this account. Please wait and recover it from My Workspace instead of starting another."
             raise HTTPException(409, detail)

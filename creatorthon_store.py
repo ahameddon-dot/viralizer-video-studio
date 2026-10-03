@@ -72,10 +72,11 @@ def _schema_statements() -> list[str]:
           url TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at BIGINT NOT NULL)""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC)",
         """CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
-          event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at BIGINT NOT NULL, seat_number INTEGER NOT NULL DEFAULT 0,
+          event_key TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', admitted_at BIGINT NOT NULL, seat_number INTEGER NOT NULL DEFAULT 0,
           generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
           generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
-          generation_updated_at BIGINT NOT NULL DEFAULT 0,
+          generation_updated_at BIGINT NOT NULL DEFAULT 0, generation_count INTEGER NOT NULL DEFAULT 0,
+          extra_generation_credits INTEGER NOT NULL DEFAULT 0, admission_override INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (event_key, user_id))""",
         """CREATE TABLE IF NOT EXISTS creatorthon_youtube_connections (
           user_id TEXT PRIMARY KEY, refresh_token_ciphertext TEXT NOT NULL,
@@ -88,6 +89,14 @@ def _schema_statements() -> list[str]:
           created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
           UNIQUE(user_id,topic_key))""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue ON creatorthon_insight_jobs(user_id,position)",
+        """CREATE TABLE IF NOT EXISTS creatorthon_event_admission_overrides (
+          event_key TEXT NOT NULL, email TEXT NOT NULL, granted_by TEXT NOT NULL,
+          created_at BIGINT NOT NULL, used_at BIGINT NOT NULL DEFAULT 0,
+          PRIMARY KEY(event_key,email))""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_admin_audit (
+          id TEXT PRIMARY KEY, event_key TEXT NOT NULL, admin_email TEXT NOT NULL,
+          action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+          created_at BIGINT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
           user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
           topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
@@ -107,6 +116,14 @@ def _project_columns() -> tuple[tuple[str, str], ...]:
 
 def _ensure_event_account_schema(db: Any) -> None:
     _ensure_column(db, "creatorthon_event_accounts", "seat_number", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "creatorthon_event_accounts", "email", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(db, "creatorthon_event_accounts", "generation_count", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "creatorthon_event_accounts", "extra_generation_credits", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "creatorthon_event_accounts", "admission_override", "INTEGER NOT NULL DEFAULT 0")
+    db.execute(
+        "UPDATE creatorthon_event_accounts SET generation_count=1 "
+        "WHERE generation_status='accepted' AND generation_count=0"
+    )
     rows = db.execute(
         "SELECT event_key,user_id,seat_number FROM creatorthon_event_accounts ORDER BY event_key,admitted_at,user_id"
     ).fetchall()
@@ -207,11 +224,12 @@ def _connect(root: Path) -> Iterator[Any]:
     );
     CREATE INDEX IF NOT EXISTS idx_creatorthon_assets_user ON creatorthon_assets(user_id, created_at DESC);
     CREATE TABLE IF NOT EXISTS creatorthon_event_accounts (
-      event_key TEXT NOT NULL, user_id TEXT NOT NULL, admitted_at INTEGER NOT NULL,
+      event_key TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', admitted_at INTEGER NOT NULL,
       seat_number INTEGER NOT NULL DEFAULT 0,
       generation_status TEXT NOT NULL DEFAULT '', generation_project_id TEXT NOT NULL DEFAULT '',
       generation_provider TEXT NOT NULL DEFAULT '', generation_job_id TEXT NOT NULL DEFAULT '',
-      generation_updated_at INTEGER NOT NULL DEFAULT 0,
+      generation_updated_at INTEGER NOT NULL DEFAULT 0, generation_count INTEGER NOT NULL DEFAULT 0,
+      extra_generation_credits INTEGER NOT NULL DEFAULT 0, admission_override INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (event_key, user_id)
     );
     CREATE TABLE IF NOT EXISTS creatorthon_youtube_connections (
@@ -233,10 +251,21 @@ def _connect(root: Path) -> Iterator[Any]:
       topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS creatorthon_event_admission_overrides (
+      event_key TEXT NOT NULL, email TEXT NOT NULL, granted_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL, used_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(event_key,email)
+    );
+    CREATE TABLE IF NOT EXISTS creatorthon_admin_audit (
+      id TEXT PRIMARY KEY, event_key TEXT NOT NULL, admin_email TEXT NOT NULL,
+      action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL
+    );
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
     _ensure_event_account_schema(db)
+    db.commit()
     try:
         yield db
         db.commit()
@@ -281,9 +310,9 @@ def event_key() -> str:
     return os.getenv("CREATORTHON_EVENT_KEY", "creatorthon-event-2026").strip() or "creatorthon-event-2026"
 
 
-def claim_event_seat(root: Path, user_id: str, limit: int = 50) -> dict[str, Any]:
+def claim_event_seat(root: Path, user_id: str, limit: int = 50, email: str = "") -> dict[str, Any]:
     """Atomically admit one account to the configured event, up to the shared cap."""
-    key, now = event_key(), int(time.time())
+    key, now, normalized_email = event_key(), int(time.time()), email.strip().lower()
     with _connect(root) as db:
         if getattr(db, "dialect", "sqlite") == "postgres":
             db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-seat:{key}",))
@@ -291,35 +320,54 @@ def claim_event_seat(root: Path, user_id: str, limit: int = 50) -> dict[str, Any
             db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, user_id)).fetchone()
         if row:
+            if normalized_email and not str(dict(row).get("email") or "").strip():
+                db.execute(
+                    "UPDATE creatorthon_event_accounts SET email=? WHERE event_key=? AND user_id=?",
+                    (normalized_email, key, user_id),
+                )
+                return {**dict(row), "email": normalized_email}
             return dict(row)
+        override = None
+        if normalized_email:
+            override = db.execute(
+                "SELECT * FROM creatorthon_event_admission_overrides WHERE event_key=? AND lower(email)=?",
+                (key, normalized_email),
+            ).fetchone()
         count_row = db.execute("SELECT COUNT(*) AS total FROM creatorthon_event_accounts WHERE event_key=?", (key,)).fetchone()
         total = int(dict(count_row).get("total", 0) if hasattr(count_row, "keys") else count_row[0])
-        if total >= max(1, int(limit)):
+        if total >= max(1, int(limit)) and not override:
             raise RuntimeError("The 50-user Creatorthon event capacity has been reached.")
         occupied_rows = db.execute(
             "SELECT seat_number FROM creatorthon_event_accounts WHERE event_key=? AND seat_number>0",
             (key,),
         ).fetchall()
         occupied = {int(dict(item).get("seat_number") or 0) for item in occupied_rows}
-        seat_number = next(number for number in range(1, max(1, int(limit)) + 1) if number not in occupied)
+        seat_number = next(number for number in range(1, max(max(occupied, default=0) + 2, int(limit) + 2)) if number not in occupied)
         db.execute(
-            "INSERT INTO creatorthon_event_accounts (event_key,user_id,admitted_at,seat_number) VALUES (?,?,?,?)",
-            (key, user_id, now, seat_number),
+            "INSERT INTO creatorthon_event_accounts (event_key,user_id,email,admitted_at,seat_number,admission_override) VALUES (?,?,?,?,?,?)",
+            (key, user_id, normalized_email, now, seat_number, int(bool(override))),
         )
-        return {"event_key": key, "user_id": user_id, "admitted_at": now, "seat_number": seat_number, "generation_status": ""}
+        if override:
+            db.execute(
+                "UPDATE creatorthon_event_admission_overrides SET used_at=? WHERE event_key=? AND lower(email)=?",
+                (now, key, normalized_email),
+            )
+        return {"event_key": key, "user_id": user_id, "email": normalized_email, "admitted_at": now,
+                "seat_number": seat_number, "generation_status": "", "generation_count": 0,
+                "extra_generation_credits": 0, "admission_override": int(bool(override))}
 
 
-def generation_entitlement(root: Path, user_id: str) -> dict[str, Any]:
-    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+def generation_entitlement(root: Path, user_id: str, email: str = "") -> dict[str, Any]:
+    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")), email)
     with _connect(root) as db:
         row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (event_key(), user_id)).fetchone()
     return dict(row) if row else {}
 
 
-def reserve_event_generation(root: Path, user_id: str, project_id: str, provider: str) -> dict[str, Any]:
+def reserve_event_generation(root: Path, user_id: str, project_id: str, provider: str, email: str = "") -> dict[str, Any]:
     """Reserve the one generation slot. Failed provider starts can release it safely."""
     key, now = event_key(), int(time.time())
-    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+    claim_event_seat(root, user_id, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")), email)
     with _connect(root) as db:
         if getattr(db, "dialect", "sqlite") == "postgres":
             db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-generation:{key}:{user_id}",))
@@ -328,7 +376,9 @@ def reserve_event_generation(root: Path, user_id: str, project_id: str, provider
         row = db.execute("SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, user_id)).fetchone()
         item = dict(row)
         status = str(item.get("generation_status") or "")
-        if status in {"reserved", "accepted"}:
+        used = int(item.get("generation_count") or 0)
+        allowance = 1 + int(item.get("extra_generation_credits") or 0)
+        if status == "reserved" or used >= allowance:
             return {**item, "allowed": False}
         db.execute("UPDATE creatorthon_event_accounts SET generation_status='reserved',generation_project_id=?,generation_provider=?,generation_updated_at=? WHERE event_key=? AND user_id=?", (project_id, provider, now, key, user_id))
     return {"allowed": True, "generation_status": "reserved", "generation_project_id": project_id}
@@ -341,7 +391,88 @@ def release_event_generation(root: Path, user_id: str, project_id: str) -> None:
 
 def accept_event_generation(root: Path, user_id: str, project_id: str, provider: str, job_id: str) -> None:
     with _connect(root) as db:
-        db.execute("UPDATE creatorthon_event_accounts SET generation_status='accepted',generation_provider=?,generation_job_id=?,generation_updated_at=? WHERE event_key=? AND user_id=? AND generation_project_id=?", (provider, job_id, int(time.time()), event_key(), user_id, project_id))
+        db.execute("UPDATE creatorthon_event_accounts SET generation_status='accepted',generation_provider=?,generation_job_id=?,generation_updated_at=?,generation_count=generation_count+1 WHERE event_key=? AND user_id=? AND generation_project_id=? AND generation_status='reserved'", (provider, job_id, int(time.time()), event_key(), user_id, project_id))
+
+
+def _record_admin_audit(db: Any, admin_email: str, action: str, target_email: str,
+                        details: dict[str, Any] | None = None) -> None:
+    db.execute(
+        "INSERT INTO creatorthon_admin_audit (id,event_key,admin_email,action,target_email,details_json,created_at) VALUES (?,?,?,?,?,?,?)",
+        (uuid.uuid4().hex, event_key(), admin_email.strip().lower(), action, target_email.strip().lower(),
+         json.dumps(details or {}, ensure_ascii=False), int(time.time())),
+    )
+
+
+def grant_event_admission(root: Path, target_email: str, admin_email: str) -> dict[str, Any]:
+    email, key, now = target_email.strip().lower(), event_key(), int(time.time())
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_event_admission_overrides (event_key,email,granted_by,created_at,used_at)
+            VALUES (?,?,?,?,0) ON CONFLICT(event_key,email) DO UPDATE SET granted_by=excluded.granted_by,
+            created_at=excluded.created_at""",
+            (key, email, admin_email.strip().lower(), now),
+        )
+        _record_admin_audit(db, admin_email, "admit_user", email)
+    return {"email": email, "admitted": True}
+
+
+def grant_extra_generation(root: Path, target_email: str, admin_email: str) -> dict[str, Any]:
+    email, key = target_email.strip().lower(), event_key()
+    with _connect(root) as db:
+        row = db.execute(
+            """SELECT a.user_id FROM creatorthon_event_accounts a
+            LEFT JOIN creatorthon_profiles p ON p.user_id=a.user_id
+            WHERE a.event_key=? AND lower(COALESCE(NULLIF(a.email,''),p.email,''))=?""",
+            (key, email),
+        ).fetchone()
+        if not row:
+            raise LookupError("This email has not entered the Creatorthon event yet.")
+        user_id = str(dict(row).get("user_id") or "")
+        db.execute(
+            "UPDATE creatorthon_event_accounts SET extra_generation_credits=extra_generation_credits+1 "
+            "WHERE event_key=? AND user_id=?",
+            (key, user_id),
+        )
+        _record_admin_audit(db, admin_email, "grant_video_credit", email, {"credits": 1})
+        updated = db.execute(
+            "SELECT * FROM creatorthon_event_accounts WHERE event_key=? AND user_id=?", (key, user_id)
+        ).fetchone()
+    return dict(updated)
+
+
+def event_admin_state(root: Path, limit: int = 50) -> dict[str, Any]:
+    key = event_key()
+    with _connect(root) as db:
+        rows = db.execute(
+            """SELECT a.*,COALESCE(NULLIF(a.email,''),p.email,'') AS resolved_email,
+            COALESCE(p.full_name,'') AS full_name
+            FROM creatorthon_event_accounts a LEFT JOIN creatorthon_profiles p ON p.user_id=a.user_id
+            WHERE a.event_key=? ORDER BY a.seat_number""",
+            (key,),
+        ).fetchall()
+        pending = db.execute(
+            "SELECT email,granted_by,created_at FROM creatorthon_event_admission_overrides "
+            "WHERE event_key=? AND used_at=0 ORDER BY created_at DESC", (key,)
+        ).fetchall()
+        audit = db.execute(
+            "SELECT admin_email,action,target_email,details_json,created_at FROM creatorthon_admin_audit "
+            "WHERE event_key=? ORDER BY created_at DESC LIMIT 100", (key,)
+        ).fetchall()
+    users = []
+    for row in rows:
+        item = dict(row)
+        used = int(item.get("generation_count") or 0)
+        allowance = 1 + int(item.get("extra_generation_credits") or 0)
+        users.append({
+            "user_id": str(item.get("user_id") or ""), "email": str(item.get("resolved_email") or ""),
+            "full_name": str(item.get("full_name") or ""), "seat_number": int(item.get("seat_number") or 0),
+            "admitted_at": int(item.get("admitted_at") or 0), "admission_override": bool(item.get("admission_override")),
+            "generation_status": str(item.get("generation_status") or "available"),
+            "videos_used": used, "total_allowance": allowance, "credits_remaining": max(0, allowance - used),
+        })
+    return {"event_key": key, "capacity": int(limit), "admitted_count": len(users), "users": users,
+            "pending_admissions": [dict(row) for row in pending],
+            "audit": [{**dict(row), "details": _json_load(dict(row).get("details_json"), {})} for row in audit]}
 
 
 def save_youtube_connection(root: Path, user_id: str, connection: dict[str, Any]) -> dict[str, Any]:
