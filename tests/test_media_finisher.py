@@ -1,6 +1,9 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from media_finisher import _media_request_headers, _media_url_candidates, _normalize_media_url, _speech_retryable
+from media_finisher import _append_outro, _media_request_headers, _media_url_candidates, _normalize_media_url, _speech_retryable
 
 
 class MediaFinisherUrlTests(unittest.TestCase):
@@ -34,6 +37,20 @@ class MediaFinisherUrlTests(unittest.TestCase):
         self.assertTrue(_speech_retryable(503))
         self.assertFalse(_speech_retryable(400))
         self.assertFalse(_speech_retryable(401))
+
+    def test_outro_is_fitted_to_the_generated_video_and_concatenated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);video=root/"main.mp4";outro=root/"outro.mp4";output=root/"final.mp4"
+            video.write_bytes(b"main");outro.write_bytes(b"outro")
+            infos=[{"width":720,"height":1280,"duration":10.0,"audio":False},{"width":1280,"height":720,"duration":10.0,"audio":True}]
+            with patch("media_finisher.shutil.which",return_value="ffmpeg"), patch("media_finisher._media_info",side_effect=infos), patch("media_finisher.subprocess.run") as run:
+                run.return_value.returncode=0
+                _append_outro(video,outro,output)
+            command=run.call_args.args[0]
+            filters=command[command.index("-filter_complex")+1]
+            self.assertIn("scale=720:1280:force_original_aspect_ratio=decrease",filters)
+            self.assertIn("concat=n=2:v=1:a=1",filters)
+            self.assertIn("anullsrc=r=48000:cl=stereo",command)
 
 
 if __name__ == "__main__":

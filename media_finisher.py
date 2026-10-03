@@ -1,4 +1,4 @@
-import asyncio, io, os, re, shutil, subprocess, tempfile, uuid
+import asyncio, io, json, os, re, shutil, subprocess, tempfile, uuid
 from pathlib import Path
 from urllib.parse import unquote, urlparse, urlunparse
 import httpx
@@ -150,11 +150,60 @@ def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="botto
     cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
     completed=subprocess.run(cmd,capture_output=True,text=True)
     if completed.returncode: raise MediaFinisherError("Could not add the selected speech, logo, or text overlay to the video.")
+
+
+def _media_info(path: Path) -> dict:
+    if not shutil.which("ffprobe"): raise MediaFinisherError("FFprobe is not installed on the server.")
+    completed=subprocess.run(
+        ["ffprobe","-v","error","-show_entries","format=duration:stream=codec_type,width,height","-of","json",str(path)],
+        capture_output=True,text=True,
+    )
+    if completed.returncode: raise MediaFinisherError("Could not inspect a video before adding the Viralizer outro.")
+    try:data=json.loads(completed.stdout or "{}")
+    except ValueError as exc: raise MediaFinisherError("Could not inspect a video before adding the Viralizer outro.") from exc
+    video=next((item for item in data.get("streams",[]) if item.get("codec_type")=="video"),{})
+    return {
+        "width":int(video.get("width") or 0), "height":int(video.get("height") or 0),
+        "duration":max(.1,float((data.get("format") or {}).get("duration") or 0)),
+        "audio":any(item.get("codec_type")=="audio" for item in data.get("streams",[])),
+    }
+
+
+def _append_outro(video: Path, outro: Path, output: Path) -> None:
+    if not shutil.which("ffmpeg"): raise MediaFinisherError("FFmpeg is not installed on the server.")
+    if not outro.is_file(): raise MediaFinisherError("The Viralizer outro video is not installed on the server.")
+    main_info,outro_info=_media_info(video),_media_info(outro)
+    width,height=main_info["width"],main_info["height"]
+    if width<2 or height<2: raise MediaFinisherError("The generated video dimensions could not be read.")
+    width-=width%2;height-=height%2
+    cmd=["ffmpeg","-y","-i",str(video),"-i",str(outro)]
+    filters=[]
+    for index,label in ((0,"v0"),(1,"v1")):
+        filters.append(
+            f"[{index}:v:0]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,"
+            f"format=yuv420p,setpts=PTS-STARTPTS[{label}]"
+        )
+    next_input=2
+    for index,(info,label) in enumerate(((main_info,"a0"),(outro_info,"a1"))):
+        if info["audio"]:
+            source=f"[{index}:a:0]"
+        else:
+            cmd += ["-f","lavfi","-t",str(info["duration"]),"-i","anullsrc=r=48000:cl=stereo"]
+            source=f"[{next_input}:a:0]";next_input+=1
+        filters.append(f"{source}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS[{label}]")
+    filters.append("[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]")
+    cmd += ["-filter_complex",";".join(filters),"-map","[v]","-map","[a]","-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
+    completed=subprocess.run(cmd,capture_output=True,text=True)
+    if completed.returncode: raise MediaFinisherError("Could not append the Viralizer outro to the finished video.")
+
+
 async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None, source_path=None):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
     output=folder/f"viralizer-{uuid.uuid4().hex}.mp4"
     with tempfile.TemporaryDirectory(prefix="viralizer-finish-") as name:
         temp=Path(name); video=temp/"source.mp4"
+        already_finished=source_path is None and str(video_url).startswith('/api/finished-video/')
         if source_path is not None:
             shutil.copy2(Path(source_path),video)
         elif str(video_url).startswith('/api/finished-video/'):
@@ -176,5 +225,10 @@ async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="",
             try:
                 with Image.open(io.BytesIO(secondary_logo_bytes)) as source: source.thumbnail((1000,1000),Image.Resampling.LANCZOS); source.convert("RGBA").save(secondary_logo,"PNG")
             except Exception as exc: raise MediaFinisherError("The official logo could not be read as an image.") from exc
-        await asyncio.to_thread(_ffmpeg,video,output,audio,logo,overlay_text,overlay_position,overlay_color,secondary_logo)
+        branded=temp/"branded.mp4" if not already_finished else output
+        await asyncio.to_thread(_ffmpeg,video,branded,audio,logo,overlay_text,overlay_position,overlay_color,secondary_logo)
+        if not already_finished:
+            configured=os.getenv("VIRALIZER_OUTRO_PATH","").strip()
+            outro=Path(configured) if configured else Path(__file__).parent/"static"/"viralizer-outro.mp4"
+            await asyncio.to_thread(_append_outro,branded,outro,output)
     return output
