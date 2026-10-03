@@ -240,6 +240,8 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("Use this prompt despite the topic mismatch", page)
         self.assertIn("speech_script_reviewed", page)
         self.assertIn("custom-prompt-field>label:before", page)
+        self.assertIn(".production-field:not(.narration)>label:before", page)
+        self.assertNotIn(".production-field:not(.narration) label:before", page)
 
     def test_insight_queue_preserves_scroll_position_when_rerendered(self):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
