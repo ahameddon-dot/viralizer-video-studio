@@ -70,7 +70,7 @@ from creatorthon_store import (
     event_admin_state, grant_event_admission, grant_extra_generation, remove_event_user,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
-    claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
+    claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
     get_cached_category_topics, get_cached_topic_insight, save_cached_category_topics, save_cached_topic_insight,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
@@ -1694,6 +1694,15 @@ async def retry_creatorthon_insight(request: Request, job_id: str):
     if not retry_insight_job(ROOT, user_id, job_id):
         raise HTTPException(409, "Only a failed topic analysis can be retried.")
     _start_creatorthon_insight_queue(user_id)
+    return {"jobs": list_insight_jobs(ROOT, user_id)}
+
+
+@app.delete("/api/creatorthon/insight-queue/{job_id}")
+async def delete_creatorthon_insight(request: Request, job_id: str):
+    user = creatorthon_user(request)
+    user_id = str(user.get("sub", ""))
+    if not delete_insight_job(ROOT, user_id, job_id):
+        raise HTTPException(404, "The selected topic was not found.")
     return {"jobs": list_insight_jobs(ROOT, user_id)}
 
 

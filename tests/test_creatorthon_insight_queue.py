@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from creatorthon_store import (
     claim_next_insight_job,
+    delete_insight_job,
     enqueue_insight_job,
     finish_insight_job,
     get_cached_category_topics,
@@ -58,6 +59,13 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         finish_insight_job(self.root, "user-1", claimed["id"], result={"parser_version": 1})
         self.assertTrue(retry_insight_job(self.root, "user-1", job["id"]))
         self.assertEqual(list_insight_jobs(self.root, "user-1")[0]["position"], 1)
+
+    def test_one_selected_insight_can_be_deleted_without_affecting_the_others(self):
+        first, _ = enqueue_insight_job(self.root, "user-1", {"topic": "First topic"})
+        second, _ = enqueue_insight_job(self.root, "user-1", {"topic": "Second topic"})
+        self.assertTrue(delete_insight_job(self.root, "user-1", first["id"]))
+        self.assertFalse(delete_insight_job(self.root, "another-user", second["id"]))
+        self.assertEqual([item["id"] for item in list_insight_jobs(self.root, "user-1")], [second["id"]])
 
     def test_scheduled_topic_and_insight_cache_is_shared_and_normalized(self):
         topics = [{"topic": "A Fashion Topic", "category": "Fashion"}]

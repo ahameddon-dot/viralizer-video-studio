@@ -721,6 +721,16 @@ def finish_insight_job(root: Path, user_id: str, job_id: str, result: dict[str, 
         )
 
 
+def delete_insight_job(root: Path, user_id: str, job_id: str) -> bool:
+    """Remove one user's selected insight without deleting the shared prefetched report."""
+    with _connect(root) as db:
+        cursor = db.execute(
+            "DELETE FROM creatorthon_insight_jobs WHERE id=? AND user_id=?",
+            (job_id, user_id),
+        )
+        return bool(cursor.rowcount)
+
+
 def retry_insight_job(root: Path, user_id: str, job_id: str) -> bool:
     with _connect(root) as db:
         cursor = db.execute(
