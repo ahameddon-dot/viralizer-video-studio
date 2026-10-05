@@ -263,9 +263,17 @@ class CreatorthonEventControlTests(unittest.TestCase):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
         self.assertIn("creatorthon.closedInsightCards.v1", page)
         self.assertIn("Close this insight only", page)
-        self.assertIn("Show insights · ", page)
+        self.assertIn("card.remove()", page)
+        self.assertNotIn("Show insights · ", page)
         self.assertIn("next.add(key)", page)
-        self.assertIn("next.delete(String(job.id", page)
+        self.assertIn("closed.delete(key)", page)
+        self.assertIn("Insight hidden · click to reopen", page)
+
+    def test_topic_click_shows_immediate_loading_feedback(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("Loading insights…", page)
+        self.assertIn("Loading stored Viralizer insights…", page)
+        self.assertIn("showInsightLoading(topic)", page)
 
     def test_completed_insight_displays_the_exact_mcp_search_term(self):
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
