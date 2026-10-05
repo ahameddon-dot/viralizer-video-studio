@@ -21,6 +21,16 @@ from creatorthon_store import (
 
 
 class CreatorthonEventControlTests(unittest.TestCase):
+    def test_mcp_search_terms_remove_editorial_headline_filler(self):
+        self.assertEqual(
+            app._refine_mcp_search_term("Lebanese Food Industry in Spotlight at SIAL Paris 2026"),
+            "Lebanese Food SIAL 2026",
+        )
+        self.assertEqual(
+            app._refine_mcp_search_term("New AI Tools Are Transforming Small Businesses"),
+            "New AI Tools Are Transforming Small Businesses",
+        )
+
     def test_only_configured_emails_have_unlimited_creatorthon_access(self):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
             self.assertTrue(app._unlimited_creatorthon_user({"email": " AHAMED.DON@GMAIL.COM "}))

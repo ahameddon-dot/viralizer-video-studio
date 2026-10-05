@@ -1427,9 +1427,40 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     return {"topics": topics, "count": len(topics), "source": "Worldwide public news sources"}
 
 
-async def _proprietary_insight_payload(topic: str) -> dict[str, Any]:
+def _refine_mcp_search_term(topic: str) -> str:
+    """Turn an editorial headline into a concise, entity-rich MCP search phrase."""
+    text = " ".join(str(topic).replace("–", " ").replace("—", " ").split())
+    filler_phrases = (
+        r"\bin (?:the )?spotlight\b", r"\btakes? cent(?:er|re) stage\b", r"\bset to\b",
+        r"\bfeaturing\b", r"\ba celebration of\b", r"\bnew report says\b", r"\bwhat to know\b",
+        r"\bunveils?\b", r"\bannounces?\b", r"\bhighlights?\b", r"\breveals?\b",
+        r"\blaunches? (?:its |the )?new\b", r"\bputs? .*? in focus\b",
+    )
+    for phrase in filler_phrases:
+        text = re.sub(phrase, " ", text, flags=re.I)
+    disposable = {
+        "industry", "latest", "major", "officially", "its", "the", "at", "in", "on", "for", "of",
+        "and", "with", "from", "a", "an", "spotlight", "campaign", "featuring", "celebration",
+    }
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", text)
+    compact = [word for word in words if word.casefold() not in disposable]
+    compact = [
+        word for index, word in enumerate(compact)
+        if not (
+            0 < index < len(compact) - 1
+            and compact[index - 1].isupper() and 2 <= len(compact[index - 1]) <= 8
+            and word[:1].isupper() and word[1:].islower()
+            and re.fullmatch(r"20\d{2}", compact[index + 1])
+        )
+    ]
+    # Keep the phrase narrow enough for MCP while retaining named entities, acronyms, and years.
+    return " ".join(compact[:8]).strip() or " ".join(words[:8]).strip()
+
+
+async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") -> dict[str, Any]:
+    search_term = " ".join(str(mcp_search_term).split()) or _refine_mcp_search_term(topic)
     try:
-        report = await get_full_report_from_mcp(topic)
+        report = await get_full_report_from_mcp(search_term)
     except MCPOutlineError as exc:
         raise exc
     try:
@@ -1450,6 +1481,8 @@ async def _proprietary_insight_payload(topic: str) -> dict[str, Any]:
     }
     return {
         "topic": topic,
+        "display_topic": topic,
+        "mcp_search_term": search_term,
         "parser_version": 2,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
@@ -1488,11 +1521,11 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
 
     async def prepare(topic: dict[str, Any]) -> None:
         title = _topic_title_value(topic)
-        if not title or get_cached_topic_insight(ROOT, title):
+        if not title:
             return
         async with semaphore:
             try:
-                result = await _proprietary_insight_payload(title)
+                result = await _proprietary_insight_payload(title, _refine_mcp_search_term(title))
             except Exception:
                 return
             save_cached_topic_insight(ROOT, title, result, ttl_seconds)
@@ -1520,10 +1553,9 @@ def _seconds_until_prefetch_window() -> float:
 
 
 async def _creatorthon_prefetch_scheduler() -> None:
-    # Warm an empty deployment shortly after startup, then refresh at the two daily windows.
+    # Refresh shortly after every deployment, then at the two daily windows.
     await asyncio.sleep(5)
-    if not any(get_cached_category_topics(ROOT, category, allow_stale=True) for category in CREATORTHON_PREFETCH_CATEGORIES):
-        await _prefetch_all_creatorthon_topics()
+    await _prefetch_all_creatorthon_topics()
     while True:
         await asyncio.sleep(_seconds_until_prefetch_window())
         await _prefetch_all_creatorthon_topics()
@@ -1539,7 +1571,7 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
                 title = _topic_title_value(job.get("topic", {}))
                 result = get_cached_topic_insight(ROOT, title)
                 if result is None:
-                    result = await _proprietary_insight_payload(title)
+                    result = await _proprietary_insight_payload(title, _refine_mcp_search_term(title))
                     save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600")))
                 finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
             except Exception as exc:
