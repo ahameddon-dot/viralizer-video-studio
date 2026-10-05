@@ -267,6 +267,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("next.add(key)", page)
         self.assertIn("next.delete(String(job.id", page)
 
+    def test_completed_insight_displays_the_exact_mcp_search_term(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("job.result?.mcp_search_term", page)
+        self.assertIn("MCP search term", page)
+        self.assertIn(".mcp-search-term", page)
+
 
 if __name__ == "__main__":
     unittest.main()
