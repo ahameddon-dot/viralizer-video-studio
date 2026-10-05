@@ -36,7 +36,7 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._mcp_search_candidates(flipkart)[:3],
             ["Flipkart Festive Fashion Surge", "Flipkart Festive Fashion Growth", "Flipkart Festive Fashion"],
         )
-        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 2)
+        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 3)
 
     def test_completed_jobs_from_old_query_refiner_are_automatically_refreshed(self):
         source = Path(app.__file__).read_text(encoding="utf-8")

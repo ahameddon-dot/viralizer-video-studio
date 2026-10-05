@@ -1523,7 +1523,9 @@ CREATORTHON_PREFETCH_CATEGORIES = (
     "Fashion", "Food", "Health", "Technology", "Business", "Sports", "Entertainment", "Movies",
     "AI", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
 )
-MCP_QUERY_REFINER_VERSION = 2
+# Increment whenever query-refinement behavior changes. Persisted reports from an
+# older generation are requeued and fetched again instead of being shown.
+MCP_QUERY_REFINER_VERSION = 3
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
