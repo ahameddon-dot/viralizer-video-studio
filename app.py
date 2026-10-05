@@ -1509,6 +1509,7 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
         "display_topic": topic,
         "mcp_search_term": search_term,
         "mcp_search_terms_attempted": attempted_terms,
+        "query_refiner_version": MCP_QUERY_REFINER_VERSION,
         "parser_version": 2,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
@@ -1522,6 +1523,7 @@ CREATORTHON_PREFETCH_CATEGORIES = (
     "Fashion", "Food", "Health", "Technology", "Business", "Sports", "Entertainment", "Movies",
     "AI", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
 )
+MCP_QUERY_REFINER_VERSION = 2
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
@@ -1596,6 +1598,8 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
             try:
                 title = _topic_title_value(job.get("topic", {}))
                 result = get_cached_topic_insight(ROOT, title)
+                if int((result or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
+                    result = None
                 if result is None:
                     result = await _proprietary_insight_payload(title, _refine_mcp_search_term(title))
                     save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600")))
@@ -1632,6 +1636,8 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
         raise HTTPException(422, str(exc)) from exc
     title = _topic_title_value(payload.topic)
     cached = get_cached_topic_insight(ROOT, title)
+    if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
+        cached = None
     if created and cached:
         finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
         job = next(item for item in list_insight_jobs(ROOT, user_id) if str(item["id"]) == str(job["id"]))
@@ -1647,7 +1653,10 @@ async def get_creatorthon_insight_queue(request: Request):
     jobs = list_insight_jobs(ROOT, user_id)
     legacy_jobs = [
         job for job in jobs
-        if job.get("status") == "completed" and int((job.get("result") or {}).get("parser_version") or 0) < 2
+        if job.get("status") == "completed" and (
+            int((job.get("result") or {}).get("parser_version") or 0) < 2
+            or int((job.get("result") or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
+        )
     ]
     for job in legacy_jobs:
         retry_insight_job(ROOT, user_id, str(job["id"]))

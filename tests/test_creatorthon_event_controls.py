@@ -36,6 +36,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._mcp_search_candidates(flipkart)[:3],
             ["Flipkart Festive Fashion Surge", "Flipkart Festive Fashion Growth", "Flipkart Festive Fashion"],
         )
+        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 2)
+
+    def test_completed_jobs_from_old_query_refiner_are_automatically_refreshed(self):
+        source = Path(app.__file__).read_text(encoding="utf-8")
+        self.assertIn('get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION', source)
+        self.assertIn('"query_refiner_version": MCP_QUERY_REFINER_VERSION', source)
 
     def test_only_configured_emails_have_unlimited_creatorthon_access(self):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
