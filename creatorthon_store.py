@@ -89,6 +89,12 @@ def _schema_statements() -> list[str]:
           created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
           UNIQUE(user_id,topic_key))""",
         "CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue ON creatorthon_insight_jobs(user_id,position)",
+        """CREATE TABLE IF NOT EXISTS creatorthon_topic_insight_cache (
+          topic_key TEXT PRIMARY KEY, topic_title TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}',
+          fetched_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_category_topic_cache (
+          category_key TEXT PRIMARY KEY, category_name TEXT NOT NULL, topics_json TEXT NOT NULL DEFAULT '[]',
+          fetched_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS creatorthon_event_admission_overrides (
           event_key TEXT NOT NULL, email TEXT NOT NULL, granted_by TEXT NOT NULL,
           created_at BIGINT NOT NULL, used_at BIGINT NOT NULL DEFAULT 0,
@@ -249,6 +255,14 @@ def _connect(root: Path) -> Iterator[Any]:
     );
     CREATE INDEX IF NOT EXISTS idx_creatorthon_insight_queue
     ON creatorthon_insight_jobs(user_id,position);
+    CREATE TABLE IF NOT EXISTS creatorthon_topic_insight_cache (
+      topic_key TEXT PRIMARY KEY, topic_title TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}',
+      fetched_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS creatorthon_category_topic_cache (
+      category_key TEXT PRIMARY KEY, category_name TEXT NOT NULL, topics_json TEXT NOT NULL DEFAULT '[]',
+      fetched_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
       user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
       topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
@@ -559,6 +573,77 @@ def _insight_job(row: Any) -> dict[str, Any]:
     return item
 
 
+def _topic_key(title: str) -> str:
+    normalized = " ".join(str(title).split()).casefold()
+    return __import__("hashlib").sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def get_cached_topic_insight(root: Path, title: str, *, allow_stale: bool = False) -> dict[str, Any] | None:
+    now = int(time.time())
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT result_json,fetched_at,expires_at FROM creatorthon_topic_insight_cache WHERE topic_key=?",
+            (_topic_key(title),),
+        ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    if not allow_stale and int(item.get("expires_at") or 0) <= now:
+        return None
+    result = _json_load(item.get("result_json"), {})
+    if not isinstance(result, dict) or not result:
+        return None
+    result.setdefault("fetched_at", int(item.get("fetched_at") or 0))
+    result["cached"] = True
+    return result
+
+
+def save_cached_topic_insight(root: Path, title: str, result: dict[str, Any], ttl_seconds: int = 86400) -> None:
+    clean_title = " ".join(str(title).split())
+    now = int(time.time())
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_topic_insight_cache
+            (topic_key,topic_title,result_json,fetched_at,expires_at,updated_at) VALUES (?,?,?,?,?,?)
+            ON CONFLICT(topic_key) DO UPDATE SET topic_title=excluded.topic_title,
+            result_json=excluded.result_json,fetched_at=excluded.fetched_at,
+            expires_at=excluded.expires_at,updated_at=excluded.updated_at""",
+            (_topic_key(clean_title), clean_title, json.dumps(result, ensure_ascii=False), now,
+             now + max(300, int(ttl_seconds)), now),
+        )
+
+
+def get_cached_category_topics(root: Path, category: str, *, allow_stale: bool = False) -> list[dict[str, Any]]:
+    key = " ".join(str(category).split()).casefold()
+    now = int(time.time())
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT topics_json,expires_at FROM creatorthon_category_topic_cache WHERE category_key=?", (key,)
+        ).fetchone()
+    if not row:
+        return []
+    item = dict(row)
+    if not allow_stale and int(item.get("expires_at") or 0) <= now:
+        return []
+    topics = _json_load(item.get("topics_json"), [])
+    return topics if isinstance(topics, list) else []
+
+
+def save_cached_category_topics(root: Path, category: str, topics: list[dict[str, Any]], ttl_seconds: int = 86400) -> None:
+    clean_category = " ".join(str(category).split())
+    now = int(time.time())
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_category_topic_cache
+            (category_key,category_name,topics_json,fetched_at,expires_at,updated_at) VALUES (?,?,?,?,?,?)
+            ON CONFLICT(category_key) DO UPDATE SET category_name=excluded.category_name,
+            topics_json=excluded.topics_json,fetched_at=excluded.fetched_at,
+            expires_at=excluded.expires_at,updated_at=excluded.updated_at""",
+            (clean_category.casefold(), clean_category, json.dumps(topics, ensure_ascii=False), now,
+             now + max(300, int(ttl_seconds)), now),
+        )
+
+
 def list_insight_jobs(root: Path, user_id: str) -> list[dict[str, Any]]:
     with _connect(root) as db:
         rows = db.execute(
@@ -571,7 +656,7 @@ def enqueue_insight_job(root: Path, user_id: str, topic: dict[str, Any]) -> tupl
     title = " ".join(str(topic.get("topic") or topic.get("title") or topic.get("name") or "").split())
     if not title:
         raise ValueError("A topic title is required.")
-    topic_key = __import__("hashlib").sha256(title.casefold().encode("utf-8")).hexdigest()
+    topic_key = _topic_key(title)
     now, job_id = int(time.time()), uuid.uuid4().hex
     with _connect(root) as db:
         if getattr(db, "dialect", "sqlite") == "postgres":

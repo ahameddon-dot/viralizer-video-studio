@@ -8,8 +8,12 @@ from creatorthon_store import (
     claim_next_insight_job,
     enqueue_insight_job,
     finish_insight_job,
+    get_cached_category_topics,
+    get_cached_topic_insight,
     list_insight_jobs,
     retry_insight_job,
+    save_cached_category_topics,
+    save_cached_topic_insight,
 )
 
 
@@ -54,6 +58,17 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         finish_insight_job(self.root, "user-1", claimed["id"], result={"parser_version": 1})
         self.assertTrue(retry_insight_job(self.root, "user-1", job["id"]))
         self.assertEqual(list_insight_jobs(self.root, "user-1")[0]["position"], 1)
+
+    def test_scheduled_topic_and_insight_cache_is_shared_and_normalized(self):
+        topics = [{"topic": "A Fashion Topic", "category": "Fashion"}]
+        save_cached_category_topics(self.root, "Fashion", topics, ttl_seconds=3600)
+        self.assertEqual(get_cached_category_topics(self.root, " fashion "), topics)
+
+        result = {"parser_version": 2, "metrics": {"viral_topic_rank": 17}}
+        save_cached_topic_insight(self.root, "A Fashion Topic", result, ttl_seconds=3600)
+        cached = get_cached_topic_insight(self.root, "  a FASHION topic ")
+        self.assertEqual(cached["metrics"]["viral_topic_rank"], 17)
+        self.assertTrue(cached["cached"])
 
 
 if __name__ == "__main__":

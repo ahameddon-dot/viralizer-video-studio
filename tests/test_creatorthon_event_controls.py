@@ -249,6 +249,14 @@ class CreatorthonEventControlTests(unittest.TestCase):
         self.assertIn("replacement.scrollTop=Math.min(panelTop", page)
         self.assertIn("window.scrollTo({top:pageTop", page)
 
+    def test_each_selected_topic_insight_can_be_closed_and_reopened_independently(self):
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn("creatorthon.closedInsightCards.v1", page)
+        self.assertIn("Close this insight only", page)
+        self.assertIn("Show insights · ", page)
+        self.assertIn("next.add(key)", page)
+        self.assertIn("next.delete(String(job.id", page)
+
 
 if __name__ == "__main__":
     unittest.main()

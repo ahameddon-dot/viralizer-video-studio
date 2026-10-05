@@ -64,6 +64,14 @@ services:
         value: creatorthon-event-2026
       - key: CREATORTHON_EVENT_USER_LIMIT
         value: 50
+      - key: CREATORTHON_PREFETCH_ENABLED
+        value: true
+      - key: CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY
+        value: 8
+      - key: CREATORTHON_PREFETCH_CONCURRENCY
+        value: 2
+      - key: CREATORTHON_PREFETCH_TTL_SECONDS
+        value: 21600
       - key: YOUTUBE_CLIENT_ID
         sync: false
       - key: YOUTUBE_CLIENT_SECRET

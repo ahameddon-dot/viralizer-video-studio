@@ -9,6 +9,7 @@ import re
 import time
 import httpx
 import io
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -70,6 +71,7 @@ from creatorthon_store import (
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
+    get_cached_category_topics, get_cached_topic_insight, save_cached_category_topics, save_cached_topic_insight,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
@@ -82,6 +84,7 @@ from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_author
 # of the browser request prevents proxy timeouts while narration is rendered.
 CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
 CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
+CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 
 
@@ -519,6 +522,9 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 @app.on_event("startup")
 async def start_daily_scheduler():
     asyncio.create_task(daily_trends.scheduler())
+    global CREATORTHON_PREFETCH_TASK
+    if os.getenv("CREATORTHON_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        CREATORTHON_PREFETCH_TASK = asyncio.create_task(_creatorthon_prefetch_scheduler())
 
 
 @app.get("/health")
@@ -1392,6 +1398,24 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     interests = list(dict.fromkeys(value.strip() for value in payload.interests if value.strip()))[:4]
     if not interests:
         raise HTTPException(422, "Select at least one interest.")
+    cached_topics: list[dict[str, Any]] = []
+    cached_keys: set[str] = set()
+    all_categories_cached = True
+    for interest in interests:
+        category_topics = get_cached_category_topics(ROOT, interest)
+        if not category_topics:
+            all_categories_cached = False
+            break
+        for topic in category_topics:
+            key = _topic_title_value(topic).casefold()
+            if key and key not in cached_keys:
+                cached_keys.add(key)
+                cached_topics.append(topic)
+    if all_categories_cached and cached_topics:
+        return {
+            "topics": cached_topics[:30], "count": min(30, len(cached_topics)),
+            "source": "Viralizer scheduled intelligence cache", "cached": True,
+        }
     queries: list[str] = []
     for interest in interests:
         queries.extend(build_category_discovery_queries(interest, "", "", "Everything", "")[:2])
@@ -1435,6 +1459,76 @@ async def _proprietary_insight_payload(topic: str) -> dict[str, Any]:
     }
 
 
+CREATORTHON_PREFETCH_CATEGORIES = (
+    "Fashion", "Food", "Health", "Technology", "Business", "Sports", "Entertainment", "Movies",
+    "AI", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
+)
+
+
+def _topic_title_value(topic: dict[str, Any]) -> str:
+    return " ".join(str(topic.get("topic") or topic.get("title") or topic.get("name") or "").split())
+
+
+async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> None:
+    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600"))
+    topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "8"))))
+    queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
+    try:
+        topics = await discover_category_topics(queries, topic_limit)
+        topics = [
+            item for item in annotate_topic_taxonomy(topics, [category], category, "Everything")
+            if _english_topic(item)
+        ][:topic_limit]
+    except Exception:
+        # Never erase the last known-good category when discovery is temporarily unavailable.
+        return
+    if not topics:
+        return
+    save_cached_category_topics(ROOT, category, topics, ttl_seconds)
+
+    async def prepare(topic: dict[str, Any]) -> None:
+        title = _topic_title_value(topic)
+        if not title or get_cached_topic_insight(ROOT, title):
+            return
+        async with semaphore:
+            try:
+                result = await _proprietary_insight_payload(title)
+            except Exception:
+                return
+            save_cached_topic_insight(ROOT, title, result, ttl_seconds)
+
+    await asyncio.gather(*(prepare(topic) for topic in topics))
+
+
+async def _prefetch_all_creatorthon_topics() -> None:
+    concurrency = max(1, min(6, int(os.getenv("CREATORTHON_PREFETCH_CONCURRENCY", "2"))))
+    semaphore = asyncio.Semaphore(concurrency)
+    # Categories are discovered in a stable order; MCP report work is bounded by the shared semaphore.
+    for category in CREATORTHON_PREFETCH_CATEGORIES:
+        await _prefetch_creatorthon_category(category, semaphore)
+
+
+def _seconds_until_prefetch_window() -> float:
+    # Run twice daily at 02:00 and 08:00 IST without depending on the host timezone.
+    ist = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(ist)
+    candidates = [now.replace(hour=2, minute=0, second=0, microsecond=0),
+                  now.replace(hour=8, minute=0, second=0, microsecond=0)]
+    future = [candidate for candidate in candidates if candidate > now]
+    target = min(future) if future else (now + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
+    return max(1.0, (target - now).total_seconds())
+
+
+async def _creatorthon_prefetch_scheduler() -> None:
+    # Warm an empty deployment shortly after startup, then refresh at the two daily windows.
+    await asyncio.sleep(5)
+    if not any(get_cached_category_topics(ROOT, category, allow_stale=True) for category in CREATORTHON_PREFETCH_CATEGORIES):
+        await _prefetch_all_creatorthon_topics()
+    while True:
+        await asyncio.sleep(_seconds_until_prefetch_window())
+        await _prefetch_all_creatorthon_topics()
+
+
 async def _run_creatorthon_insight_queue(user_id: str) -> None:
     try:
         while True:
@@ -1442,7 +1536,11 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
             if not job:
                 return
             try:
-                result = await _proprietary_insight_payload(str(job.get("topic", {}).get("topic") or job.get("topic", {}).get("title") or job.get("topic", {}).get("name") or ""))
+                title = _topic_title_value(job.get("topic", {}))
+                result = get_cached_topic_insight(ROOT, title)
+                if result is None:
+                    result = await _proprietary_insight_payload(title)
+                    save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600")))
                 finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
             except Exception as exc:
                 finish_insight_job(ROOT, user_id, str(job["id"]), error=str(exc) or "Viralizer intelligence could not complete this topic.")
@@ -1474,7 +1572,13 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
         job, created = enqueue_insight_job(ROOT, user_id, payload.topic)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    _start_creatorthon_insight_queue(user_id)
+    title = _topic_title_value(payload.topic)
+    cached = get_cached_topic_insight(ROOT, title)
+    if created and cached:
+        finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
+        job = next(item for item in list_insight_jobs(ROOT, user_id) if str(item["id"]) == str(job["id"]))
+    else:
+        _start_creatorthon_insight_queue(user_id)
     return {"job": job, "created": created, "jobs": list_insight_jobs(ROOT, user_id)}
 
 
