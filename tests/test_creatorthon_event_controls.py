@@ -36,7 +36,22 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._mcp_search_candidates(flipkart)[:3],
             ["Flipkart Festive Fashion Surge", "Flipkart Festive Fashion Growth", "Flipkart Festive Fashion"],
         )
-        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 3)
+        africa = "Africa's 1.69 bn SME US apparel window: What's holding it back?"
+        self.assertEqual(app._refine_mcp_search_term(africa), "African SME Apparel Exports to US")
+        self.assertEqual(
+            app._mcp_search_candidates(africa),
+            [
+                "African SME Apparel Exports to US",
+                "Africa Apparel SMEs US Market",
+                "African Fashion Exports United States",
+                "Africa US Apparel Trade SMEs",
+            ],
+        )
+        self.assertEqual(
+            app._refine_mcp_search_term("Europe's 2 bn AI startup window: Why investors are hesitating"),
+            "Europe's AI startup market opportunity",
+        )
+        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 4)
 
     def test_completed_jobs_from_old_query_refiner_are_automatically_refreshed(self):
         source = Path(app.__file__).read_text(encoding="utf-8")

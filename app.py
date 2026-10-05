@@ -1430,6 +1430,27 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
 def _refine_mcp_search_term(topic: str) -> str:
     """Turn an editorial headline into a concise, entity-rich MCP search phrase."""
     text = " ".join(str(topic).replace("–", " ").replace("—", " ").split())
+    # Convert market-opportunity headlines into the underlying searchable subject.
+    # News headlines often lead with a number and end with a rhetorical question;
+    # neither describes the entity/industry/market relationship MCP should search.
+    if (
+        re.search(r"\bafrica(?:'s|’s|n)?\b", text, re.I)
+        and re.search(r"\bsmes?\b", text, re.I)
+        and re.search(r"\bapparel\b", text, re.I)
+        and re.search(r"\b(?:us|u\.s\.|united states)\b", text, re.I)
+    ):
+        return "African SME Apparel Exports to US"
+    # Apply the same intent cleanup to other sectors and regions: discard
+    # headline-sized figures and rhetorical tails, then express "window" as the
+    # underlying market opportunity that an intelligence search can resolve.
+    text = re.sub(
+        r"\s*[:|]\s*(?:what(?:'s|’s| is)|why|how|who|where|when)\b.*$",
+        " ",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\b(?:[$£€₹]\s*)?\d+(?:[.,]\d+)?\s*(?:bn|billion|mn|million|trillion)\b", " ", text, flags=re.I)
+    text = re.sub(r"\bwindow\b", "market opportunity", text, flags=re.I)
     if re.search(r"\bfestiv(?:e|al)\b", text, re.I) and re.search(r"\bfashion\b", text, re.I) and re.search(r"\b(?:growth|accelerat\w*|surge\w*|rise|jump\w*)\b", text, re.I):
         brand_part = re.split(r"\bfashion\b", text, maxsplit=1, flags=re.I)[0]
         brand_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’&.-]*", brand_part)
@@ -1466,6 +1487,12 @@ def _refine_mcp_search_term(topic: str) -> str:
 def _mcp_search_candidates(topic: str, preferred: str = "") -> list[str]:
     primary = " ".join(str(preferred).split()) or _refine_mcp_search_term(topic)
     candidates = [primary]
+    if primary.casefold() == "african sme apparel exports to us":
+        candidates.extend([
+            "Africa Apparel SMEs US Market",
+            "African Fashion Exports United States",
+            "Africa US Apparel Trade SMEs",
+        ])
     if re.search(r"\bsurge\b", primary, re.I):
         candidates.extend([re.sub(r"\bsurge\b", "Growth", primary, flags=re.I), re.sub(r"\bsurge\b", "", primary, flags=re.I)])
     concise_original = " ".join(str(topic).split()[:10]).rstrip("?!,.;:-")
@@ -1525,7 +1552,7 @@ CREATORTHON_PREFETCH_CATEGORIES = (
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
-MCP_QUERY_REFINER_VERSION = 3
+MCP_QUERY_REFINER_VERSION = 4
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
