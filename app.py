@@ -1617,6 +1617,21 @@ def _start_creatorthon_insight_queue(user_id: str) -> None:
     CREATORTHON_INSIGHT_TASKS[user_id] = asyncio.create_task(_run_creatorthon_insight_queue(user_id))
 
 
+def _hydrate_creatorthon_insight_jobs_from_cache(user_id: str, jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Complete pending jobs immediately when scheduled prefetch already has current data."""
+    hydrated = False
+    for job in jobs:
+        if job.get("status") not in {"queued", "processing"}:
+            continue
+        title = _topic_title_value(job.get("topic", {}))
+        cached = get_cached_topic_insight(ROOT, title)
+        if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
+            continue
+        finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
+        hydrated = True
+    return list_insight_jobs(ROOT, user_id) if hydrated else jobs
+
+
 @app.post("/api/creatorthon/proprietary-insights")
 async def creatorthon_proprietary_insights(request: Request, payload: CreatorthonInsightsRequest):
     creatorthon_user(request)
@@ -1643,7 +1658,9 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
         job = next(item for item in list_insight_jobs(ROOT, user_id) if str(item["id"]) == str(job["id"]))
     else:
         _start_creatorthon_insight_queue(user_id)
-    return {"job": job, "created": created, "jobs": list_insight_jobs(ROOT, user_id)}
+    jobs = _hydrate_creatorthon_insight_jobs_from_cache(user_id, list_insight_jobs(ROOT, user_id))
+    current = next((item for item in jobs if str(item["id"]) == str(job["id"])), job)
+    return {"job": current, "created": created, "jobs": jobs}
 
 
 @app.get("/api/creatorthon/insight-queue")
@@ -1662,6 +1679,7 @@ async def get_creatorthon_insight_queue(request: Request):
         retry_insight_job(ROOT, user_id, str(job["id"]))
     if legacy_jobs:
         jobs = list_insight_jobs(ROOT, user_id)
+    jobs = _hydrate_creatorthon_insight_jobs_from_cache(user_id, jobs)
     if any(job.get("status") in {"queued", "processing"} for job in jobs):
         _start_creatorthon_insight_queue(user_id)
     return {"jobs": jobs}
