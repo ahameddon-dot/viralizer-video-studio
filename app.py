@@ -1430,6 +1430,12 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
 def _refine_mcp_search_term(topic: str) -> str:
     """Turn an editorial headline into a concise, entity-rich MCP search phrase."""
     text = " ".join(str(topic).replace("–", " ").replace("—", " ").split())
+    if re.search(r"\bfestiv(?:e|al)\b", text, re.I) and re.search(r"\bfashion\b", text, re.I) and re.search(r"\b(?:growth|accelerat\w*|surge\w*|rise|jump\w*)\b", text, re.I):
+        brand_part = re.split(r"\bfashion\b", text, maxsplit=1, flags=re.I)[0]
+        brand_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’&.-]*", brand_part)
+        brand = " ".join(brand_words[:3]).strip()
+        if brand:
+            return f"{brand} Festive Fashion Surge"
     filler_phrases = (
         r"\bin (?:the )?spotlight\b", r"\btakes? cent(?:er|re) stage\b", r"\bset to\b",
         r"\bfeaturing\b", r"\ba celebration of\b", r"\bnew report says\b", r"\bwhat to know\b",
@@ -1457,12 +1463,31 @@ def _refine_mcp_search_term(topic: str) -> str:
     return " ".join(compact[:8]).strip() or " ".join(words[:8]).strip()
 
 
+def _mcp_search_candidates(topic: str, preferred: str = "") -> list[str]:
+    primary = " ".join(str(preferred).split()) or _refine_mcp_search_term(topic)
+    candidates = [primary]
+    if re.search(r"\bsurge\b", primary, re.I):
+        candidates.extend([re.sub(r"\bsurge\b", "Growth", primary, flags=re.I), re.sub(r"\bsurge\b", "", primary, flags=re.I)])
+    concise_original = " ".join(str(topic).split()[:10]).rstrip("?!,.;:-")
+    candidates.append(concise_original)
+    return list(dict.fromkeys(" ".join(value.split()) for value in candidates if len(" ".join(value.split())) >= 3))[:4]
+
+
 async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") -> dict[str, Any]:
-    search_term = " ".join(str(mcp_search_term).split()) or _refine_mcp_search_term(topic)
-    try:
-        report = await get_full_report_from_mcp(search_term)
-    except MCPOutlineError as exc:
-        raise exc
+    report = None
+    search_term = ""
+    attempted_terms: list[str] = []
+    last_error: MCPOutlineError | None = None
+    for candidate in _mcp_search_candidates(topic, mcp_search_term):
+        attempted_terms.append(candidate)
+        try:
+            report = await get_full_report_from_mcp(candidate)
+            search_term = candidate
+            break
+        except MCPOutlineError as exc:
+            last_error = exc
+    if report is None:
+        raise last_error or MCPOutlineError("Viralizer returned no report for the refined topic searches.")
     try:
         outline = outline_from_full_report(report, topic)
     except MCPOutlineError:
@@ -1483,6 +1508,7 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
         "topic": topic,
         "display_topic": topic,
         "mcp_search_term": search_term,
+        "mcp_search_terms_attempted": attempted_terms,
         "parser_version": 2,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,

@@ -30,6 +30,12 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._refine_mcp_search_term("New AI Tools Are Transforming Small Businesses"),
             "New AI Tools Are Transforming Small Businesses",
         )
+        flipkart = "Flipkart Fashion sees fashion festive growth accelerate by 1,500 basis points YoY on premiumisation, Gen Z demand"
+        self.assertEqual(app._refine_mcp_search_term(flipkart), "Flipkart Festive Fashion Surge")
+        self.assertEqual(
+            app._mcp_search_candidates(flipkart)[:3],
+            ["Flipkart Festive Fashion Surge", "Flipkart Festive Fashion Growth", "Flipkart Festive Fashion"],
+        )
 
     def test_only_configured_emails_have_unlimited_creatorthon_access(self):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
