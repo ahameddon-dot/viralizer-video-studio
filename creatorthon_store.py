@@ -106,6 +106,9 @@ def _schema_statements() -> list[str]:
           id TEXT PRIMARY KEY, event_key TEXT NOT NULL, admin_email TEXT NOT NULL,
           action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
           created_at BIGINT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS creatorthon_event_settings (
+          event_key TEXT PRIMARY KEY, capacity INTEGER NOT NULL DEFAULT 50,
+          updated_by TEXT NOT NULL DEFAULT '', updated_at BIGINT NOT NULL DEFAULT 0)""",
         """CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
           user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
           topics_json TEXT NOT NULL DEFAULT '[]', selected_topic_json TEXT NOT NULL DEFAULT '{}',
@@ -282,6 +285,10 @@ def _connect(root: Path) -> Iterator[Any]:
       action TEXT NOT NULL, target_email TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS creatorthon_event_settings (
+      event_key TEXT PRIMARY KEY, capacity INTEGER NOT NULL DEFAULT 50,
+      updated_by TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0
+    );
     """)
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
@@ -331,9 +338,16 @@ def event_key() -> str:
     return os.getenv("CREATORTHON_EVENT_KEY", "creatorthon-event-2026").strip() or "creatorthon-event-2026"
 
 
+def event_capacity(root: Path, fallback: int = 50) -> int:
+    with _connect(root) as db:
+        row = db.execute("SELECT capacity FROM creatorthon_event_settings WHERE event_key=?", (event_key(),)).fetchone()
+    return max(1, int(dict(row).get("capacity") or fallback)) if row else max(1, int(fallback))
+
+
 def claim_event_seat(root: Path, user_id: str, limit: int = 50, email: str = "") -> dict[str, Any]:
     """Atomically admit one account to the configured event, up to the shared cap."""
     key, now, normalized_email = event_key(), int(time.time()), email.strip().lower()
+    limit = event_capacity(root, limit)
     with _connect(root) as db:
         if getattr(db, "dialect", "sqlite") == "postgres":
             db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (f"creatorthon-seat:{key}",))
@@ -364,7 +378,7 @@ def claim_event_seat(root: Path, user_id: str, limit: int = 50, email: str = "")
         count_row = db.execute("SELECT COUNT(*) AS total FROM creatorthon_event_accounts WHERE event_key=?", (key,)).fetchone()
         total = int(dict(count_row).get("total", 0) if hasattr(count_row, "keys") else count_row[0])
         if total >= max(1, int(limit)) and not override:
-            raise RuntimeError("The 50-user Creatorthon event capacity has been reached.")
+            raise RuntimeError(f"The {limit}-user Creatorthon event capacity has been reached.")
         occupied_rows = db.execute(
             "SELECT seat_number FROM creatorthon_event_accounts WHERE event_key=? AND seat_number>0",
             (key,),
@@ -499,8 +513,58 @@ def grant_extra_generation(root: Path, target_email: str, admin_email: str) -> d
     return dict(updated)
 
 
+def set_event_capacity(root: Path, capacity: int, admin_email: str) -> int:
+    key, value, now = event_key(), max(1, min(10000, int(capacity))), int(time.time())
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_event_settings (event_key,capacity,updated_by,updated_at)
+            VALUES (?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET capacity=excluded.capacity,
+            updated_by=excluded.updated_by,updated_at=excluded.updated_at""",
+            (key, value, admin_email.strip().lower(), now),
+        )
+        _record_admin_audit(db, admin_email, "set_capacity", "", {"capacity": value})
+    return value
+
+
+def set_generation_allowance(root: Path, emails: list[str], total_allowance: int, admin_email: str) -> int:
+    normalized = sorted({email.strip().lower() for email in emails if email.strip()})
+    allowance = max(1, min(1000, int(total_allowance)))
+    updated = 0
+    with _connect(root) as db:
+        for email in normalized:
+            row = db.execute(
+                """SELECT a.user_id FROM creatorthon_event_accounts a
+                LEFT JOIN creatorthon_profiles p ON p.user_id=a.user_id
+                WHERE a.event_key=? AND lower(COALESCE(NULLIF(a.email,''),p.email,''))=?""",
+                (event_key(), email),
+            ).fetchone()
+            if not row:
+                continue
+            db.execute(
+                "UPDATE creatorthon_event_accounts SET extra_generation_credits=? WHERE event_key=? AND user_id=?",
+                (allowance - 1, event_key(), str(dict(row).get("user_id") or "")),
+            )
+            updated += 1
+        _record_admin_audit(db, admin_email, "bulk_set_allowance", "", {"allowance": allowance, "users": updated})
+    return updated
+
+
+def reset_event_roster(root: Path, admin_email: str) -> dict[str, Any]:
+    """Reset event admissions and allowances while preserving profiles, projects, assets, and videos."""
+    key = event_key()
+    with _connect(root) as db:
+        count_row = db.execute("SELECT COUNT(*) AS total FROM creatorthon_event_accounts WHERE event_key=?", (key,)).fetchone()
+        removed = int(dict(count_row).get("total", 0) if count_row else 0)
+        db.execute("DELETE FROM creatorthon_event_accounts WHERE event_key=?", (key,))
+        db.execute("DELETE FROM creatorthon_event_admission_overrides WHERE event_key=?", (key,))
+        db.execute("DELETE FROM creatorthon_event_denials WHERE event_key=?", (key,))
+        _record_admin_audit(db, admin_email, "reset_event", "", {"users_removed": removed, "projects_preserved": True})
+    return {"reset": True, "users_removed": removed, "projects_preserved": True}
+
+
 def event_admin_state(root: Path, limit: int = 50) -> dict[str, Any]:
     key = event_key()
+    limit = event_capacity(root, limit)
     with _connect(root) as db:
         rows = db.execute(
             """SELECT a.*,COALESCE(NULLIF(a.email,''),p.email,'') AS resolved_email,

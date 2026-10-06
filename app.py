@@ -67,7 +67,8 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
-    event_admin_state, grant_event_admission, grant_extra_generation, remove_event_user,
+    event_admin_state, event_capacity, grant_event_admission, grant_extra_generation, remove_event_user,
+    reset_event_roster, set_event_capacity, set_generation_allowance,
     list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
@@ -653,6 +654,15 @@ class CreatorthonWorkflowRequest(BaseModel):
 
 class CreatorthonAdminEmailRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+class CreatorthonAdminCapacityRequest(BaseModel):
+    capacity: int = Field(ge=1, le=10000)
+
+
+class CreatorthonAdminAllowanceRequest(BaseModel):
+    emails: list[str] = Field(min_length=1, max_length=1000)
+    total_allowance: int = Field(ge=1, le=1000)
 
 
 class CreatorthonInsightsRequest(BaseModel):
@@ -1876,7 +1886,7 @@ async def delete_creatorthon_insight(request: Request, job_id: str):
 @app.get("/api/creatorthon/event-status")
 async def creatorthon_event_status(request: Request):
     user = creatorthon_user(request)
-    capacity = int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50"))
+    capacity = event_capacity(ROOT, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
     if _unlimited_creatorthon_user(user):
         return {"generation_used": False, "generation_status": "unlimited", "unlimited": True,
                 "admin": _creatorthon_admin_user(user), "participant_number": None,
@@ -1896,6 +1906,28 @@ async def creatorthon_event_status(request: Request):
 async def creatorthon_admin_state(request: Request):
     creatorthon_admin_user(request)
     return event_admin_state(ROOT, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+
+
+@app.put("/api/creatorthon/admin/capacity")
+async def creatorthon_admin_capacity(request: Request, payload: CreatorthonAdminCapacityRequest):
+    admin = creatorthon_admin_user(request)
+    return {"capacity": set_event_capacity(ROOT, payload.capacity, str(admin.get("email") or ""))}
+
+
+@app.put("/api/creatorthon/admin/allowances")
+async def creatorthon_admin_allowances(request: Request, payload: CreatorthonAdminAllowanceRequest):
+    admin = creatorthon_admin_user(request)
+    emails = [email for email in payload.emails if isinstance(email, str) and 5 <= len(email) <= 254 and "@" in email]
+    if not emails:
+        raise HTTPException(422, "Select at least one valid admitted user.")
+    updated = set_generation_allowance(ROOT, emails, payload.total_allowance, str(admin.get("email") or ""))
+    return {"updated": updated, "total_allowance": payload.total_allowance}
+
+
+@app.post("/api/creatorthon/admin/reset")
+async def creatorthon_admin_reset(request: Request):
+    admin = creatorthon_admin_user(request)
+    return reset_event_roster(ROOT, str(admin.get("email") or ""))
 
 
 @app.post("/api/creatorthon/admin/admit")

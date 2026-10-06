@@ -13,8 +13,9 @@
 <main class="shell">
   <div class="eyebrow">Organizer controls</div><h1>Creatorthon Admin</h1><p class="sub">Control event admission and individual video credits. Every action is recorded.</p>
   <section class="stats"><div class="stat"><strong id="admitted">—</strong><span>Users admitted</span></div><div class="stat"><strong id="capacity">50</strong><span>Standard capacity</span></div><div class="stat"><strong id="remaining">—</strong><span>Standard seats remaining</span></div><div class="stat"><strong id="extra">—</strong><span>Extra admissions</span></div></section>
+  <section class="panel"><h2>Event controls</h2><p class="sub">Change the participant cap, update selected users' total video allowance, or reset the event roster.</p><div class="admin-controls"><div class="control-card"><strong>Participant limit</strong><small>New logins stop when this capacity is reached.</small><div class="control-row"><input id="capacityInput" class="control-input" type="number" min="1" max="10000"><button id="saveCapacity" class="control-button">Save</button></div></div><div class="control-card"><strong>Bulk video allowance</strong><small>Select users below, then set their total allowed videos.</small><div class="control-row"><input id="allowanceInput" class="control-input" type="number" min="1" max="1000" value="1"><button id="applyAllowance" class="control-button">Apply</button></div><div id="bulkStatus" class="bulk-status"></div></div><div class="control-card"><strong>Reset event</strong><small>Remove event users, admissions and allowances. Projects and videos stay safe.</small><button id="resetEvent" class="control-button danger">Reset users to 0</button></div></div><div id="working" class="working"><i></i><span>Updating event…</span></div></section>
   <section class="panel"><h2>Admit a user after capacity</h2><p class="sub">Enter the exact Google email. The user can enter when they sign in.</p><form class="admit" id="admitForm"><input id="admitEmail" type="email" required placeholder="user@example.com"><button>Admit user</button></form><div class="message" id="admitMessage"></div><div class="pending" id="pending"></div></section>
-  <section class="panel"><h2>Admitted users</h2><div class="toolbar"><span class="sub">Granting +1 allows exactly one additional accepted generation.</span><input class="search" id="search" placeholder="Search by email or name"></div><div class="table-wrap"><table><thead><tr><th>Seat</th><th>User</th><th>Admission</th><th>Videos used</th><th>Allowance</th><th>Remaining</th><th>Status</th><th>Action</th></tr></thead><tbody id="users"><tr><td colspan="8" class="loading">Loading event users…</td></tr></tbody></table></div></section>
+  <section class="panel"><h2>Admitted users</h2><div class="toolbar"><label><input id="selectAll" type="checkbox"> Select visible users</label><span class="sub">Granting +1 allows exactly one additional accepted generation.</span><input class="search" id="search" placeholder="Search by email or name"></div><div class="table-wrap"><table><thead><tr><th>Select</th><th>Seat</th><th>User</th><th>Admission</th><th>Videos used</th><th>Allowance</th><th>Remaining</th><th>Status</th><th>Action</th></tr></thead><tbody id="users"><tr><td colspan="9" class="loading">Loading event users…</td></tr></tbody></table></div></section>
   <section class="panel"><h2>Admin audit history</h2><div class="audit" id="audit"></div></section>
 </main>
 <script>
@@ -29,25 +30,36 @@ $('#search').oninput=render;load().catch(error=>{$('#users').innerHTML='<tr><td 
 </script>
 <style>
 .actions{display:flex;gap:7px;align-items:center}.remove{min-height:33px;border:1px solid #8e334b;border-radius:10px;background:#31121d;color:#ff9bb3;padding:0 12px;font-weight:850;cursor:pointer;white-space:nowrap}.remove:disabled{opacity:.55;cursor:wait}
+.admin-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.control-card{padding:16px;border:1px solid #29314a;border-radius:12px;background:#0b0f1d}.control-card strong,.control-card small{display:block}.control-card small{min-height:34px;margin:6px 0 12px;color:#8993ae}.control-row{display:flex;gap:8px}.control-input{min-width:0;width:100%;height:45px;border:1px solid #38415e;border-radius:10px;background:#090c18;color:#fff;padding:0 13px}.control-button{min-height:45px;border:0;border-radius:10px;background:#8b2cff;color:#fff;padding:0 18px;font-weight:850;white-space:nowrap;cursor:pointer}.control-button.danger{background:#811f3d}.control-button:disabled{opacity:.55;cursor:wait}.bulk-status{margin-top:9px;color:#62e4a4;font-size:11px}.working{display:none;align-items:center;gap:9px;margin-top:13px;color:#c680ff;font-size:11px;font-weight:850}.working.show{display:flex}.working i{width:14px;height:14px;border:2px solid #65497e;border-top-color:#c680ff;border-radius:50%;animation:adminSpin .8s linear infinite}@keyframes adminSpin{to{transform:rotate(360deg)}}@media(max-width:800px){.admin-controls{grid-template-columns:1fr}}
 </style>
 <script>
+const selectedUsers=new Set();
 const baseAdminRender=render;
 render=function(){
   baseAdminRender();
+  $('#capacityInput').value=state.capacity||50;
   [...document.querySelectorAll('#users tr')].forEach((row,index)=>{
     const user=(state.users||[]).filter(item=>{const query=$('#search').value.trim().toLowerCase();return !query||(item.email+' '+item.full_name).toLowerCase().includes(query)})[index];
     const cell=row.lastElementChild;
     if(!user||!cell||cell.querySelector('.remove'))return;
+    const selectCell=row.insertCell(0),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=selectedUsers.has(user.email);checkbox.setAttribute('aria-label','Select '+(user.email||'user'));checkbox.onchange=()=>{checkbox.checked?selectedUsers.add(user.email):selectedUsers.delete(user.email);updateBulkStatus()};selectCell.append(checkbox);
     cell.classList.add('actions');
     const button=document.createElement('button');button.className='remove';button.textContent='Remove user';button.onclick=()=>removeUser(user.email,button);cell.append(button);
   });
   [...document.querySelectorAll('#audit .row')].forEach((row,index)=>{const item=(state.audit||[])[index],label=row.querySelector('b');if(item?.action==='remove_user'&&label)label.textContent='Removed user'});
 };
+function updateBulkStatus(){const count=selectedUsers.size;$('#bulkStatus').textContent=count?count+' user'+(count===1?'':'s')+' selected':'Select users in the table below.'}
+function setAdminWorking(active,text='Updating event…'){const working=$('#working');working.querySelector('span').textContent=text;working.classList.toggle('show',active)}
 async function removeUser(email,button){
   if(!email||!confirm('Remove '+email+' from this event? Their projects and videos will be preserved, but their event access will be revoked.'))return;
   button.disabled=true;
   try{await api('/api/creatorthon/admin/users',{method:'DELETE',body:JSON.stringify({email})});await load()}catch(error){alert(error.message)}finally{button.disabled=false}
 }
+$('#selectAll').onchange=event=>{const query=$('#search').value.trim().toLowerCase();(state.users||[]).filter(user=>!query||(user.email+' '+user.full_name).toLowerCase().includes(query)).forEach(user=>event.target.checked?selectedUsers.add(user.email):selectedUsers.delete(user.email));render();updateBulkStatus()};
+$('#saveCapacity').onclick=async()=>{const capacity=Number($('#capacityInput').value),button=$('#saveCapacity');if(!Number.isInteger(capacity)||capacity<1){alert('Enter a participant limit of at least 1.');return}button.disabled=true;setAdminWorking(true,'Saving participant limit…');try{await api('/api/creatorthon/admin/capacity',{method:'PUT',body:JSON.stringify({capacity})});await load()}catch(error){alert(error.message)}finally{button.disabled=false;setAdminWorking(false)}};
+$('#applyAllowance').onclick=async()=>{const emails=[...selectedUsers],total_allowance=Number($('#allowanceInput').value),button=$('#applyAllowance');if(!emails.length){alert('Select at least one user.');return}if(!Number.isInteger(total_allowance)||total_allowance<1){alert('Allowance must be at least 1.');return}button.disabled=true;setAdminWorking(true,'Updating selected video allowances…');try{const result=await api('/api/creatorthon/admin/allowances',{method:'PUT',body:JSON.stringify({emails,total_allowance})});selectedUsers.clear();$('#selectAll').checked=false;await load();$('#bulkStatus').textContent=result.updated+' user'+(result.updated===1?'':'s')+' updated.'}catch(error){alert(error.message)}finally{button.disabled=false;setAdminWorking(false)}};
+$('#resetEvent').onclick=async()=>{if(!confirm('Reset the Creatorthon event to 0 users? Event access, admission overrides and video allowances will be removed. Existing projects and videos will be preserved.'))return;if(!confirm('Final confirmation: reset the event roster now?'))return;const button=$('#resetEvent');button.disabled=true;setAdminWorking(true,'Resetting event users to 0…');try{const result=await api('/api/creatorthon/admin/reset',{method:'POST'});selectedUsers.clear();$('#selectAll').checked=false;await load();alert(result.users_removed+' users removed from the event. Their projects and videos were preserved.')}catch(error){alert(error.message)}finally{button.disabled=false;setAdminWorking(false)}};
+updateBulkStatus();
 </script>
 </body>
 </html>
