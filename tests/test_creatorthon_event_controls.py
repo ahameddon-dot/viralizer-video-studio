@@ -28,7 +28,7 @@ class CreatorthonEventControlTests(unittest.TestCase):
         )
         self.assertEqual(
             app._refine_mcp_search_term("New AI Tools Are Transforming Small Businesses"),
-            "New AI Tools Are Transforming Small Businesses",
+            "AI Tools Transforming Small Businesses",
         )
         flipkart = "Flipkart Fashion sees fashion festive growth accelerate by 1,500 basis points YoY on premiumisation, Gen Z demand"
         self.assertEqual(app._refine_mcp_search_term(flipkart), "Flipkart Festive Fashion Surge")
@@ -37,11 +37,11 @@ class CreatorthonEventControlTests(unittest.TestCase):
             ["Flipkart Festive Fashion Surge", "Flipkart Festive Fashion Growth", "Flipkart Festive Fashion"],
         )
         africa = "Africa's 1.69 bn SME US apparel window: What's holding it back?"
-        self.assertEqual(app._refine_mcp_search_term(africa), "African SME Apparel Exports to US")
+        self.assertEqual(app._refine_mcp_search_term(africa), "African SME Apparel US Exports")
         self.assertEqual(
             app._mcp_search_candidates(africa),
             [
-                "African SME Apparel Exports to US",
+                "African SME Apparel US Exports",
                 "Africa Apparel SMEs US Market",
                 "African Fashion Exports United States",
                 "Africa US Apparel Trade SMEs",
@@ -51,7 +51,11 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._refine_mcp_search_term("Europe's 2 bn AI startup window: Why investors are hesitating"),
             "Europe's AI startup market opportunity",
         )
-        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 4)
+        self.assertEqual(
+            app._refine_mcp_search_term("‘Star Wars: Galactic Racer’ Debuts on Amazon Luna Day and Date With Wide Release (Gaming News Roundup)"),
+            "Star Wars Galactic Racer",
+        )
+        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 5)
 
     def test_completed_jobs_from_old_query_refiner_are_automatically_refreshed(self):
         source = Path(app.__file__).read_text(encoding="utf-8")

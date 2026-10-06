@@ -1430,6 +1430,13 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
 def _refine_mcp_search_term(topic: str) -> str:
     """Turn an editorial headline into a concise, entity-rich MCP search phrase."""
     text = " ".join(str(topic).replace("–", " ").replace("—", " ").split())
+    # A quoted product, title, event, or franchise name is normally the strongest
+    # search entity. Prefer it over release-language surrounding the quotation.
+    quoted = re.search(r"[‘’'\"]([^‘’'\"]{3,100})[’'\"]", text)
+    if quoted:
+        entity_words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", quoted.group(1).replace(":", " "))
+        if 3 <= len(entity_words) <= 5:
+            return " ".join(entity_words)
     # Convert market-opportunity headlines into the underlying searchable subject.
     # News headlines often lead with a number and end with a rhetorical question;
     # neither describes the entity/industry/market relationship MCP should search.
@@ -1439,7 +1446,7 @@ def _refine_mcp_search_term(topic: str) -> str:
         and re.search(r"\bapparel\b", text, re.I)
         and re.search(r"\b(?:us|u\.s\.|united states)\b", text, re.I)
     ):
-        return "African SME Apparel Exports to US"
+        return "African SME Apparel US Exports"
     # Apply the same intent cleanup to other sectors and regions: discard
     # headline-sized figures and rhetorical tails, then express "window" as the
     # underlying market opportunity that an intelligence search can resolve.
@@ -1462,11 +1469,13 @@ def _refine_mcp_search_term(topic: str) -> str:
         r"\bfeaturing\b", r"\ba celebration of\b", r"\bnew report says\b", r"\bwhat to know\b",
         r"\bunveils?\b", r"\bannounces?\b", r"\bhighlights?\b", r"\breveals?\b",
         r"\blaunches? (?:its |the )?new\b", r"\bputs? .*? in focus\b",
+        r"\bdebuts?\b.*$", r"\bday and date\b.*$", r"\bwide release\b.*$",
+        r"\b(?:gaming |news )?roundup\b.*$",
     )
     for phrase in filler_phrases:
         text = re.sub(phrase, " ", text, flags=re.I)
     disposable = {
-        "industry", "latest", "major", "officially", "its", "the", "at", "in", "on", "for", "of",
+        "industry", "latest", "major", "officially", "new", "are", "sees", "its", "the", "at", "in", "on", "for", "of",
         "and", "with", "from", "a", "an", "spotlight", "campaign", "featuring", "celebration",
     }
     words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’.-]*", text)
@@ -1480,14 +1489,14 @@ def _refine_mcp_search_term(topic: str) -> str:
             and re.fullmatch(r"20\d{2}", compact[index + 1])
         )
     ]
-    # Keep the phrase narrow enough for MCP while retaining named entities, acronyms, and years.
-    return " ".join(compact[:8]).strip() or " ".join(words[:8]).strip()
+    # YouTube/MCP queries work best as short entity phrases, not clipped headlines.
+    return " ".join(compact[:5]).strip() or " ".join(words[:5]).strip()
 
 
 def _mcp_search_candidates(topic: str, preferred: str = "") -> list[str]:
     primary = " ".join(str(preferred).split()) or _refine_mcp_search_term(topic)
     candidates = [primary]
-    if primary.casefold() == "african sme apparel exports to us":
+    if primary.casefold() == "african sme apparel us exports":
         candidates.extend([
             "Africa Apparel SMEs US Market",
             "African Fashion Exports United States",
@@ -1495,9 +1504,10 @@ def _mcp_search_candidates(topic: str, preferred: str = "") -> list[str]:
         ])
     if re.search(r"\bsurge\b", primary, re.I):
         candidates.extend([re.sub(r"\bsurge\b", "Growth", primary, flags=re.I), re.sub(r"\bsurge\b", "", primary, flags=re.I)])
-    concise_original = " ".join(str(topic).split()[:10]).rstrip("?!,.;:-")
-    candidates.append(concise_original)
-    return list(dict.fromkeys(" ".join(value.split()) for value in candidates if len(" ".join(value.split())) >= 3))[:4]
+    without_year = " ".join(word for word in primary.split() if not re.fullmatch(r"20\d{2}", word))
+    if 3 <= len(without_year.split()) <= 5:
+        candidates.append(without_year)
+    return list(dict.fromkeys(" ".join(value.split()[:5]) for value in candidates if 3 <= len(" ".join(value.split()).split()) <= 5))[:4]
 
 
 async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") -> dict[str, Any]:
@@ -1552,7 +1562,7 @@ CREATORTHON_PREFETCH_CATEGORIES = (
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
-MCP_QUERY_REFINER_VERSION = 4
+MCP_QUERY_REFINER_VERSION = 5
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
