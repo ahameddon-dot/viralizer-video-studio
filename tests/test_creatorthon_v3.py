@@ -131,6 +131,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("/api/creatorthon/insight-queue", page)
         self.assertIn("function closeTopicInsight()", page)
         self.assertIn("if(state.insightTopic)selectTopic(state.insightTopic)", page)
+        self.assertIn(".insight-loading[hidden]", page)
+        self.assertIn('id="insightContent" class="insight-content" hidden', page)
 
 
 if __name__ == "__main__":
