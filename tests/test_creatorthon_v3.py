@@ -114,6 +114,24 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("categories ready", page)
         self.assertIn("state.loadingCategories.delete(c)", page)
 
+    def test_topic_selection_opens_one_proprietary_insight_panel_before_video_creation(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn('id="topicInsight" class="topic-insight" hidden', page)
+        self.assertIn("Viralizer Proprietary Insights", page)
+        self.assertIn("Refined MCP search term", page)
+        self.assertIn("Value proposition", page)
+        self.assertIn("Article Intelligence", page)
+        self.assertIn("Viral Topic Rank", page)
+        self.assertIn("Total Audience", page)
+        self.assertIn("Est. Remaining Views", page)
+        self.assertIn("Audience Insight", page)
+        self.assertIn("Creator Insight", page)
+        self.assertNotIn("Resonance", page)
+        self.assertNotIn("Boost", page)
+        self.assertIn("/api/creatorthon/insight-queue", page)
+        self.assertIn("function closeTopicInsight()", page)
+        self.assertIn("if(state.insightTopic)selectTopic(state.insightTopic)", page)
+
 
 if __name__ == "__main__":
     unittest.main()
