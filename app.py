@@ -1493,9 +1493,107 @@ def _refine_mcp_search_term(topic: str) -> str:
     return " ".join(compact[:5]).strip() or " ".join(words[:5]).strip()
 
 
-def _mcp_search_candidates(topic: str, preferred: str = "") -> list[str]:
+def _valid_mcp_search_term(value: Any) -> str:
+    """Accept only compact search phrases; never send unchecked model text to MCP."""
+    text = " ".join(str(value or "").replace("–", " ").replace("—", " ").split()).strip(" .,:;!?\"'‘’")
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’&.-]*", text)
+    if not 3 <= len(words) <= 5:
+        return ""
+    if len(" ".join(words)) > 80:
+        return ""
+    return " ".join(words)
+
+
+def _search_term_matches_topic(term: str, topic: str) -> bool:
+    """Reject fluent but unrelated model output while allowing light inflection changes."""
+    ignored = {"about", "after", "from", "into", "market", "news", "with", "year"}
+    term_words = {word.casefold().rstrip("s") for word in re.findall(r"[A-Za-z0-9]{4,}", term)} - ignored
+    topic_words = {word.casefold().rstrip("s") for word in re.findall(r"[A-Za-z0-9]{4,}", topic)} - ignored
+    return bool(term_words and topic_words and any(
+        left == right or (len(left) >= 5 and len(right) >= 5 and (left.startswith(right) or right.startswith(left)))
+        for left in term_words for right in topic_words
+    ))
+
+
+def _openai_response_text(payload: dict[str, Any]) -> str:
+    text = str(payload.get("output_text") or "").strip()
+    if text:
+        return text
+    for item in payload.get("output") or []:
+        if not isinstance(item, dict):
+            continue
+        for block in item.get("content") or []:
+            if isinstance(block, dict) and block.get("type") in {"output_text", "text"}:
+                text = str(block.get("text") or "").strip()
+                if text:
+                    return text
+    raise ValueError("The query-refinement model returned no text.")
+
+
+async def _request_llm_search_terms(topic: str) -> dict[str, Any]:
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+    model = (
+        os.getenv("OPENAI_QUERY_REFINER_MODEL", "").strip()
+        or os.getenv("OPENAI_MODEL", "").strip()
+        or os.getenv("OPENAI_STORY_MODEL", "").strip()
+        or "gpt-4.1-mini"
+    )
+    instruction = """Convert one news headline into semantic search phrases for Viralizer MCP and YouTube research.
+Return JSON only: {"primary":"...","fallbacks":["...","..."]}.
+Rules:
+- Every phrase must contain exactly 3 to 5 English words.
+- Preserve the central named entity, product, company, event, market, or relationship.
+- Express search intent, not the first five words of the headline.
+- Remove editorial filler such as news, roundup, debuts, unveils, launches, day-and-date, wide release, what's holding it back, and large headline statistics unless essential.
+- Do not invent facts or add unrelated entities.
+- Make fallbacks meaningfully different but semantically faithful.
+Example: “Star Wars: Galactic Racer Debuts on Amazon Luna Day and Date With Wide Release” -> {"primary":"Star Wars Galactic Racer","fallbacks":["Galactic Racer Amazon Luna","Star Wars Racing Game"]}.
+Example: “Africa's 1.69 bn SME US apparel window: What's holding it back?” -> {"primary":"African SME Apparel US Exports","fallbacks":["Africa Apparel SMEs US Market"]}."""
+    request_payload = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": instruction}]},
+            {"role": "user", "content": [{"type": "input_text", "text": json.dumps({"headline": topic}, ensure_ascii=False)}]},
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request_payload,
+        )
+    response.raise_for_status()
+    return json.loads(_openai_response_text(response.json()))
+
+
+async def _llm_refined_search_terms(topic: str) -> tuple[str, list[str], str]:
+    """Return validated model terms, falling back safely when AI is unavailable."""
+    rule_term = _valid_mcp_search_term(_refine_mcp_search_term(topic))
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        return rule_term, [], "rules"
+    try:
+        payload = await _request_llm_search_terms(topic)
+        primary = _valid_mcp_search_term(payload.get("primary"))
+        if primary and not _search_term_matches_topic(primary, topic):
+            primary = ""
+        raw_fallbacks = payload.get("fallbacks") if isinstance(payload.get("fallbacks"), list) else []
+        fallbacks = [
+            term for term in (_valid_mcp_search_term(value) for value in raw_fallbacks)
+            if term and _search_term_matches_topic(term, topic) and term.casefold() not in {primary.casefold(), rule_term.casefold()}
+        ][:2]
+        if primary:
+            return primary, fallbacks, "llm"
+    except (httpx.HTTPError, RuntimeError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return rule_term, [], "rules"
+
+
+def _mcp_search_candidates(topic: str, preferred: str = "", fallbacks: list[str] | None = None) -> list[str]:
     primary = " ".join(str(preferred).split()) or _refine_mcp_search_term(topic)
-    candidates = [primary]
+    candidates = [primary, *(fallbacks or [])]
     if primary.casefold() == "african sme apparel us exports":
         candidates.extend([
             "Africa Apparel SMEs US Market",
@@ -1515,7 +1613,9 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
     search_term = ""
     attempted_terms: list[str] = []
     last_error: MCPOutlineError | None = None
-    for candidate in _mcp_search_candidates(topic, mcp_search_term):
+    llm_term, llm_fallbacks, refiner = await _llm_refined_search_terms(topic)
+    preferred = _valid_mcp_search_term(mcp_search_term) or llm_term
+    for candidate in _mcp_search_candidates(topic, preferred, llm_fallbacks):
         attempted_terms.append(candidate)
         try:
             report = await get_full_report_from_mcp(candidate)
@@ -1546,6 +1646,7 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
         "display_topic": topic,
         "mcp_search_term": search_term,
         "mcp_search_terms_attempted": attempted_terms,
+        "mcp_search_refiner": refiner,
         "query_refiner_version": MCP_QUERY_REFINER_VERSION,
         "parser_version": 2,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
@@ -1562,7 +1663,7 @@ CREATORTHON_PREFETCH_CATEGORIES = (
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
-MCP_QUERY_REFINER_VERSION = 5
+MCP_QUERY_REFINER_VERSION = 6
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
@@ -1592,7 +1693,7 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
             return
         async with semaphore:
             try:
-                result = await _proprietary_insight_payload(title, _refine_mcp_search_term(title))
+                result = await _proprietary_insight_payload(title)
             except Exception:
                 return
             save_cached_topic_insight(ROOT, title, result, ttl_seconds)
@@ -1640,7 +1741,7 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
                 if int((result or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
                     result = None
                 if result is None:
-                    result = await _proprietary_insight_payload(title, _refine_mcp_search_term(title))
+                    result = await _proprietary_insight_payload(title)
                     save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600")))
                 finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
             except Exception as exc:

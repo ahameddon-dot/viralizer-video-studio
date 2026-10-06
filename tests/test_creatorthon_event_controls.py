@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import app
 from creatorthon_store import (
@@ -55,12 +55,53 @@ class CreatorthonEventControlTests(unittest.TestCase):
             app._refine_mcp_search_term("‘Star Wars: Galactic Racer’ Debuts on Amazon Luna Day and Date With Wide Release (Gaming News Roundup)"),
             "Star Wars Galactic Racer",
         )
-        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 5)
+        self.assertGreaterEqual(app.MCP_QUERY_REFINER_VERSION, 6)
 
     def test_completed_jobs_from_old_query_refiner_are_automatically_refreshed(self):
         source = Path(app.__file__).read_text(encoding="utf-8")
         self.assertIn('get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION', source)
         self.assertIn('"query_refiner_version": MCP_QUERY_REFINER_VERSION', source)
+
+
+class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_llm_refines_headline_into_valid_semantic_search_terms(self):
+        headline = "‘Star Wars: Galactic Racer’ Debuts on Amazon Luna Day and Date With Wide Release"
+        model_result = {
+            "primary": "Star Wars Galactic Racer",
+            "fallbacks": ["Galactic Racer Amazon Luna", "Star Wars Racing Game"],
+        }
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False), patch.object(
+            app, "_request_llm_search_terms", AsyncMock(return_value=model_result)
+        ):
+            primary, fallbacks, source = await app._llm_refined_search_terms(headline)
+        self.assertEqual(primary, "Star Wars Galactic Racer")
+        self.assertEqual(fallbacks, ["Galactic Racer Amazon Luna", "Star Wars Racing Game"])
+        self.assertEqual(source, "llm")
+
+    async def test_invalid_or_unrelated_model_result_uses_rule_fallback(self):
+        headline = "‘Star Wars: Galactic Racer’ Debuts on Amazon Luna Day and Date With Wide Release"
+        model_result = {
+            "primary": "Completely Unrelated Fashion Market",
+            "fallbacks": ["This answer contains far too many words to be accepted"],
+        }
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False), patch.object(
+            app, "_request_llm_search_terms", AsyncMock(return_value=model_result)
+        ):
+            primary, fallbacks, source = await app._llm_refined_search_terms(headline)
+        self.assertEqual(primary, "Star Wars Galactic Racer")
+        self.assertEqual(fallbacks, [])
+        self.assertEqual(source, "rules")
+
+    async def test_missing_api_key_never_calls_model(self):
+        request = AsyncMock()
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False), patch.object(
+            app, "_request_llm_search_terms", request
+        ):
+            primary, fallbacks, source = await app._llm_refined_search_terms("Lebanese Food at SIAL Paris 2026")
+        request.assert_not_awaited()
+        self.assertEqual(primary, "Lebanese Food SIAL 2026")
+        self.assertEqual(fallbacks, [])
+        self.assertEqual(source, "rules")
 
     def test_only_configured_emails_have_unlimited_creatorthon_access(self):
         with patch.dict(os.environ, {"CREATORTHON_UNLIMITED_EMAILS": ""}, clear=False):
