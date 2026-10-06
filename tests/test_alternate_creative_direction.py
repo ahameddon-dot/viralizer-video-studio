@@ -5,6 +5,24 @@ from pixverse_client import build_video_prompt
 
 
 class AlternateCreativeDirectionTests(unittest.TestCase):
+    def test_confirmed_configuration_is_mandatory_in_provider_prompt(self):
+        prompt = build_video_prompt(
+            {
+                "topic": "Star Wars Galactic Racer launches on Amazon Luna",
+                "category": "Gaming",
+                "summary": "A new Star Wars racing game reaches Amazon Luna.",
+            },
+            10,
+            user_prompt=(
+                "Configured direction: Set the environment to the Eiffel Tower. "
+                "Feature a Chinese female subject."
+            ),
+        )
+        self.assertIn("Mandatory creator direction:", prompt)
+        self.assertIn("Set the environment to the Eiffel Tower", prompt)
+        self.assertIn("Feature a Chinese female subject", prompt)
+        self.assertIn("required visible constraint", prompt)
+
     def base_content(self):
         return {
             "topic": "Three siblings build a growing beauty brand",

@@ -1086,4 +1086,11 @@ def validate_shot_consistency(spec: dict[str, Any], reference_prompt: str, motio
 
 def build_motion_directed_prompt(content: dict[str, Any], duration: int = 5, *, generation_type: str = "text_to_video", quality_mode: bool = True, user_prompt: str = "") -> tuple[str, dict[str, Any]]:
     plan = build_motion_plan(content, duration, generation_type=generation_type, quality_mode=quality_mode, user_prompt=user_prompt)
+    creator_direction = _clean(user_prompt, 180)
+    if creator_direction:
+        creator_direction = re.sub(r"^Configured direction:\s*", "", creator_direction, flags=re.I)
+        plan.final_prompt = _clean_prompt(
+            f"{plan.final_prompt} Mandatory creator direction: {creator_direction}. "
+            "Treat every named person attribute, environment, location, object, and camera instruction in this direction as a required visible constraint; do not substitute a generic subject or setting."
+        )
     return plan.final_prompt, plan.debug()
