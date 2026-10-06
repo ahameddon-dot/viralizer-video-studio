@@ -57,6 +57,13 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("@media(max-width:960px)", page)
         self.assertIn("@media(max-width:680px)", page)
 
+    def test_v3_uses_supplied_favicon(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertTrue((ROOT / "static" / "viralizer-v3-favicon.png").is_file())
+        self.assertIn('/static/viralizer-v3-favicon.png?v=1', page)
+        self.assertIn('/static/viralizer-v3-favicon.png?v=1', app_source)
+
     def test_v3_uses_confirmation_gates_and_shows_video_results(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn('id="ownPromptButton"', page)
