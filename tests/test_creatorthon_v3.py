@@ -1,11 +1,25 @@
 import unittest
 from pathlib import Path
 
+from starlette.requests import Request
+
+import app
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class CreatorthonV3Tests(unittest.TestCase):
+    def test_v3_custom_domain_serves_v3_from_root(self):
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "https", "path": "/", "query_string": b"",
+            "headers": [(b"host", b"v3.viralizer.ai")], "server": ("v3.viralizer.ai", 443),
+        })
+        self.assertTrue(app._is_creatorthon_v3_host(request))
+        source = Path(app.__file__).read_text(encoding="utf-8")
+        self.assertIn('if request.url.path == "/" and _is_creatorthon_v3_host(request):', source)
+        self.assertIn('return await creatorthon_v3_login(request, next="/")', source)
+
     def test_v3_is_an_isolated_route(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.assertIn('@app.get("/creatorthon-v3/login"', app_source)

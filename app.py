@@ -256,6 +256,11 @@ def require_admin(request: Request) -> None:
         raise HTTPException(401, "Administrator authentication required.")
 
 
+def _is_creatorthon_v3_host(request: Request) -> bool:
+    configured = os.getenv("CREATORTHON_V3_HOST", "v3.viralizer.ai").strip().casefold()
+    return bool(configured and (request.url.hostname or "").casefold() == configured)
+
+
 @app.middleware("http")
 async def require_password(request: Request, call_next):
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
@@ -268,6 +273,10 @@ async def require_password(request: Request, call_next):
         "/static/viralizer-logo-white.png",
         "/static/final/viralizer-logo-mark.svg",
     }
+    # The V3 custom domain is the product itself, so its root is responsible for
+    # showing either the V3 Google sign-in or the authenticated V3 application.
+    if request.url.path == "/" and _is_creatorthon_v3_host(request):
+        return await call_next(request)
     if request.url.path.startswith("/creatorthon") or request.url.path.startswith("/api/creatorthon"):
         google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
         if request.url.path not in public_paths and not google_user:
@@ -841,7 +850,14 @@ async def hot_topic_details_with_retry(topic_id: str):
 
 
 @app.get("/")
-async def index():
+async def index(request: Request):
+    if _is_creatorthon_v3_host(request):
+        if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+            return await creatorthon_v3_login(request, next="/")
+        return FileResponse(
+            ROOT / "static" / "creatorthon-v3.html",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
     return FileResponse(
         ROOT / "static" / "pixel_ui.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
