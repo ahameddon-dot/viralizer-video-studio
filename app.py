@@ -723,6 +723,7 @@ class CreatorthonConceptGenerateRequest(GenerateRequest):
 
 class CreatorthonPrepareRequest(GenerateRequest):
     project_id: str = Field(default="", max_length=64)
+    prompt_mode: str = Field(default="viralizer", pattern=r"^(viralizer|alternate|custom)$")
 
 
 class CreatorthonHashtagRequest(BaseModel):
@@ -2360,6 +2361,9 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
     if not project:
         raise HTTPException(404, "Creatorthon project not found.")
     private_prompt, custom_prompt = _creatorthon_generation_prompt(project, payload.prompt)
+    stored_prompt = project.get("prompt") if isinstance(project.get("prompt"), dict) else {}
+    if payload.custom_prompt_confirmed and stored_prompt.get("mode") == "custom-developed" and not custom_prompt:
+        custom_prompt = True
     if not private_prompt:
         raise HTTPException(409, "Prepare this concept before generating the video.")
     if custom_prompt:
@@ -2430,7 +2434,11 @@ async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepa
         "status": "prepared",
         "aspect_ratio": payload.aspect_ratio,
         "quality": payload.quality,
-        "prompt": {"text": prepared.get("prompt", ""), "concept": concept},
+        "prompt": {
+            "text": prepared.get("prompt", ""),
+            "concept": concept,
+            "mode": "custom-developed" if payload.prompt_mode == "custom" else payload.prompt_mode,
+        },
         "narration": {"text": prepared.get("narration", ""), "heygen_script": prepared.get("heygen_script", "")},
         "article_intelligence": prepared.get("article_intelligence") or {},
     }
