@@ -1789,6 +1789,16 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
         job, created = enqueue_insight_job(ROOT, user_id, payload.topic)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    stale_completed_job = job.get("status") == "completed" and (
+        int((job.get("result") or {}).get("parser_version") or 0) < 2
+        or int((job.get("result") or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
+    )
+    if stale_completed_job:
+        retry_insight_job(ROOT, user_id, str(job["id"]))
+        job = next(
+            item for item in list_insight_jobs(ROOT, user_id)
+            if str(item["id"]) == str(job["id"])
+        )
     title = _topic_title_value(payload.topic)
     cached = get_cached_topic_insight(ROOT, title)
     if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:

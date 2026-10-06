@@ -61,6 +61,7 @@ class CreatorthonEventControlTests(unittest.TestCase):
         source = Path(app.__file__).read_text(encoding="utf-8")
         self.assertIn('get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION', source)
         self.assertIn('"query_refiner_version": MCP_QUERY_REFINER_VERSION', source)
+        self.assertIn("if stale_completed_job:", source)
 
 
 class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
