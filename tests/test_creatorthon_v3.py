@@ -60,9 +60,9 @@ class CreatorthonV3Tests(unittest.TestCase):
     def test_v3_uses_supplied_favicon(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-        self.assertTrue((ROOT / "static" / "viralizer-v3-favicon.png").is_file())
-        self.assertIn('/static/viralizer-v3-favicon.png?v=1', page)
-        self.assertIn('/static/viralizer-v3-favicon.png?v=1', app_source)
+        self.assertTrue((ROOT / "static" / "viralizer-v3-favicon-v2.png").is_file())
+        self.assertIn('/static/viralizer-v3-favicon-v2.png?v=2', page)
+        self.assertIn('/static/viralizer-v3-favicon-v2.png?v=2', app_source)
 
     def test_v3_uses_confirmation_gates_and_shows_video_results(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
