@@ -45,7 +45,7 @@ class CreatorthonV3Tests(unittest.TestCase):
 
     def test_v3_uses_confirmation_gates_and_shows_video_results(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
-        self.assertNotIn('id="ownPromptButton"', page)
+        self.assertIn('id="ownPromptButton"', page)
         self.assertIn('id="settings" class="settings" hidden', page)
         self.assertIn("Confirm configuration", page)
         self.assertIn("Review before generation", page)
@@ -133,6 +133,33 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("if(state.insightTopic)selectTopic(state.insightTopic)", page)
         self.assertIn(".insight-loading[hidden]", page)
         self.assertIn('id="insightContent" class="insight-content" hidden', page)
+
+    def test_v3_exposes_event_review_and_publishing_controls(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        for expected in (
+            "/api/creatorthon/event-status",
+            'id="eventStatus"',
+            'id="adminLink"',
+            'id="ownPromptButton"',
+            'id="topicAlignment"',
+            'id="reviewDuration"',
+            'id="reviewAspect"',
+            'id="reviewPlatform"',
+            'id="reviewSpeech"',
+            'id="reviewCaption"',
+            'id="reviewHashtags"',
+            "/api/creatorthon/hashtags",
+            "/api/creatorthon/youtube/status",
+            'id="publishVideo"',
+            "YouTube URL:",
+        ):
+            self.assertIn(expected, page)
+        self.assertIn("custom_prompt_confirmed:state.promptMode==='custom'", page)
+        self.assertIn("speech_script_reviewed:$('#speechReviewed').checked", page)
+        self.assertIn("hashtags_reviewed:$('#hashtagsReviewed').checked", page)
+        self.assertIn("topic_mismatch_acknowledged:", page)
+        self.assertIn("duration:state.duration", page)
+        self.assertIn("aspect_ratio:state.aspectRatio", page)
 
 
 if __name__ == "__main__":
