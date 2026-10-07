@@ -67,9 +67,9 @@ from release_actions import ReleaseActionError, publish_beta, rollback_productio
 from creatorthon_store import (
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
-    event_admin_state, event_capacity, grant_event_admission, grant_extra_generation, remove_event_user,
-    reset_event_roster, set_event_capacity, set_generation_allowance,
-    list_assets, list_projects, list_reports, release_event_generation, reserve_event_generation,
+    event_admin_state, event_capacity, event_is_frozen, grant_event_admission, grant_extra_generation, remove_event_user,
+    reset_event_roster, set_event_capacity, set_event_frozen, set_generation_allowance,
+    list_assets, list_participant_videos, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
     get_cached_category_topics, get_cached_topic_insight, save_cached_category_topics, save_cached_topic_insight,
@@ -262,6 +262,19 @@ def _is_creatorthon_v3_host(request: Request) -> bool:
     return bool(configured and (request.url.hostname or "").casefold() == configured)
 
 
+def _creatorthon_frozen_response(request: Request, signed_in: bool = False) -> HTMLResponse:
+    destination = "/creatorthon/admin"
+    organizer_action = (
+        '<a class="button" href="/logout?next=/creatorthon/login">Sign out and use an organizer account</a>'
+        if signed_in else
+        f'<a class="button" href="/auth/google?next={quote(destination, safe="/")}">Organizer sign in</a>'
+    )
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Creatorthon temporarily unavailable</title>
+<style>*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at top,#f4edff,#fff 58%);font-family:Inter,system-ui,sans-serif;color:#11101a}}main{{width:min(560px,100%);padding:42px;border:1px solid #dfd2f5;border-radius:24px;background:#ffffffed;box-shadow:0 28px 80px #5e3a8d20;text-align:center}}img{{width:190px;max-width:70%;height:auto}}.tag{{display:inline-block;margin-top:26px;padding:7px 11px;border-radius:999px;background:#f1e7ff;color:#7c2ed4;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}}h1{{margin:15px 0 10px;font-size:clamp(30px,6vw,46px);letter-spacing:-.045em}}p{{margin:0 auto;color:#665e70;line-height:1.65;max-width:440px}}.button{{display:inline-flex;margin-top:25px;padding:13px 18px;border-radius:12px;background:#171221;color:#fff;text-decoration:none;font-weight:850}}</style>
+</head><body><main><img src="/static/viralizer-logo-black.png" alt="Viralizer"><div class="tag">Event paused</div><h1>Creatorthon is temporarily unavailable</h1><p>The organizer has frozen participant access. Your profile, projects and videos remain safe. Please contact the organizer for assistance.</p>{organizer_action}</main></body></html>""", status_code=423)
+
+
 @app.middleware("http")
 async def require_password(request: Request, call_next):
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
@@ -276,6 +289,20 @@ async def require_password(request: Request, call_next):
         "/static/viralizer-v3-favicon-v2.png",
         "/static/final/viralizer-logo-mark.svg",
     }
+    creatorthon_request = (
+        request.url.path.startswith("/creatorthon")
+        or request.url.path.startswith("/api/creatorthon")
+        or (request.url.path == "/" and _is_creatorthon_v3_host(request))
+    )
+    if creatorthon_request and event_is_frozen(ROOT):
+        google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+        if not google_user or not _creatorthon_admin_user(google_user):
+            if request.url.path.startswith("/api/"):
+                return JSONResponse(
+                    {"detail": "Creatorthon is temporarily unavailable. Please contact the organizer.", "frozen": True},
+                    status_code=423,
+                )
+            return _creatorthon_frozen_response(request, signed_in=bool(google_user))
     # The V3 custom domain is the product itself, so its root is responsible for
     # showing either the V3 Google sign-in or the authenticated V3 application.
     if request.url.path == "/" and _is_creatorthon_v3_host(request):
@@ -663,6 +690,10 @@ class CreatorthonAdminEmailRequest(BaseModel):
 
 class CreatorthonAdminCapacityRequest(BaseModel):
     capacity: int = Field(ge=1, le=10000)
+
+
+class CreatorthonAdminFreezeRequest(BaseModel):
+    frozen: bool
 
 
 class CreatorthonAdminAllowanceRequest(BaseModel):
@@ -2109,10 +2140,24 @@ async def creatorthon_admin_state(request: Request):
     return event_admin_state(ROOT, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
 
 
+@app.get("/api/creatorthon/admin/videos")
+async def creatorthon_admin_videos(request: Request):
+    creatorthon_admin_user(request)
+    videos = list_participant_videos(ROOT)
+    return {"videos": videos, "count": len(videos)}
+
+
 @app.put("/api/creatorthon/admin/capacity")
 async def creatorthon_admin_capacity(request: Request, payload: CreatorthonAdminCapacityRequest):
     admin = creatorthon_admin_user(request)
     return {"capacity": set_event_capacity(ROOT, payload.capacity, str(admin.get("email") or ""))}
+
+
+@app.put("/api/creatorthon/admin/freeze")
+async def creatorthon_admin_freeze(request: Request, payload: CreatorthonAdminFreezeRequest):
+    admin = creatorthon_admin_user(request)
+    frozen = set_event_frozen(ROOT, payload.frozen, str(admin.get("email") or ""))
+    return {"frozen": frozen}
 
 
 @app.put("/api/creatorthon/admin/allowances")

@@ -108,6 +108,7 @@ def _schema_statements() -> list[str]:
           created_at BIGINT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS creatorthon_event_settings (
           event_key TEXT PRIMARY KEY, capacity INTEGER NOT NULL DEFAULT 50,
+          frozen INTEGER NOT NULL DEFAULT 0,
           updated_by TEXT NOT NULL DEFAULT '', updated_at BIGINT NOT NULL DEFAULT 0)""",
         """CREATE TABLE IF NOT EXISTS creatorthon_workflow_states (
           user_id TEXT PRIMARY KEY, step TEXT NOT NULL DEFAULT 'profile',
@@ -132,6 +133,7 @@ def _ensure_event_account_schema(db: Any) -> None:
     _ensure_column(db, "creatorthon_event_accounts", "generation_count", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "creatorthon_event_accounts", "extra_generation_credits", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(db, "creatorthon_event_accounts", "admission_override", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "creatorthon_event_settings", "frozen", "INTEGER NOT NULL DEFAULT 0")
     db.execute(
         "UPDATE creatorthon_event_accounts SET generation_count=1 "
         "WHERE generation_status='accepted' AND generation_count=0"
@@ -287,6 +289,7 @@ def _connect(root: Path) -> Iterator[Any]:
     );
     CREATE TABLE IF NOT EXISTS creatorthon_event_settings (
       event_key TEXT PRIMARY KEY, capacity INTEGER NOT NULL DEFAULT 50,
+      frozen INTEGER NOT NULL DEFAULT 0,
       updated_by TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0
     );
     """)
@@ -342,6 +345,13 @@ def event_capacity(root: Path, fallback: int = 50) -> int:
     with _connect(root) as db:
         row = db.execute("SELECT capacity FROM creatorthon_event_settings WHERE event_key=?", (event_key(),)).fetchone()
     return max(1, int(dict(row).get("capacity") or fallback)) if row else max(1, int(fallback))
+
+
+def event_is_frozen(root: Path) -> bool:
+    """Return the durable event-wide access lock state."""
+    with _connect(root) as db:
+        row = db.execute("SELECT frozen FROM creatorthon_event_settings WHERE event_key=?", (event_key(),)).fetchone()
+    return bool(int(dict(row).get("frozen") or 0)) if row else False
 
 
 def claim_event_seat(root: Path, user_id: str, limit: int = 50, email: str = "") -> dict[str, Any]:
@@ -526,6 +536,23 @@ def set_event_capacity(root: Path, capacity: int, admin_email: str) -> int:
     return value
 
 
+def set_event_frozen(root: Path, frozen: bool, admin_email: str) -> bool:
+    """Freeze or unfreeze participant access while preserving all event data."""
+    key, value, now = event_key(), int(bool(frozen)), int(time.time())
+    capacity = event_capacity(root, int(os.getenv("CREATORTHON_EVENT_USER_LIMIT", "50")))
+    with _connect(root) as db:
+        db.execute(
+            """INSERT INTO creatorthon_event_settings (event_key,capacity,frozen,updated_by,updated_at)
+            VALUES (?,?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET frozen=excluded.frozen,
+            updated_by=excluded.updated_by,updated_at=excluded.updated_at""",
+            (key, capacity, value, admin_email.strip().lower(), now),
+        )
+        _record_admin_audit(
+            db, admin_email, "freeze_event" if value else "unfreeze_event", "", {"frozen": bool(value)}
+        )
+    return bool(value)
+
+
 def set_generation_allowance(root: Path, emails: list[str], total_allowance: int, admin_email: str) -> int:
     normalized = sorted({email.strip().lower() for email in emails if email.strip()})
     allowance = max(1, min(1000, int(total_allowance)))
@@ -593,7 +620,8 @@ def event_admin_state(root: Path, limit: int = 50) -> dict[str, Any]:
             "generation_status": str(item.get("generation_status") or "available"),
             "videos_used": used, "total_allowance": allowance, "credits_remaining": max(0, allowance - used),
         })
-    return {"event_key": key, "capacity": int(limit), "admitted_count": len(users), "users": users,
+    return {"event_key": key, "capacity": int(limit), "frozen": event_is_frozen(root),
+            "admitted_count": len(users), "users": users,
             "pending_admissions": [dict(row) for row in pending],
             "audit": [{**dict(row), "details": _json_load(dict(row).get("details_json"), {})} for row in audit]}
 
@@ -953,6 +981,31 @@ def list_projects(root: Path, user_id: str, limit: int = 50, status: str = "") -
     with _connect(root) as db:
         rows = db.execute(query, params).fetchall()
     return [_project(row) for row in rows]
+
+
+def list_participant_videos(root: Path, limit: int = 500) -> list[dict[str, Any]]:
+    """Return completed participant videos with owner identity for organizer review."""
+    with _connect(root) as db:
+        rows = db.execute(
+            """SELECT p.id,p.user_id,p.title,p.topic_json,p.provider,p.video_url,p.thumbnail_url,
+            p.status,p.created_at,p.updated_at,COALESCE(profile.full_name,'') AS full_name,
+            COALESCE(NULLIF(profile.email,''),NULLIF(account.email,''),'') AS email
+            FROM creatorthon_projects p
+            LEFT JOIN creatorthon_profiles profile ON profile.user_id=p.user_id
+            LEFT JOIN creatorthon_event_accounts account ON account.user_id=p.user_id AND account.event_key=?
+            WHERE trim(COALESCE(p.video_url,''))<>''
+            ORDER BY p.updated_at DESC LIMIT ?""",
+            (event_key(), max(1, min(int(limit), 1000))),
+        ).fetchall()
+    videos = []
+    for row in rows:
+        item = dict(row)
+        topic = _json_load(item.pop("topic_json", "{}"), {})
+        videos.append({
+            **item,
+            "topic": str(topic.get("role_focused_title") or topic.get("topic") or topic.get("title") or item.get("title") or "Untitled video"),
+        })
+    return videos
 
 
 def save_report(root: Path, user_id: str, values: dict[str, Any]) -> dict[str, Any]:

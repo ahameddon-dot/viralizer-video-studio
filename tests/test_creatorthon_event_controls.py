@@ -8,14 +8,20 @@ import app
 from creatorthon_store import (
     accept_event_generation,
     claim_event_seat,
+    create_project,
     generation_entitlement,
     event_admin_state,
+    event_is_frozen,
     grant_event_admission,
     grant_extra_generation,
+    list_participant_videos,
     remove_event_user,
     get_workflow_state,
     release_event_generation,
     reserve_event_generation,
+    save_profile,
+    set_event_frozen,
+    update_project,
     save_workflow_state,
 )
 
@@ -170,6 +176,46 @@ class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(account["videos_used"], 2)
             self.assertEqual(account["total_allowance"], 2)
             self.assertEqual(account["credits_remaining"], 0)
+
+    def test_admin_can_freeze_and_unfreeze_event_persistently(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "freeze-test"}, clear=False
+        ):
+            root = Path(directory)
+            self.assertFalse(event_is_frozen(root))
+            self.assertTrue(set_event_frozen(root, True, "ahamed.don@gmail.com"))
+            self.assertTrue(event_is_frozen(root))
+            self.assertTrue(event_admin_state(root)["frozen"])
+            self.assertEqual(event_admin_state(root)["audit"][0]["action"], "freeze_event")
+            self.assertFalse(set_event_frozen(root, False, "ahamed.don@gmail.com"))
+            self.assertFalse(event_is_frozen(root))
+            self.assertIn("unfreeze_event", {item["action"] for item in event_admin_state(root)["audit"]})
+
+    def test_freeze_is_enforced_before_creatorthon_participant_routes(self):
+        source = Path(app.__file__).read_text(encoding="utf-8")
+        self.assertIn('if creatorthon_request and event_is_frozen(ROOT):', source)
+        self.assertIn('status_code=423', source)
+        self.assertIn('not _creatorthon_admin_user(google_user)', source)
+
+    def test_admin_video_inventory_includes_participant_identity(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "video-admin-test"}, clear=False
+        ):
+            root = Path(directory)
+            save_profile(root, {"sub": "participant-1", "email": "person@example.com", "name": "Test Person"}, {
+                "full_name": "Test Person", "company": "", "role": "YouTuber", "socials": {},
+                "interests": ["Technology"], "onboarding_complete": True,
+            })
+            project = create_project(root, "participant-1", {"topic": "Creator technology update"})
+            update_project(root, "participant-1", project["id"], {
+                "video_url": "/api/finished-video/viralizer-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+                "thumbnail_url": "/static/example.webp", "provider": "pixverse", "status": "completed",
+            })
+            videos = list_participant_videos(root)
+            self.assertEqual(len(videos), 1)
+            self.assertEqual(videos[0]["email"], "person@example.com")
+            self.assertEqual(videos[0]["full_name"], "Test Person")
+            self.assertEqual(videos[0]["topic"], "Creator technology update")
 
     def test_admin_can_admit_named_email_after_capacity(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
