@@ -217,6 +217,54 @@ class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(videos[0]["full_name"], "Test Person")
             self.assertEqual(videos[0]["topic"], "Creator technology update")
 
+    def test_dual_youtube_destinations_and_consent_are_present(self):
+        source = Path(app.__file__).read_text(encoding="utf-8")
+        page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")
+        self.assertIn('"youtube_user"', source)
+        self.assertIn('"youtube_viralizer"', source)
+        self.assertIn('viralizer_youtube_consent', source)
+        self.assertIn('published.get("youtube_user")', source)
+        self.assertIn('published.get("youtube_viralizer")', source)
+        self.assertIn('value="youtube_user"', page)
+        self.assertIn('value="youtube_viralizer"', page)
+        self.assertIn('id="viralizerYoutubeConsent"', page)
+        self.assertIn("result.already_published?'Already published':'Published'", page)
+        self.assertIn('request.url.path.startswith("/auth/youtube")', source)
+
+    async def test_dual_youtube_publish_uses_separate_credentials_and_returns_both_urls(self):
+        filename = "viralizer-" + ("a" * 32) + ".mp4"
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "YOUTUBE_CLIENT_ID": "client", "YOUTUBE_CLIENT_SECRET": "secret", "YOUTUBE_REFRESH_TOKEN": "central-refresh"}, clear=False
+        ):
+            video = Path(directory) / "finished_videos" / filename
+            video.parent.mkdir(parents=True)
+            video.write_bytes(b"video")
+            project = {"production": {}}
+
+            async def fake_publish(*args, youtube_refresh_token="", **kwargs):
+                if youtube_refresh_token == "user-refresh":
+                    return {"results": {"youtube": {"status": "published", "url": "https://youtu.be/user-video"}}, "all_published": True}
+                return {"results": {"youtube": {"status": "published", "url": "https://youtu.be/viralizer-video"}}, "all_published": True}
+
+            payload = app.CreatorthonPublishRequest(
+                project_id="project-123", video_url=f"/api/finished-video/{filename}", caption="Video title",
+                hashtags=["#viralizer.ai"], platforms=["youtube_user", "youtube_viralizer"],
+                viralizer_youtube_consent=True,
+            )
+            with patch.object(app, "creatorthon_user", return_value={"sub": "participant", "email": "person@example.com"}), \
+                 patch.object(app, "update_project", return_value=project) as update, \
+                 patch.object(app, "get_youtube_connection", return_value={"refresh_token_ciphertext": "encrypted", "channel_id": "user-channel", "channel_title": "User Channel"}), \
+                 patch.object(app, "decrypt_refresh_token", return_value="user-refresh"), \
+                 patch.object(app, "publish_all", AsyncMock(side_effect=fake_publish)) as publish:
+                result = await app.publish_creatorthon_video(None, payload)
+            self.assertEqual(result["results"]["youtube_user"]["url"], "https://youtu.be/user-video")
+            self.assertEqual(result["results"]["youtube_viralizer"]["url"], "https://youtu.be/viralizer-video")
+            self.assertTrue(result["all_published"])
+            self.assertEqual(publish.await_count, 2)
+            saved = update.call_args_list[-1].args[3]["production"]["published"]
+            self.assertEqual(saved["youtube_user"]["account_type"], "user")
+            self.assertEqual(saved["youtube_viralizer"]["account_type"], "viralizer")
+
     def test_admin_can_admit_named_email_after_capacity(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "admit-test"}, clear=False

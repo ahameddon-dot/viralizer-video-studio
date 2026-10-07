@@ -292,6 +292,7 @@ async def require_password(request: Request, call_next):
     creatorthon_request = (
         request.url.path.startswith("/creatorthon")
         or request.url.path.startswith("/api/creatorthon")
+        or request.url.path.startswith("/auth/youtube")
         or (request.url.path == "/" and _is_creatorthon_v3_host(request))
     )
     if creatorthon_request and event_is_frozen(ROOT):
@@ -782,6 +783,7 @@ class CreatorthonPublishRequest(BaseModel):
     caption: str = Field(default="", max_length=3000)
     hashtags: list[str] = Field(default_factory=list, max_length=30)
     platforms: list[str] = Field(default_factory=list, max_length=4)
+    viralizer_youtube_consent: bool = False
 
 
 class DailyDiscoveryRequest(BaseModel):
@@ -2236,14 +2238,19 @@ async def creatorthon_publishing_status(request: Request):
     user = creatorthon_user(request)
     platforms = publishing_status()
     connection = get_youtube_connection(ROOT, str(user.get("sub", "")))
-    if connection:
-        platforms["youtube"] = {
-            "configured": True,
-            "label": str(connection.get("channel_title") or "Your YouTube channel"),
-            "account_type": "user",
-        }
-    elif not _unlimited_creatorthon_user(user):
-        platforms["youtube"] = {"configured": False, "label": "Connect your YouTube channel", "account_type": "user_required"}
+    central_youtube = bool(platforms.get("youtube", {}).get("configured"))
+    platforms["youtube_user"] = {
+        "configured": bool(connection),
+        "label": str((connection or {}).get("channel_title") or "Connect your YouTube channel"),
+        "account_type": "user" if connection else "user_required",
+    }
+    platforms["youtube_viralizer"] = {
+        "configured": central_youtube,
+        "label": os.getenv("YOUTUBE_CHANNEL_TITLE", "Viralizer YouTube").strip() or "Viralizer YouTube",
+        "account_type": "viralizer",
+    }
+    # Keep the legacy key for older clients while new clients use explicit destinations.
+    platforms["youtube"] = platforms["youtube_user"]
     return {"platforms": platforms, "mandatory_hashtag": MANDATORY_HASHTAG}
 
 
@@ -2256,9 +2263,8 @@ async def creatorthon_youtube_status(request: Request):
         "channel_id": str((connection or {}).get("channel_id") or ""),
         "channel_title": str((connection or {}).get("channel_title") or ""),
         "oauth_email": str((connection or {}).get("oauth_email") or ""),
-        "central_fallback_configured": bool(
-            _unlimited_creatorthon_user(user) and publishing_status()["youtube"]["configured"]
-        ),
+        "central_fallback_configured": bool(publishing_status()["youtube"]["configured"]),
+        "central_channel_title": os.getenv("YOUTUBE_CHANNEL_TITLE", "Viralizer YouTube").strip() or "Viralizer YouTube",
     }
 
 
@@ -2290,10 +2296,17 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     production = dict(project.get("production") or {})
     published = dict(production.get("published") or {})
     requested = {value.lower() for value in payload.platforms}
-    if "youtube" in requested and published.get("youtube", {}).get("status") == "published":
-        raise HTTPException(409, "This video has already been published to YouTube.")
-    if "youtube" in requested and not get_youtube_connection(ROOT, str(user.get("sub", ""))) and not _unlimited_creatorthon_user(user):
-        raise HTTPException(409, "Connect your YouTube channel before publishing.")
+    youtube_connection = get_youtube_connection(ROOT, str(user.get("sub", "")))
+    if "youtube" in requested:
+        requested.remove("youtube")
+        requested.add("youtube_user" if youtube_connection else "youtube_viralizer")
+    if "youtube_user" in requested and not youtube_connection:
+        raise HTTPException(409, "Connect your YouTube channel before publishing there.")
+    central_youtube_configured = bool(publishing_status().get("youtube", {}).get("configured"))
+    if "youtube_viralizer" in requested and not central_youtube_configured:
+        raise HTTPException(409, "The Viralizer YouTube channel is not connected.")
+    if "youtube_viralizer" in requested and not payload.viralizer_youtube_consent:
+        raise HTTPException(422, "Confirm permission to publish this video on the Viralizer YouTube channel.")
     match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", payload.video_url)
     if not match:
         raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
@@ -2303,33 +2316,62 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
     hashtags = list(dict.fromkeys(value.strip() for value in payload.hashtags if value.strip()))
     if MANDATORY_HASHTAG.lower() not in {value.lower() for value in hashtags}:
         hashtags.insert(0, MANDATORY_HASHTAG)
-    youtube_connection = get_youtube_connection(ROOT, str(user.get("sub", ""))) if "youtube" in requested else None
-    youtube_refresh_token = ""
     publish_video_url = payload.video_url
+    results: dict[str, Any] = {}
     try:
         if "instagram" in requested:
             publish_video_url = object_share_url(f"finished_videos/{match.group(1)}", expires_in=3600)
-        if youtube_connection:
-            youtube_refresh_token = decrypt_refresh_token(str(youtube_connection.get("refresh_token_ciphertext") or ""))
-        result = await publish_all(
-            video_path, publish_video_url, payload.caption, hashtags, payload.platforms,
-            youtube_refresh_token=youtube_refresh_token,
-        )
+        standard_platforms = sorted(requested & {"instagram", "facebook", "linkedin"})
+        if standard_platforms:
+            standard = await publish_all(video_path, publish_video_url, payload.caption, hashtags, standard_platforms)
+            results.update(standard.get("results") or {})
+        if "youtube_user" in requested:
+            previous = published.get("youtube_user") or {}
+            if previous.get("status") == "published":
+                results["youtube_user"] = {**previous, "already_published": True}
+            else:
+                try:
+                    user_refresh_token = decrypt_refresh_token(str(youtube_connection.get("refresh_token_ciphertext") or ""))
+                    user_upload = await publish_all(
+                        video_path, payload.video_url, payload.caption, hashtags, ["youtube"],
+                        youtube_refresh_token=user_refresh_token,
+                    )
+                    user_result = dict((user_upload.get("results") or {}).get("youtube") or {})
+                    user_result.update({
+                        "channel_id": youtube_connection.get("channel_id", ""),
+                        "channel_title": youtube_connection.get("channel_title", ""),
+                        "account_type": "user",
+                    })
+                    results["youtube_user"] = user_result
+                except (SocialPublishError, YouTubeOAuthError) as exc:
+                    results["youtube_user"] = {"status": "failed", "detail": str(exc), "account_type": "user"}
+        if "youtube_viralizer" in requested:
+            previous = published.get("youtube_viralizer") or {}
+            if previous.get("status") == "published":
+                results["youtube_viralizer"] = {**previous, "already_published": True}
+            else:
+                try:
+                    central_upload = await publish_all(video_path, payload.video_url, payload.caption, hashtags, ["youtube"])
+                    central_result = dict((central_upload.get("results") or {}).get("youtube") or {})
+                    central_result.update({
+                        "channel_title": os.getenv("YOUTUBE_CHANNEL_TITLE", "Viralizer YouTube").strip() or "Viralizer YouTube",
+                        "account_type": "viralizer",
+                    })
+                    results["youtube_viralizer"] = central_result
+                except SocialPublishError as exc:
+                    results["youtube_viralizer"] = {"status": "failed", "detail": str(exc), "account_type": "viralizer"}
     except (ObjectStoreError, SocialPublishError, YouTubeOAuthError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    if youtube_connection and result.get("results", {}).get("youtube", {}).get("status") == "published":
-        result["results"]["youtube"].update({
-            "channel_id": youtube_connection.get("channel_id", ""),
-            "channel_title": youtube_connection.get("channel_title", ""),
-            "account_type": "user",
-        })
-    published.update(result.get("results") or {})
+    if not results:
+        raise HTTPException(422, "Select at least one configured publishing destination.")
+    published.update(results)
     production["published"] = published
+    all_published = all(item.get("status") == "published" for item in results.values())
     update_project(
         ROOT, str(user.get("sub", "")), payload.project_id,
-        {"status": "published" if result["all_published"] else "publish-partial", "production": production},
+        {"status": "published" if all_published else "publish-partial", "production": production},
     )
-    return {**result, "hashtags": hashtags}
+    return {"results": results, "all_published": all_published, "hashtags": hashtags}
 
 
 @app.get("/legacy")
