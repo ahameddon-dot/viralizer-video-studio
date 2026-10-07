@@ -646,6 +646,11 @@ class CreatorthonTopicsRequest(BaseModel):
     interests: list[str] = Field(min_length=1, max_length=4)
 
 
+class CreatorthonObjectiveRequest(BaseModel):
+    topic: dict[str, Any]
+    objective: str = Field(min_length=2, max_length=300)
+
+
 class CreatorthonWorkflowRequest(BaseModel):
     step: str = Field(pattern=r"^(profile|interests|topics|create)$")
     topics: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
@@ -1534,6 +1539,72 @@ Requirements:
     return fallback[:10]
 
 
+def _objective_format(value: str) -> str:
+    lowered = value.casefold()
+    formats = (
+        (("product review", "review", "verdict"), "Product review"),
+        (("tutorial", "how to", "step by step"), "Tutorial"),
+        (("presentation", "present"), "Presentation"),
+        (("comparison", "compare", "versus", " vs "), "Comparison"),
+        (("promotional", "promotion", "advert", "sell"), "Promotional video"),
+        (("education", "educational", "explain", "teach"), "Educational explainer"),
+        (("opinion", "commentary", "reaction"), "Opinion / commentary"),
+        (("news", "update"), "News explanation"),
+    )
+    return next((label for terms, label in formats if any(term in lowered for term in terms)), "Creator-directed video")
+
+
+async def _refine_creator_objective(topic: dict[str, Any], objective: str, role: str) -> dict[str, Any]:
+    original = " ".join(objective.split())
+    fallback_format = _objective_format(original)
+    fallback = {
+        "original_objective": original,
+        "refined_objective": f"Create a {fallback_format.lower()} that follows this direction: {original}",
+        "video_format": fallback_format,
+        "objective_match": 100,
+    }
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not key:
+        return fallback
+    instruction = """Refine a creator's short objective into a precise video-production objective.
+Return JSON only: {"refined_objective":"...","video_format":"...","objective_match":0}.
+Rules:
+- Preserve the user's intent; do not replace it with a different objective.
+- Ground the objective in the supplied source topic and creator role without inventing facts.
+- refined_objective must say what the video should accomplish, its structure, and intended ending in at most 55 words.
+- video_format should be a short label such as Product review, Tutorial, Presentation, Comparison, News explanation, Educational explainer, Promotional video, or Opinion/commentary.
+- objective_match is 0-100 and measures how faithfully the refinement follows the user's objective.
+- Do not write the full video prompt or script here."""
+    payload = {
+        "model": os.getenv("OPENAI_OBJECTIVE_MODEL", "").strip() or os.getenv("OPENAI_MODEL", "").strip() or "gpt-4.1-mini",
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": instruction}]},
+            {"role": "user", "content": [{"type": "input_text", "text": json.dumps({
+                "source_topic": _topic_title_value(topic), "topic_summary": str(topic.get("summary") or topic.get("description") or "")[:600],
+                "creator_role": role, "user_objective": original,
+            }, ensure_ascii=False)}]},
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            response = await client.post("https://api.openai.com/v1/responses",
+                                         headers={"Authorization": f"Bearer {key}"}, json=payload)
+        response.raise_for_status()
+        result = json.loads(_openai_response_text(response.json()))
+        refined = " ".join(str(result.get("refined_objective") or "").split())
+        if not refined:
+            return fallback
+        return {
+            "original_objective": original,
+            "refined_objective": refined[:500],
+            "video_format": " ".join(str(result.get("video_format") or fallback_format).split())[:80],
+            "objective_match": max(0, min(100, int(result.get("objective_match") or 100))),
+        }
+    except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError):
+        return fallback
+
+
 @app.post("/api/creatorthon/topics")
 async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest):
     user = creatorthon_user(request)
@@ -1574,6 +1645,16 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     personalized = await _personalize_topics_for_role(topics, role, user_type, interests[0])
     return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
             "creator_role": role, "role_match_scale": 200}
+
+
+@app.post("/api/creatorthon/refine-objective")
+async def refine_creatorthon_objective(request: Request, payload: CreatorthonObjectiveRequest):
+    user = creatorthon_user(request)
+    objective = " ".join(payload.objective.split())
+    if len(objective.split()) > 25:
+        raise HTTPException(422, "Your objective must be 25 words or fewer.")
+    profile = get_profile(ROOT, user)
+    return await _refine_creator_objective(payload.topic, objective, str(profile.get("role") or "Content Creator"))
 
 
 def _refine_mcp_search_term(topic: str) -> str:
