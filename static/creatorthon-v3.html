@@ -32,6 +32,108 @@
     @media(max-width:960px){.category-grid,.category-grid.category-count-2,.category-grid.category-count-4,.option-grid{grid-template-columns:1fr 1fr}.provider-layout,.provider-layout.configure-open,.topic-layout{grid-template-columns:1fr}.topic-insight{position:static}.settings{max-width:none}.choices{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.provider-layout{gap:15px}}
     @media(max-width:680px){.top{height:64px;padding-inline:16px}.brand img{width:136px}.badge,.compact-hide{display:none}.event-pill{max-width:150px;overflow:hidden;text-overflow:ellipsis}#topNav{gap:8px!important}main{width:min(100% - 28px,1100px);padding:26px 0 50px}.panel{padding:19px;border-radius:18px}.hero h1{font-size:38px}.hero p{font-size:15px}.section-head{display:block}.section-head .secondary{width:100%;margin-top:12px;justify-content:center}.section-head h1{font-size:36px}.category-grid,.category-grid.category-count-2,.category-grid.category-count-4,.option-grid,.choices{grid-template-columns:1fr}.cat-card{min-height:0}.cat-art{height:94px}.custom-card{grid-template-columns:1fr;gap:10px;padding:18px}.custom-row{display:grid;grid-template-columns:minmax(0,1fr) 56px}.custom-row input{min-width:0}.preview{min-height:0;padding:23px;border-radius:20px}.preview h1{font-size:36px}.setting{grid-template-columns:1fr}.topic{grid-template-columns:40px 1fr;gap:12px}.topic .arrow{display:none}.review-grid,.review-controls{grid-template-columns:1fr}.review-item.full,.review-field.full{grid-column:auto}.preview-actions,.modal-actions,.config-actions{flex-direction:column}.preview-actions button,.modal-actions button{width:100%}.modal-card{padding:21px}}
   </style>
+  <style id="v3-category-polish">
+    body.v3-category-polish {
+      background:
+        radial-gradient(circle at -4% 42%, rgba(155, 119, 255, .22) 0, rgba(155, 119, 255, .10) 12%, transparent 29%),
+        radial-gradient(circle at 104% 54%, rgba(104, 144, 255, .21) 0, rgba(183, 111, 255, .10) 16%, transparent 34%),
+        linear-gradient(180deg, #fbfcff 0%, #ffffff 42%, #fbfaff 100%);
+      background-attachment: fixed;
+      color: #11101a;
+    }
+    body.v3-category-polish::before,
+    body.v3-category-polish::after {
+      content: "";
+      position: fixed;
+      z-index: -1;
+      width: 34rem;
+      height: 48rem;
+      pointer-events: none;
+      filter: blur(12px);
+      opacity: .7;
+      border-radius: 48% 52% 61% 39% / 43% 37% 63% 57%;
+    }
+    body.v3-category-polish::before {
+      left: -25rem;
+      top: 8rem;
+      transform: rotate(-18deg);
+      background: linear-gradient(145deg, rgba(198, 178, 255, .42), rgba(224, 238, 255, .06));
+      box-shadow: 9rem 13rem 0 rgba(178, 213, 255, .13);
+    }
+    body.v3-category-polish::after {
+      right: -25rem;
+      top: 13rem;
+      transform: rotate(21deg);
+      background: linear-gradient(215deg, rgba(169, 190, 255, .38), rgba(220, 181, 255, .08));
+      box-shadow: -8rem 15rem 0 rgba(195, 169, 255, .13);
+    }
+    body.v3-category-polish .v3-category-shell {
+      position: relative;
+      isolation: isolate;
+    }
+    body.v3-category-polish .v3-category-heading {
+      letter-spacing: -.045em;
+      line-height: .98;
+      color: #090914;
+    }
+    body.v3-category-polish .v3-category-heading .v3-gradient-words {
+      background: linear-gradient(100deg, #6f38ff 4%, #9b2cff 50%, #d129f0 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    body.v3-category-polish .v3-category-card {
+      overflow: hidden;
+      border: 1px solid rgba(111, 73, 210, .16) !important;
+      border-radius: 22px !important;
+      background: rgba(255, 255, 255, .84) !important;
+      box-shadow: 0 18px 45px rgba(60, 37, 112, .08), inset 0 1px 0 rgba(255,255,255,.95) !important;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    body.v3-category-polish .v3-category-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(132, 57, 255, .34) !important;
+      box-shadow: 0 24px 55px rgba(83, 48, 153, .14), inset 0 1px 0 #fff !important;
+    }
+    body.v3-category-polish .v3-category-card img {
+      filter: saturate(.94) contrast(.98);
+    }
+    body.v3-category-polish .v3-category-card h2,
+    body.v3-category-polish .v3-category-card h3 {
+      color: #0d0c16;
+      font-weight: 800;
+      letter-spacing: -.025em;
+    }
+    body.v3-category-polish .v3-other-category {
+      border: 1px solid rgba(156, 111, 255, .24) !important;
+      border-radius: 22px !important;
+      background: linear-gradient(115deg, #121020 0%, #17152a 56%, #1c1531 100%) !important;
+      color: #fff !important;
+      box-shadow: 0 22px 48px rgba(31, 19, 65, .18), 0 0 34px rgba(126, 51, 255, .10) !important;
+    }
+    body.v3-category-polish .v3-other-category input {
+      border: 1px solid rgba(255,255,255,.09) !important;
+      background: rgba(255,255,255,.055) !important;
+      color: #fff !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    body.v3-category-polish .v3-other-category input::placeholder { color: #9690a9 !important; }
+    body.v3-category-polish .v3-other-category button {
+      background: linear-gradient(135deg, #a531ff, #6d35ff) !important;
+      color: #fff !important;
+      box-shadow: 0 10px 24px rgba(129, 48, 255, .34) !important;
+    }
+    @media (max-width: 900px) {
+      body.v3-category-polish::before,
+      body.v3-category-polish::after { opacity: .46; }
+      body.v3-category-polish .v3-category-heading { line-height: 1.04; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      body.v3-category-polish .v3-category-card { transition: none; }
+    }
+  </style>
 </head>
 <body>
   <header class="top"><div class="brand"><a href="/" aria-label="Creatorthon V3 home"><img src="/static/viralizer-logo-black.png" alt="Viralizer"></a><span class="badge">CREATORTHON V3</span></div><div id="topNav" style="display:flex;align-items:center;gap:18px"><span id="eventStatus" class="event-pill">Loading allowance…</span><a id="adminLink" class="signout admin-link" href="/creatorthon/admin" hidden>Admin</a><a class="signout" href="/creatorthon/workspace">My Workspace</a><a id="conceptLink" class="signout compact-hide" href="/creatorthon/concept" hidden>Create my concept</a><a class="signout compact-hide" href="/logout?next=/">Sign out</a></div></header>
@@ -162,6 +264,43 @@
     document.addEventListener('click',event=>{if(!event.target.closest('.category-picker'))$('#profileCategorySuggestions').innerHTML='';if(!event.target.closest('.custom-row'))$('#dashboardCategorySuggestions')?.replaceChildren()});
     /* Retired client-side flow markers kept for regression documentation: /api/video/prompt /api/video/generate content:state.activeContent||state.topic prompt:state.workingPrepared?.prompt */
     $$('[data-go]').forEach(b=>b.onclick=()=>show(b.dataset.go));init();
+  </script>
+  <script>
+    (() => {
+      const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const elements = Array.from(document.querySelectorAll('h1,h2,h3,div,section,article,button,a'));
+      const heading = elements.find((element) => normalize(element.textContent) === 'your categories to create content');
+      if (!heading) return;
+
+      document.body.classList.add('v3-category-polish');
+      heading.classList.add('v3-category-heading');
+      const original = heading.textContent.trim();
+      const suffix = 'create content';
+      const suffixIndex = original.toLowerCase().lastIndexOf(suffix);
+      if (suffixIndex >= 0 && !heading.querySelector('.v3-gradient-words')) {
+        const prefix = original.slice(0, suffixIndex);
+        const matchedSuffix = original.slice(suffixIndex);
+        heading.textContent = '';
+        heading.append(document.createTextNode(prefix));
+        const accent = document.createElement('span');
+        accent.className = 'v3-gradient-words';
+        accent.textContent = matchedSuffix;
+        heading.append(accent);
+      }
+
+      const shell = heading.closest('main,section') || heading.parentElement;
+      shell?.classList.add('v3-category-shell');
+
+      document.querySelectorAll('a,button').forEach((action) => {
+        if (!normalize(action.textContent).includes('more topics')) return;
+        const card = action.closest('article,li,section,[class*="card"]') || action.parentElement?.parentElement;
+        card?.classList.add('v3-category-card');
+      });
+
+      const otherLabel = elements.find((element) => normalize(element.textContent) === 'other category');
+      const otherPanel = otherLabel?.closest('article,section,[class*="card"],[class*="other"]') || otherLabel?.parentElement?.parentElement;
+      otherPanel?.classList.add('v3-other-category');
+    })();
   </script>
 </body>
 </html>
