@@ -1421,9 +1421,125 @@ async def update_creatorthon_workflow(request: Request, payload: CreatorthonWork
     return {"workflow": save_workflow_state(ROOT, str(user.get("sub", "")), payload.model_dump())}
 
 
+_CREATOR_ROLE_TOPIC_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+
+def _fallback_role_topic_match(topic: dict[str, Any], role: str, user_type: str, index: int) -> dict[str, Any]:
+    """Provide a safe role-aware result when the ranking model is unavailable."""
+    original = _topic_title_value(topic)
+    clean_role = role.strip() or "Content Creator"
+    role_lower = clean_role.casefold()
+    if any(value in role_lower for value in ("reviewer", "affiliate")):
+        content_format, angle = "Review / comparison", "Evaluate what changed, who should consider it, and the practical buying decision."
+    elif any(value in role_lower for value in ("educator", "education", "trainer", "coach", "consultant")):
+        content_format, angle = "Explainer", "Teach the development clearly, explain why it matters, and give the audience one useful takeaway."
+    elif any(value in role_lower for value in ("news", "journalist", "writer", "blogger")):
+        content_format, angle = "News analysis", "Lead with the verified development, add concise context, and explain the consequence without inventing claims."
+    elif any(value in role_lower for value in ("instagram", "tiktok", "meme", "comedy")):
+        content_format, angle = "Short-form social", "Open with a visual hook, communicate one clear development, and end with a discussion-worthy takeaway."
+    elif any(value in role_lower for value in ("business", "entrepreneur", "founder", "marketing", "linkedin")):
+        content_format, angle = "Business insight", "Explain the commercial meaning, the audience affected, and the decision or opportunity creators should watch."
+    else:
+        content_format, angle = "Creator commentary", "Turn the verified story into a concise role-relevant narrative with a strong hook and practical audience value."
+    score = max(100, 132 - index * 2)
+    updated = dict(topic)
+    updated.update({
+        "source_title": original, "role_focused_title": f"{original} — {content_format}"[:140],
+        "creator_role": clean_role, "profile_type": user_type,
+        "role_match_index": score, "role_match_label": "Strong role match",
+        "role_match_reason": f"Selected for a {clean_role} using a {content_format.lower()} angle.",
+        "recommended_format": content_format,
+        "creator_angle": f"For this {clean_role}, {angle}",
+    })
+    return updated
+
+
+async def _personalize_topics_for_role(
+    topics: list[dict[str, Any]], role: str, user_type: str, category: str
+) -> list[dict[str, Any]]:
+    """Rank verified stories for a creator role without changing their source facts."""
+    candidates = [dict(topic) for topic in topics if _topic_title_value(topic)][:20]
+    role = role.strip() or "Content Creator"
+    user_type = user_type.strip() or "Individual"
+    signature = json.dumps(
+        {"role": role, "user_type": user_type, "category": category,
+         "topics": [_topic_title_value(topic) for topic in candidates]},
+        sort_keys=True, ensure_ascii=False,
+    )
+    cache_key = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+    cached = _CREATOR_ROLE_TOPIC_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return [dict(topic) for topic in cached[1]]
+    fallback = [_fallback_role_topic_match(topic, role, user_type, index) for index, topic in enumerate(candidates)]
+    key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not key or not candidates:
+        return fallback[:10]
+    instruction = """You are Viralizer's Creator Opportunity Engine. Rank source-backed news stories for one creator profile.
+Return JSON only with this shape: {"matches":[{"index":0,"role_match_index":100,"role_focused_title":"...","creator_angle":"...","role_match_reason":"...","recommended_format":"..."}]}.
+Requirements:
+- Score from 0 to 200. Return only candidates scoring 100 or higher.
+- 100-124 Strong, 125-149 Excellent, 150-174 Exceptional, 175-200 Perfect opportunity.
+- Judge direct role relevance, content-format suitability, audience alignment, platform usefulness, creator objective, monetization potential, freshness, and production feasibility.
+- Never change, invent, or exaggerate the source facts, entity, event, date, product, or claim.
+- role_focused_title must remain faithful to the original story while making the creator opportunity explicit.
+- creator_angle must give a concrete content direction tailored to the role.
+- Keep role_match_reason under 22 words and role_focused_title under 100 characters.
+- Return the strongest matches first. Each source index may appear once."""
+    model = os.getenv("OPENAI_ROLE_MATCH_MODEL", "").strip() or os.getenv("OPENAI_MODEL", "").strip() or "gpt-4.1-mini"
+    payload = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": instruction}]},
+            {"role": "user", "content": [{"type": "input_text", "text": json.dumps({
+                "creator_role": role, "profile_type": user_type, "selected_category": category,
+                "candidates": [{"index": index, "title": _topic_title_value(topic),
+                                "summary": str(topic.get("summary") or topic.get("description") or "")[:500]}
+                               for index, topic in enumerate(candidates)],
+            }, ensure_ascii=False)}]},
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            response = await client.post("https://api.openai.com/v1/responses",
+                                         headers={"Authorization": f"Bearer {key}"}, json=payload)
+        response.raise_for_status()
+        parsed = json.loads(_openai_response_text(response.json()))
+        ranked: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for match in parsed.get("matches") or []:
+            index = int(match.get("index", -1))
+            score = int(match.get("role_match_index", 0))
+            if index in seen or not 0 <= index < len(candidates) or score < 100:
+                continue
+            seen.add(index)
+            updated = dict(candidates[index])
+            updated.update({
+                "source_title": _topic_title_value(candidates[index]),
+                "role_focused_title": str(match.get("role_focused_title") or _topic_title_value(candidates[index]))[:140],
+                "creator_role": role, "profile_type": user_type,
+                "role_match_index": min(200, score),
+                "role_match_label": "Perfect creator opportunity" if score >= 175 else "Exceptional opportunity" if score >= 150 else "Excellent match" if score >= 125 else "Strong role match",
+                "role_match_reason": str(match.get("role_match_reason") or "Directly relevant to this creator role.")[:220],
+                "recommended_format": str(match.get("recommended_format") or "Creator commentary")[:80],
+                "creator_angle": str(match.get("creator_angle") or fallback[index]["creator_angle"])[:700],
+            })
+            ranked.append(updated)
+        if ranked:
+            result = ranked[:10]
+            _CREATOR_ROLE_TOPIC_CACHE[cache_key] = (time.time() + 21600, result)
+            return result
+    except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError, KeyError):
+        pass
+    return fallback[:10]
+
+
 @app.post("/api/creatorthon/topics")
 async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest):
-    creatorthon_user(request)
+    user = creatorthon_user(request)
+    profile = get_profile(ROOT, user)
+    role = str(profile.get("role") or "Content Creator")
+    user_type = str((profile.get("socials") or {}).get("user_type") or "Individual")
     interests = list(dict.fromkeys(value.strip() for value in payload.interests if value.strip()))[:4]
     if not interests:
         raise HTTPException(422, "Select at least one interest.")
@@ -1441,9 +1557,11 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
                 cached_keys.add(key)
                 cached_topics.append(topic)
     if all_categories_cached and cached_topics:
+        personalized = await _personalize_topics_for_role(cached_topics, role, user_type, interests[0])
         return {
-            "topics": cached_topics[:30], "count": min(30, len(cached_topics)),
-            "source": "Viralizer scheduled intelligence cache", "cached": True,
+            "topics": personalized, "count": len(personalized),
+            "source": "Viralizer role-matched intelligence cache", "cached": True,
+            "creator_role": role, "role_match_scale": 200,
         }
     queries: list[str] = []
     for interest in interests:
@@ -1453,7 +1571,9 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide topics: {exc}") from exc
     topics = [item for item in annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything") if _english_topic(item)]
-    return {"topics": topics, "count": len(topics), "source": "Worldwide public news sources"}
+    personalized = await _personalize_topics_for_role(topics, role, user_type, interests[0])
+    return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
+            "creator_role": role, "role_match_scale": 200}
 
 
 def _refine_mcp_search_term(topic: str) -> str:
