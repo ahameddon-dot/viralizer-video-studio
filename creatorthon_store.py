@@ -670,7 +670,13 @@ def _topic_key(title: str) -> str:
     return __import__("hashlib").sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def get_cached_topic_insight(root: Path, title: str, *, allow_stale: bool = False) -> dict[str, Any] | None:
+def get_cached_topic_insight(
+    root: Path,
+    title: str,
+    *,
+    allow_stale: bool = False,
+    stale_max_age_seconds: int = 86400,
+) -> dict[str, Any] | None:
     now = int(time.time())
     with _connect(root) as db:
         row = db.execute(
@@ -681,6 +687,8 @@ def get_cached_topic_insight(root: Path, title: str, *, allow_stale: bool = Fals
         return None
     item = dict(row)
     if not allow_stale and int(item.get("expires_at") or 0) <= now:
+        return None
+    if allow_stale and now - int(item.get("fetched_at") or 0) > max(300, int(stale_max_age_seconds)):
         return None
     result = _json_load(item.get("result_json"), {})
     if not isinstance(result, dict) or not result:
@@ -705,17 +713,25 @@ def save_cached_topic_insight(root: Path, title: str, result: dict[str, Any], tt
         )
 
 
-def get_cached_category_topics(root: Path, category: str, *, allow_stale: bool = False) -> list[dict[str, Any]]:
+def get_cached_category_topics(
+    root: Path,
+    category: str,
+    *,
+    allow_stale: bool = False,
+    stale_max_age_seconds: int = 86400,
+) -> list[dict[str, Any]]:
     key = " ".join(str(category).split()).casefold()
     now = int(time.time())
     with _connect(root) as db:
         row = db.execute(
-            "SELECT topics_json,expires_at FROM creatorthon_category_topic_cache WHERE category_key=?", (key,)
+            "SELECT topics_json,fetched_at,expires_at FROM creatorthon_category_topic_cache WHERE category_key=?", (key,)
         ).fetchone()
     if not row:
         return []
     item = dict(row)
     if not allow_stale and int(item.get("expires_at") or 0) <= now:
+        return []
+    if allow_stale and now - int(item.get("fetched_at") or 0) > max(300, int(stale_max_age_seconds)):
         return []
     topics = _json_load(item.get("topics_json"), [])
     return topics if isinstance(topics, list) else []

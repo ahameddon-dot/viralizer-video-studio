@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -77,6 +78,23 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         cached = get_cached_topic_insight(self.root, "  a FASHION topic ")
         self.assertEqual(cached["metrics"]["viral_topic_rank"], 17)
         self.assertTrue(cached["cached"])
+
+    def test_expired_cache_can_be_served_stale_for_only_24_hours(self):
+        result = {"parser_version": 2, "metrics": {"viral_topic_rank": 9}}
+        save_cached_topic_insight(self.root, "Stale topic", result, ttl_seconds=300)
+        with patch("creatorthon_store.time.time", return_value=time.time() + 301):
+            self.assertIsNone(get_cached_topic_insight(self.root, "Stale topic"))
+            self.assertIsNotNone(
+                get_cached_topic_insight(
+                    self.root, "Stale topic", allow_stale=True, stale_max_age_seconds=86400
+                )
+            )
+        with patch("creatorthon_store.time.time", return_value=time.time() + 86401):
+            self.assertIsNone(
+                get_cached_topic_insight(
+                    self.root, "Stale topic", allow_stale=True, stale_max_age_seconds=86400
+                )
+            )
 
 
 if __name__ == "__main__":

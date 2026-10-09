@@ -73,11 +73,17 @@ services:
       - key: CREATORTHON_PREFETCH_ENABLED
         value: true
       - key: CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY
-        value: 8
+        value: 6
+      - key: CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY
+        value: 6
       - key: CREATORTHON_PREFETCH_CONCURRENCY
         value: 2
       - key: CREATORTHON_PREFETCH_TTL_SECONDS
-        value: 21600
+        value: 5400
+      - key: CREATORTHON_PREFETCH_INTERVAL_SECONDS
+        value: 3600
+      - key: CREATORTHON_PREFETCH_STALE_SECONDS
+        value: 86400
       - key: YOUTUBE_CLIENT_ID
         sync: false
       - key: YOUTUBE_CLIENT_SECRET

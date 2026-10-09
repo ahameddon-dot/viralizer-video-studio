@@ -1699,7 +1699,12 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     cached_keys: set[str] = set()
     all_categories_cached = True
     for interest in interests:
-        category_topics = get_cached_category_topics(ROOT, interest)
+        category_topics = get_cached_category_topics(
+            ROOT,
+            interest,
+            allow_stale=True,
+            stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+        )
         if not category_topics:
             all_categories_cached = False
             break
@@ -1984,9 +1989,9 @@ def _topic_title_value(topic: dict[str, Any]) -> str:
 
 
 async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> None:
-    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400"))
-    topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "8"))))
-    insight_limit = max(0, min(topic_limit, int(os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "3"))))
+    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "5400"))
+    topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "6"))))
+    insight_limit = max(0, min(topic_limit, int(os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "6"))))
     queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
     try:
         topics = await discover_category_topics(queries, topic_limit)
@@ -2024,25 +2029,23 @@ async def _prefetch_all_creatorthon_topics() -> None:
         await _prefetch_creatorthon_category(category, semaphore)
 
 
-def _seconds_until_prefetch_window() -> float:
-    # Run twice daily at 02:00 and 08:00 IST without depending on the host timezone.
-    ist = timezone(timedelta(hours=5, minutes=30))
-    now = datetime.now(ist)
-    candidates = [now.replace(hour=2, minute=0, second=0, microsecond=0),
-                  now.replace(hour=8, minute=0, second=0, microsecond=0)]
-    future = [candidate for candidate in candidates if candidate > now]
-    target = min(future) if future else (now + timedelta(days=1)).replace(hour=2, minute=0, second=0, microsecond=0)
-    return max(1.0, (target - now).total_seconds())
+def _prefetch_interval_seconds() -> float:
+    return float(max(300, int(os.getenv("CREATORTHON_PREFETCH_INTERVAL_SECONDS", "3600"))))
 
 
 async def _creatorthon_prefetch_scheduler() -> None:
     # Let live traffic settle after a deployment before starting provider-heavy background work.
     startup_delay = max(30, int(os.getenv("CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS", "120")))
     await asyncio.sleep(startup_delay)
-    await _prefetch_all_creatorthon_topics()
     while True:
-        await asyncio.sleep(_seconds_until_prefetch_window())
-        await _prefetch_all_creatorthon_topics()
+        cycle_started = time.monotonic()
+        try:
+            await _prefetch_all_creatorthon_topics()
+        except Exception:
+            # Keep the scheduler alive and preserve the last successful cache.
+            pass
+        elapsed = time.monotonic() - cycle_started
+        await asyncio.sleep(max(60.0, _prefetch_interval_seconds() - elapsed))
 
 
 async def _run_creatorthon_insight_queue(user_id: str) -> None:
@@ -2053,12 +2056,17 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
                 return
             try:
                 title = _topic_title_value(job.get("topic", {}))
-                result = get_cached_topic_insight(ROOT, title)
+                result = get_cached_topic_insight(
+                    ROOT,
+                    title,
+                    allow_stale=True,
+                    stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+                )
                 if int((result or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
                     result = None
                 if result is None:
                     result = await _proprietary_insight_payload(title)
-                    save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400")))
+                    save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "5400")))
                 finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
             except Exception as exc:
                 finish_insight_job(ROOT, user_id, str(job["id"]), error=str(exc) or "Viralizer intelligence could not complete this topic.")
@@ -2080,7 +2088,12 @@ def _hydrate_creatorthon_insight_jobs_from_cache(user_id: str, jobs: list[dict[s
         if job.get("status") not in {"queued", "processing"}:
             continue
         title = _topic_title_value(job.get("topic", {}))
-        cached = get_cached_topic_insight(ROOT, title)
+        cached = get_cached_topic_insight(
+            ROOT,
+            title,
+            allow_stale=True,
+            stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+        )
         if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
             continue
         finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
@@ -2116,7 +2129,12 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
             if str(item["id"]) == str(job["id"])
         )
     title = _topic_title_value(payload.topic)
-    cached = get_cached_topic_insight(ROOT, title)
+    cached = get_cached_topic_insight(
+        ROOT,
+        title,
+        allow_stale=True,
+        stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+    )
     if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
         cached = None
     if created and cached:
