@@ -15,7 +15,7 @@ async function openVideoStudioForTopic(topic){++insightSequence;localStorage.rem
       const status=await(await api('/api/video/'+encodeURIComponent(d.provider)+'/'+encodeURIComponent(d.job_id))).json();
       if(status.status==='complete'&&status.url){
         const url=esc(status.url);
-        $('#modalBody').innerHTML='<p>Your generated video is ready.</p><video controls autoplay playsinline style="display:block;width:100%;max-height:620px;border-radius:10px;background:#000" src="'+url+'"></video><div class="modal-actions"><a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="'+url+'">Open or download video</a></div>';
+        $('#modalBody').innerHTML='<p>Your generated video is ready.</p><video controls playsinline preload="metadata" style="display:block;width:100%;max-height:620px;border-radius:10px;background:#000"><source src="'+url+'" type="video/mp4">Your browser could not play this video.</video><div class="modal-actions"><a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="'+url+'">Open or download video</a></div>';
         toast('Your Viralizer video is ready.');
         return;
       }

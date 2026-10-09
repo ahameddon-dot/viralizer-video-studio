@@ -147,7 +147,7 @@ def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="botto
     if filters: cmd += ["-filter_complex",";".join(filters),"-map",video_input]
     else: cmd += ["-map","0:v:0"]
     cmd += (["-map",f"{audio_index}:a:0","-af","apad","-shortest"] if audio else ["-map","0:a?","-shortest"])
-    cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
+    cmd += ["-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-profile:v","main","-level:v","3.1","-tag:v","avc1","-c:a","aac","-b:a","192k","-ar","48000","-ac","2","-movflags","+faststart",str(output)]
     completed=subprocess.run(cmd,capture_output=True,text=True)
     if completed.returncode: raise MediaFinisherError("Could not add the selected speech, logo, or text overlay to the video.")
 
@@ -193,7 +193,7 @@ def _append_outro(video: Path, outro: Path, output: Path) -> None:
             source=f"[{next_input}:a:0]";next_input+=1
         filters.append(f"{source}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS[{label}]")
     filters.append("[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]")
-    cmd += ["-filter_complex",";".join(filters),"-map","[v]","-map","[a]","-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-movflags","+faststart",str(output)]
+    cmd += ["-filter_complex",";".join(filters),"-map","[v]","-map","[a]","-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-profile:v","main","-level:v","3.1","-tag:v","avc1","-c:a","aac","-b:a","192k","-ar","48000","-ac","2","-movflags","+faststart",str(output)]
     completed=subprocess.run(cmd,capture_output=True,text=True)
     if completed.returncode: raise MediaFinisherError("Could not append the Viralizer outro to the finished video.")
 

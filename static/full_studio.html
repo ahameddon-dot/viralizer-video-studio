@@ -486,7 +486,7 @@
         async function showFinishedVideo(videoUrl,readyMessage,presenterAudio=false){
           function renderPlayableVideo(url,message){
             result.replaceChildren();
-            const video=document.createElement('video');video.className='video';video.controls=true;video.autoplay=true;video.playsInline=true;video.preload='metadata';video.src=url;
+            const video=document.createElement('video');video.className='video';video.controls=true;video.playsInline=true;video.preload='metadata';video.src=url;
             const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.download='';const open=document.createElement('button');open.textContent='Open or download video';link.append(open);result.append(video,link);
             video.onerror=()=>{status.textContent=`${message} The browser could not play the embedded copy; use Open or download video.`};
             status.textContent=message;result.scrollIntoView({behavior:'smooth',block:'center'});
