@@ -111,7 +111,7 @@ async def process_one(root:Path,job:dict):
    state=await video_status(str(job["provider"]),str(job["provider_job_id"]))
    if str(state.get("status") or "").lower() in {"failed","error","cancelled","canceled"}:_update(root,job["id"],status="failed",stage="Video provider reported a failure.",error=str(state.get("error") or "Provider generation failed."),lease_until=0);return
    raw=str(state.get("video_url") or state.get("url") or state.get("output_url") or "")
-   if not raw:_update(root,job["id"],status="waiting_provider",stage="PixVerse is still publishing the completed media file…",next_attempt_at=int(time.time())+30,lease_until=0);return
+   if not raw:_update(root,job["id"],status="waiting_provider",stage="Your completed media file is still being prepared…",next_attempt_at=int(time.time())+30,lease_until=0);return
    job=_update(root,job["id"],raw_video_url=raw,status="raw_archiving",stage="Securing the original provider video…",next_attempt_at=int(time.time()),lease_until=0) or job
   payload=job.get("payload") or {}
   with tempfile.TemporaryDirectory(prefix="viralizer-durable-") as folder:
@@ -121,7 +121,7 @@ async def process_one(root:Path,job:dict):
    if not restored:
     try:await _download(raw,source)
     except MediaFinisherError as exc:
-     refreshed=_update(root,job["id"],raw_video_url="",status="retrying",stage="Refreshing the PixVerse media link…",lease_until=0) or job
+     refreshed=_update(root,job["id"],raw_video_url="",status="retrying",stage="Refreshing the completed media link…",lease_until=0) or job
      _retry(root,refreshed,str(exc));return
     if not await upload_file(source,raw_key,"video/mp4"):
      raise ObjectStoreError("Permanent media storage is not configured.")

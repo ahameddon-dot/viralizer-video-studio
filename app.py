@@ -207,7 +207,7 @@ def _creatorthon_variation_narration(narration: str, content: dict[str, Any]) ->
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
-app = FastAPI(title="Viralizer + PixVerse")
+app = FastAPI(title="Viralizer Video Studio")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 REPORT_CACHE_TTL_SECONDS = int(os.getenv("VIRALIZER_REPORT_CACHE_TTL", "1800"))
@@ -2679,7 +2679,7 @@ async def generate_video(request: GenerateRequest):
         return {"job_id": job_id, "provider": "hybrid", "status": "processing", "prompt": prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Planning presenter and content visuals"}
     if selected_provider == "pixverse" and (request.duration > 15 or effective_quality_mode):
         if selected_provider != "pixverse":
-            raise HTTPException(422, "Long multi-clip videos currently require PixVerse.")
+            raise HTTPException(422, "Long multi-clip videos are not available with the selected video engine.")
         job_id = start_long_video(content, request.duration, request.quality, quality_mode=effective_quality_mode, production=production)
         production.update(job_id=job_id, provider="viralizer", status="processing")
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))

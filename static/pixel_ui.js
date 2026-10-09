@@ -8,7 +8,7 @@ async function insight(t){const requestId=++insightSequence;current=t;localStora
 async function openVideoStudioForTopic(topic){++insightSequence;localStorage.removeItem('viralizer_video_studio_transfer');$('#modalBack').classList.remove('hidden');$('#modalTitle').textContent=topic.topic;$('#modalBody').innerHTML='<p>Preparing this exact topic in Video Studio…</p>';try{await sendTopicToVideoStudio(topic.topic)}catch(e){$('#modalBody').innerHTML='<p>'+esc(e.message)+'</p>';toast(e.message,true)}}async function generate(){
   try{
     const d=await(await api('/api/video/generate',{method:'POST',body:JSON.stringify({content:current,prompt:$('#videoPrompt').value,provider:'pixverse',duration:+$('#duration').value,quality:$('#quality').value})})).json();
-    $('#modalBody').innerHTML='<p id="videoJobStatus">PixVerse is generating your video…</p><p>Job: '+esc(d.job_id)+'</p>';
+    $('#modalBody').innerHTML='<p id="videoJobStatus">Viralizer is generating your video…</p><p>Job: '+esc(d.job_id)+'</p>';
     toast('Video generation started. This window will update automatically.');
     for(let attempt=0;attempt<120;attempt++){
       await new Promise(resolve=>setTimeout(resolve,5000));
@@ -16,11 +16,11 @@ async function openVideoStudioForTopic(topic){++insightSequence;localStorage.rem
       if(status.status==='complete'&&status.url){
         const url=esc(status.url);
         $('#modalBody').innerHTML='<p>Your generated video is ready.</p><video controls autoplay playsinline style="display:block;width:100%;max-height:620px;border-radius:10px;background:#000" src="'+url+'"></video><div class="modal-actions"><a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="'+url+'">Open or download video</a></div>';
-        toast('Your PixVerse video is ready.');
+        toast('Your Viralizer video is ready.');
         return;
       }
-      if(status.status==='failed')throw new Error('PixVerse could not generate this video. Try adjusting the prompt.');
-      const label=$('#videoJobStatus');if(label)label.textContent='PixVerse is still generating your video…';
+      if(status.status==='failed')throw new Error('Viralizer could not generate this video. Try adjusting the prompt.');
+      const label=$('#videoJobStatus');if(label)label.textContent='Viralizer is still generating your video…';
     }
     throw new Error('The video is still processing. Keep the job ID and try again shortly.');
   }catch(e){const body=$('#modalBody');if(body)body.innerHTML='<p>'+esc(e.message)+'</p>';toast(e.message,true)}

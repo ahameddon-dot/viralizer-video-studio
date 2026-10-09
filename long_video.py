@@ -75,8 +75,8 @@ async def _poll(client,video_id):
         await asyncio.sleep(5)
         result=await client.status(video_id)
         if result.get('status')==1 and result.get('url'): return result['url']
-        if result.get('status') in (7,8): raise RuntimeError('A PixVerse scene failed.')
-    raise RuntimeError('PixVerse scene generation timed out.')
+        if result.get('status') in (7,8): raise RuntimeError('A video scene could not be generated.')
+    raise RuntimeError('Video scene generation timed out.')
 
 async def _download(url,path):
     async with httpx.AsyncClient(timeout=120,follow_redirects=True) as client:

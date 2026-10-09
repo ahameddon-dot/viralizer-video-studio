@@ -61,7 +61,7 @@ async def _download(url, path):
                     if attempt == len(delays) - 1:
                         raise MediaFinisherError(f"Could not download the generated video: {exc}") from exc
     raise MediaFinisherError(
-        "PixVerse finished the video, but its media file is not available yet. "
+        "The video is complete, but its media file is not available yet. "
         "Please retry this completed job in a moment; no new video credit is required."
     ) from last_error
 

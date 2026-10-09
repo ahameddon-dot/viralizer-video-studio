@@ -91,7 +91,7 @@ function renderParticipantVideos(){
     const title=document.createElement('h3');title.textContent=video.title||video.topic||'Untitled video';
     const owner=document.createElement('div');owner.className='video-owner';owner.textContent=(video.full_name||'Name unavailable')+' · '+(video.email||'Email unavailable');
     const meta=document.createElement('div');meta.className='video-meta';
-    [video.provider||'Provider unavailable',video.status||'completed',when(video.updated_at)].forEach(value=>{const pill=document.createElement('span');pill.className='pill';pill.textContent=value;meta.append(pill)});
+    [video.provider==='heygen'?'Presenter video':'AI video',video.status||'completed',when(video.updated_at)].forEach(value=>{const pill=document.createElement('span');pill.className='pill';pill.textContent=value;meta.append(pill)});
     copy.append(title,owner,meta);if(videoUrl){const link=document.createElement('a');link.className='video-link';link.href=videoUrl;link.target='_blank';link.rel='noopener';link.textContent='Open video ↗';copy.append(link)}card.append(copy);host.append(card);
   });
 }
