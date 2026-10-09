@@ -1460,6 +1460,18 @@ async def update_creatorthon_workflow(request: Request, payload: CreatorthonWork
 
 
 _CREATOR_ROLE_TOPIC_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CREATOR_ROLE_TOPIC_TASKS: dict[str, asyncio.Task] = {}
+
+
+def _creator_role_topic_cache_key(
+    topics: list[dict[str, Any]], role: str, user_type: str, category: str
+) -> str:
+    signature = json.dumps(
+        {"role": role, "user_type": user_type, "category": category,
+         "topics": [_topic_title_value(topic) for topic in topics]},
+        sort_keys=True, ensure_ascii=False,
+    )
+    return hashlib.sha256(signature.encode("utf-8")).hexdigest()
 
 
 def _fallback_role_topic_match(topic: dict[str, Any], role: str, user_type: str, index: int) -> dict[str, Any]:
@@ -1499,12 +1511,7 @@ async def _personalize_topics_for_role(
     candidates = [dict(topic) for topic in topics if _topic_title_value(topic)][:20]
     role = role.strip() or "Content Creator"
     user_type = user_type.strip() or "Individual"
-    signature = json.dumps(
-        {"role": role, "user_type": user_type, "category": category,
-         "topics": [_topic_title_value(topic) for topic in candidates]},
-        sort_keys=True, ensure_ascii=False,
-    )
-    cache_key = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+    cache_key = _creator_role_topic_cache_key(candidates, role, user_type, category)
     cached = _CREATOR_ROLE_TOPIC_CACHE.get(cache_key)
     if cached and cached[0] > time.time():
         return [dict(topic) for topic in cached[1]]
@@ -1570,6 +1577,30 @@ Requirements:
     except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError, KeyError):
         pass
     return fallback[:10]
+
+
+def _personalize_topics_fast(
+    topics: list[dict[str, Any]], role: str, user_type: str, category: str
+) -> list[dict[str, Any]]:
+    """Return role-aware topics immediately and warm the stronger LLM ranking in the background."""
+    candidates = [dict(topic) for topic in topics if _topic_title_value(topic)][:20]
+    normalized_role = role.strip() or "Content Creator"
+    normalized_type = user_type.strip() or "Individual"
+    cache_key = _creator_role_topic_cache_key(candidates, normalized_role, normalized_type, category)
+    cached = _CREATOR_ROLE_TOPIC_CACHE.get(cache_key)
+    if cached and cached[0] > time.time():
+        return [dict(topic) for topic in cached[1]]
+    fallback = [
+        _fallback_role_topic_match(topic, normalized_role, normalized_type, index)
+        for index, topic in enumerate(candidates)
+    ][:10]
+    if os.getenv("OPENAI_API_KEY", "").strip() and cache_key not in _CREATOR_ROLE_TOPIC_TASKS:
+        task = asyncio.create_task(
+            _personalize_topics_for_role(candidates, normalized_role, normalized_type, category)
+        )
+        _CREATOR_ROLE_TOPIC_TASKS[cache_key] = task
+        task.add_done_callback(lambda _task, key=cache_key: _CREATOR_ROLE_TOPIC_TASKS.pop(key, None))
+    return fallback
 
 
 def _objective_format(value: str) -> str:
@@ -1661,7 +1692,7 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
                 cached_keys.add(key)
                 cached_topics.append(topic)
     if all_categories_cached and cached_topics:
-        personalized = await _personalize_topics_for_role(cached_topics, role, user_type, interests[0])
+        personalized = _personalize_topics_fast(cached_topics, role, user_type, interests[0])
         return {
             "topics": personalized, "count": len(personalized),
             "source": "Viralizer role-matched intelligence cache", "cached": True,
@@ -1675,7 +1706,7 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide topics: {exc}") from exc
     topics = [item for item in annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything") if _english_topic(item)]
-    personalized = await _personalize_topics_for_role(topics, role, user_type, interests[0])
+    personalized = _personalize_topics_fast(topics, role, user_type, interests[0])
     return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
             "creator_role": role, "role_match_scale": 200}
 
@@ -1822,7 +1853,8 @@ Example: “Africa's 1.69 bn SME US apparel window: What's holding it back?” -
         ],
         "text": {"format": {"type": "json_object"}},
     }
-    async with httpx.AsyncClient(timeout=30) as client:
+    refinement_timeout = max(2.0, min(15.0, float(os.getenv("OPENAI_QUERY_REFINER_TIMEOUT_SECONDS", "6"))))
+    async with httpx.AsyncClient(timeout=refinement_timeout) as client:
         response = await client.post(
             "https://api.openai.com/v1/responses",
             headers={"Authorization": f"Bearer {key}"},
@@ -1878,7 +1910,8 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
     last_error: MCPOutlineError | None = None
     llm_term, llm_fallbacks, refiner = await _llm_refined_search_terms(topic)
     preferred = _valid_mcp_search_term(mcp_search_term) or llm_term
-    for candidate in _mcp_search_candidates(topic, preferred, llm_fallbacks):
+    max_attempts = max(1, min(3, int(os.getenv("CREATORTHON_MCP_SEARCH_MAX_ATTEMPTS", "2"))))
+    for candidate in _mcp_search_candidates(topic, preferred, llm_fallbacks)[:max_attempts]:
         attempted_terms.append(candidate)
         try:
             report = await get_full_report_from_mcp(candidate)
@@ -1934,8 +1967,9 @@ def _topic_title_value(topic: dict[str, Any]) -> str:
 
 
 async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> None:
-    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600"))
+    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400"))
     topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "8"))))
+    insight_limit = max(0, min(topic_limit, int(os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "3"))))
     queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
     try:
         topics = await discover_category_topics(queries, topic_limit)
@@ -1961,7 +1995,8 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
                 return
             save_cached_topic_insight(ROOT, title, result, ttl_seconds)
 
-    await asyncio.gather(*(prepare(topic) for topic in topics))
+    if insight_limit:
+        await asyncio.gather(*(prepare(topic) for topic in topics[:insight_limit]))
 
 
 async def _prefetch_all_creatorthon_topics() -> None:
@@ -1984,8 +2019,9 @@ def _seconds_until_prefetch_window() -> float:
 
 
 async def _creatorthon_prefetch_scheduler() -> None:
-    # Refresh shortly after every deployment, then at the two daily windows.
-    await asyncio.sleep(5)
+    # Let live traffic settle after a deployment before starting provider-heavy background work.
+    startup_delay = max(30, int(os.getenv("CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS", "120")))
+    await asyncio.sleep(startup_delay)
     await _prefetch_all_creatorthon_topics()
     while True:
         await asyncio.sleep(_seconds_until_prefetch_window())
@@ -2005,7 +2041,7 @@ async def _run_creatorthon_insight_queue(user_id: str) -> None:
                     result = None
                 if result is None:
                     result = await _proprietary_insight_payload(title)
-                    save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "21600")))
+                    save_cached_topic_insight(ROOT, title, result, int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400")))
                 finish_insight_job(ROOT, user_id, str(job["id"]), result=result)
             except Exception as exc:
                 finish_insight_job(ROOT, user_id, str(job["id"]), error=str(exc) or "Viralizer intelligence could not complete this topic.")
