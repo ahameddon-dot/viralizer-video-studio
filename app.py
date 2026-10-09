@@ -2417,7 +2417,15 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
         ROOT, str(user.get("sub", "")), payload.project_id,
         {"status": "published" if all_published else "publish-partial", "production": production},
     )
-    return {"results": results, "all_published": all_published, "hashtags": hashtags}
+    response_results = dict(results)
+    # V3 and Workspace submit the legacy `youtube` destination. Keep the
+    # explicit account-specific records in storage, but return the selected
+    # YouTube result under the key the clients requested as well.
+    if "youtube_user" in results:
+        response_results["youtube"] = results["youtube_user"]
+    elif "youtube_viralizer" in results:
+        response_results["youtube"] = results["youtube_viralizer"]
+    return {"results": response_results, "all_published": all_published, "hashtags": hashtags}
 
 
 @app.get("/legacy")
