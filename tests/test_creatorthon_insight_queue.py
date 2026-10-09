@@ -12,10 +12,12 @@ from creatorthon_store import (
     finish_insight_job,
     get_cached_category_topics,
     get_cached_topic_insight,
+    list_active_profile_interests,
     list_insight_jobs,
     retry_insight_job,
     save_cached_category_topics,
     save_cached_topic_insight,
+    save_profile,
 )
 
 
@@ -95,6 +97,22 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
                     self.root, "Stale topic", allow_stale=True, stale_max_age_seconds=86400
                 )
             )
+
+    def test_recent_participant_categories_are_ranked_for_prefetch(self):
+        save_profile(
+            self.root,
+            {"sub": "user-1", "email": "one@example.com", "name": "One"},
+            {"interests": ["Travel", "Skincare"], "onboarding_complete": True},
+        )
+        save_profile(
+            self.root,
+            {"sub": "user-2", "email": "two@example.com", "name": "Two"},
+            {"interests": ["Skincare", "Gaming"], "onboarding_complete": True},
+        )
+        self.assertEqual(
+            list_active_profile_interests(self.root),
+            ["Skincare", "Travel", "Gaming"],
+        )
 
 
 if __name__ == "__main__":

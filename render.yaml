@@ -84,6 +84,10 @@ services:
         value: 3600
       - key: CREATORTHON_PREFETCH_STALE_SECONDS
         value: 86400
+      - key: CREATORTHON_PREFETCH_ACTIVE_CATEGORY_LIMIT
+        value: 40
+      - key: CREATORTHON_PREFETCH_ACTIVE_DAYS
+        value: 7
       - key: YOUTUBE_CLIENT_ID
         sync: false
       - key: YOUTUBE_CLIENT_SECRET

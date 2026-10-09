@@ -72,7 +72,8 @@ from creatorthon_store import (
     list_assets, list_participant_videos, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
-    get_cached_category_topics, get_cached_topic_insight, save_cached_category_topics, save_cached_topic_insight,
+    get_cached_category_topics, get_cached_topic_insight, list_active_profile_interests,
+    save_cached_category_topics, save_cached_topic_insight,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
 from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public_image
@@ -2036,8 +2037,9 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
 
 
 CREATORTHON_PREFETCH_CATEGORIES = (
-    "Fashion", "Food", "Health", "Technology", "Business", "Sports", "Entertainment", "Movies",
-    "AI", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
+    "Fashion", "AI", "Technology", "Beauty", "Business", "Gaming",
+    "Food", "Sports", "Travel", "Cryptos", "Stocks", "Health",
+    "Entertainment", "Movies", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
@@ -2084,8 +2086,17 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
 async def _prefetch_all_creatorthon_topics() -> None:
     concurrency = max(1, min(6, int(os.getenv("CREATORTHON_PREFETCH_CONCURRENCY", "2"))))
     semaphore = asyncio.Semaphore(concurrency)
-    # Categories are discovered in a stable order; MCP report work is bounded by the shared semaphore.
-    for category in CREATORTHON_PREFETCH_CATEGORIES:
+    active_limit = max(1, min(100, int(os.getenv("CREATORTHON_PREFETCH_ACTIVE_CATEGORY_LIMIT", "40"))))
+    active_days = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_ACTIVE_DAYS", "7"))))
+    participant_categories = list_active_profile_interests(
+        ROOT,
+        max_categories=active_limit,
+        active_within_seconds=active_days * 86400,
+    )
+    categories = list(dict.fromkeys((*CREATORTHON_PREFETCH_CATEGORIES, *participant_categories)))
+    # Featured categories warm first, followed by participants' recent custom choices.
+    # MCP report work is bounded by the shared semaphore.
+    for category in categories:
         await _prefetch_creatorthon_category(category, semaphore)
 
 

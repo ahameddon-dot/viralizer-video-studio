@@ -880,6 +880,37 @@ def save_profile(root: Path, user: dict[str, Any], profile: dict[str, Any]) -> d
     return get_profile(root, user)
 
 
+def list_active_profile_interests(
+    root: Path,
+    *,
+    max_categories: int = 40,
+    active_within_seconds: int = 604800,
+) -> list[str]:
+    """Return the most-used categories from recently updated participant profiles."""
+    cutoff = int(time.time()) - max(3600, int(active_within_seconds))
+    with _connect(root) as db:
+        rows = db.execute(
+            "SELECT interests_json,updated_at FROM creatorthon_profiles "
+            "WHERE onboarding_complete=1 AND updated_at>=? ORDER BY updated_at DESC",
+            (cutoff,),
+        ).fetchall()
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    order: dict[str, int] = {}
+    for row in rows:
+        item = dict(row)
+        for value in _json_load(item.get("interests_json"), []):
+            name = " ".join(str(value).split())
+            key = name.casefold()
+            if not key:
+                continue
+            names.setdefault(key, name)
+            order.setdefault(key, len(order))
+            counts[key] = counts.get(key, 0) + 1
+    ranked = sorted(counts, key=lambda key: (-counts[key], order[key], key))
+    return [names[key] for key in ranked[:max(1, int(max_categories))]]
+
+
 def get_workflow_state(root: Path, user_id: str) -> dict[str, Any]:
     with _connect(root) as db:
         row = db.execute(
