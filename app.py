@@ -2397,7 +2397,17 @@ async def publish_creatorthon_video(request: Request, payload: CreatorthonPublis
                     })
                     results["youtube_user"] = user_result
                 except (SocialPublishError, YouTubeOAuthError) as exc:
-                    results["youtube_user"] = {"status": "failed", "detail": str(exc), "account_type": "user"}
+                    detail = str(exc)
+                    connection_invalid = any(
+                        marker in detail.casefold()
+                        for marker in ("could not refresh", "reconnect", "could not be decrypted", "invalid_grant")
+                    )
+                    if connection_invalid:
+                        delete_youtube_connection(ROOT, str(user.get("sub", "")))
+                    results["youtube_user"] = {
+                        "status": "failed", "detail": detail, "account_type": "user",
+                        "connection_invalid": connection_invalid,
+                    }
         if "youtube_viralizer" in requested:
             previous = published.get("youtube_viralizer") or {}
             if previous.get("status") == "published":
