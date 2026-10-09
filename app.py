@@ -1419,7 +1419,7 @@ async def share_creatorthon_project_video(request: Request, project_id: str):
         raise HTTPException(502, str(exc)) from exc
 
 @app.get("/api/creatorthon/projects/{project_id}/video")
-async def view_creatorthon_project_video(request: Request, project_id: str):
+async def view_creatorthon_project_video(request: Request, project_id: str, download: bool = False):
     """Open a signed-in user's finished video without exposing another user's media."""
     user = creatorthon_user(request)
     result = update_project(ROOT, str(user.get("sub", "")), project_id, {})
@@ -1439,7 +1439,14 @@ async def view_creatorthon_project_video(request: Request, project_id: str):
     return FileResponse(
         path,
         media_type="video/mp4",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="viralizer-video-{project_id}.mp4"'
+                if download else f'inline; filename="{filename}"'
+            ),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=3600",
+        },
     )
 
 
