@@ -38,17 +38,19 @@ class CreatorthonV3Tests(unittest.TestCase):
     def test_v3_contains_requested_creator_journey(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         for expected in (
-            "Your categories to create content",
+            "your categories to create content",
             "Choose an output",
-            "Create with PixVerse",
-            "Create with HeyGen",
-            "CHATGPT IMAGE",
-            "TOPIC RESEARCH",
+            "Create video",
             "/api/creatorthon/topics",
             "/api/video/prompt",
             "/api/video/generate",
         ):
             self.assertIn(expected, page)
+        options = page.split("function renderOptions()", 1)[1].split("function beginObjective", 1)[0]
+        self.assertNotIn("HEYGEN", options)
+        self.assertNotIn("CHATGPT IMAGE", options)
+        self.assertNotIn("TOPIC RESEARCH", options)
+        self.assertEqual(options.count('<article class="option ready">'), 1)
 
     def test_v3_uses_official_logo_and_responsive_layout(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
