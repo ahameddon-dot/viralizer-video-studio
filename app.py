@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -1418,6 +1418,72 @@ async def share_creatorthon_project_video(request: Request, project_id: str):
     except ObjectStoreError as exc:
         raise HTTPException(502, str(exc)) from exc
 
+def _video_byte_range(range_header: str, size: int) -> tuple[int, int] | None:
+    """Parse one RFC 7233 byte range for iPhone/Safari media playback."""
+    if not range_header:
+        return None
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip(), re.I)
+    if not match or size <= 0:
+        raise HTTPException(416, "Requested video range is not satisfiable.", headers={"Content-Range": f"bytes */{size}"})
+    first, last = match.groups()
+    if not first and not last:
+        raise HTTPException(416, "Requested video range is not satisfiable.", headers={"Content-Range": f"bytes */{size}"})
+    if not first:
+        suffix = int(last)
+        if suffix <= 0:
+            raise HTTPException(416, "Requested video range is not satisfiable.", headers={"Content-Range": f"bytes */{size}"})
+        start, end = max(0, size - suffix), size - 1
+    else:
+        start = int(first)
+        end = min(int(last), size - 1) if last else size - 1
+    if start >= size or start > end:
+        raise HTTPException(416, "Requested video range is not satisfiable.", headers={"Content-Range": f"bytes */{size}"})
+    return start, end
+
+
+def _video_file_response(
+    request: Request,
+    path: Path,
+    filename: str,
+    *,
+    download: bool = False,
+) -> Response:
+    """Stream an MP4 with explicit byte ranges required by mobile Safari."""
+    size = path.stat().st_size
+    selected = _video_byte_range(request.headers.get("range", ""), size)
+    start, end = selected or (0, max(0, size - 1))
+    length = max(0, end - start + 1)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+        "Cache-Control": "private, max-age=3600",
+        "Content-Disposition": (
+            f'attachment; filename="{filename}"' if download else f'inline; filename="{filename}"'
+        ),
+        "X-Content-Type-Options": "nosniff",
+    }
+    if selected:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+
+    def content():
+        remaining = length
+        with path.open("rb") as source:
+            source.seek(start)
+            while remaining > 0:
+                chunk = source.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    return StreamingResponse(
+        content(),
+        status_code=206 if selected else 200,
+        media_type="video/mp4",
+        headers=headers,
+    )
+
+
 @app.get("/api/creatorthon/projects/{project_id}/video")
 async def view_creatorthon_project_video(request: Request, project_id: str, download: bool = False):
     """Open a signed-in user's finished video without exposing another user's media."""
@@ -1436,17 +1502,11 @@ async def view_creatorthon_project_video(request: Request, project_id: str, down
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
     if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
         raise HTTPException(404, "Finished video not found.")
-    return FileResponse(
+    return _video_file_response(
+        request,
         path,
-        media_type="video/mp4",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="viralizer-video-{project_id}.mp4"'
-                if download else f'inline; filename="{filename}"'
-            ),
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "private, max-age=3600",
-        },
+        f"viralizer-video-{project_id}.mp4" if download else filename,
+        download=download,
     )
 
 
@@ -3255,17 +3315,13 @@ async def creatorthon_finish_job_status(request: Request, job_id: str):
         raise HTTPException(404, "Video finishing job not found.")
     return {key: value for key, value in legacy.items() if key != "user_id"}
 @app.get("/api/finished-video/{filename}")
-async def finished_video(filename: str):
+async def finished_video(request: Request, filename: str):
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
     if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
         raise HTTPException(404, "Finished video not found.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
-    )
+    return _video_file_response(request, path, filename)
 
 @app.get("/api/video/reference/{job_id}/{scene_index}")
 async def video_reference_image(job_id: str, scene_index: int):
