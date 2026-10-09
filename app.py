@@ -1430,7 +1430,17 @@ async def view_creatorthon_project_video(request: Request, project_id: str):
         raise HTTPException(409, "This project's narrated video is still being prepared.")
     if not video_url.startswith("/api/finished-video/"):
         raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
-    return RedirectResponse(video_url, status_code=307)
+    filename = video_url.removeprefix("/api/finished-video/")
+    if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
+        raise HTTPException(404, "Finished video not found.")
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+    if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
+        raise HTTPException(404, "Finished video not found.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @app.post("/api/creatorthon/reports")
