@@ -1,11 +1,13 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 from starlette.requests import Request
 
 from app import _video_byte_range, _video_file_response
+from object_store import share_url
 
 
 def request_with_range(value: str = "") -> Request:
@@ -50,6 +52,23 @@ class IPhoneVideoStreamingTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertIn("attachment", response.headers["content-disposition"])
+
+    def test_r2_signing_uses_inline_and_attachment_dispositions(self):
+        storage = MagicMock()
+        storage.generate_presigned_url.return_value = "https://media.test/video"
+        environment = {
+            "R2_ACCOUNT_ID": "account",
+            "R2_ACCESS_KEY_ID": "access",
+            "R2_SECRET_ACCESS_KEY": "secret",
+            "R2_BUCKET_NAME": "videos",
+        }
+        with patch.dict("os.environ", environment), patch("object_store._client", return_value=storage):
+            share_url("finished_videos/video.mp4", disposition="inline", filename="video.mp4")
+            inline = storage.generate_presigned_url.call_args.kwargs["Params"]
+            share_url("finished_videos/video.mp4", disposition="attachment", filename="download.mp4")
+            attachment = storage.generate_presigned_url.call_args.kwargs["Params"]
+        self.assertEqual(inline["ResponseContentDisposition"], 'inline; filename="video.mp4"')
+        self.assertEqual(attachment["ResponseContentDisposition"], 'attachment; filename="download.mp4"')
 
 
 if __name__ == "__main__":

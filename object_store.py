@@ -128,15 +128,26 @@ async def health() -> dict[str, object]:
         return {"configured": True, "ready": False, "error": category}
 
 
-def share_url(key: str, expires_in: int = 7 * 24 * 60 * 60) -> str:
+def share_url(
+    key: str,
+    expires_in: int = 7 * 24 * 60 * 60,
+    *,
+    disposition: str = "inline",
+    filename: str = "",
+) -> str:
     """Return a time-limited R2 URL which can be opened without app sign-in."""
     client = _client()
     if client is None:
         raise ObjectStoreError("Permanent media storage is not configured.")
     try:
+        safe_disposition = "attachment" if disposition == "attachment" else "inline"
+        if filename:
+            safe_name = "".join(character for character in filename if character.isalnum() or character in "-_.")
+            if safe_name:
+                safe_disposition += f'; filename="{safe_name}"'
         return client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": os.environ["R2_BUCKET_NAME"].strip(), "Key": key, "ResponseContentType": "video/mp4", "ResponseContentDisposition": "inline"},
+            Params={"Bucket": os.environ["R2_BUCKET_NAME"].strip(), "Key": key, "ResponseContentType": "video/mp4", "ResponseContentDisposition": safe_disposition},
             ExpiresIn=max(60, min(int(expires_in), 7 * 24 * 60 * 60)),
         )
     except Exception as exc:

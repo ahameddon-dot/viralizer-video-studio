@@ -1500,6 +1500,21 @@ async def view_creatorthon_project_video(request: Request, project_id: str, down
     filename = video_url.removeprefix("/api/finished-video/")
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
+    try:
+        signed_url = object_share_url(
+            f"finished_videos/{filename}",
+            expires_in=3600,
+            disposition="attachment" if download else "inline",
+            filename=f"viralizer-video-{project_id}.mp4" if download else filename,
+        )
+        return RedirectResponse(
+            signed_url,
+            status_code=307,
+            headers={"Cache-Control": "private, no-store"},
+        )
+    except ObjectStoreError:
+        # Local development and temporary storage outages retain proxy playback.
+        pass
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
     if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
         raise HTTPException(404, "Finished video not found.")
@@ -3329,6 +3344,19 @@ async def creatorthon_finish_job_status(request: Request, job_id: str):
 async def finished_video(request: Request, filename: str):
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
+    try:
+        return RedirectResponse(
+            object_share_url(
+                f"finished_videos/{filename}",
+                expires_in=3600,
+                disposition="inline",
+                filename=filename,
+            ),
+            status_code=307,
+            headers={"Cache-Control": "private, no-store"},
+        )
+    except ObjectStoreError:
+        pass
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
     if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
         raise HTTPException(404, "Finished video not found.")
