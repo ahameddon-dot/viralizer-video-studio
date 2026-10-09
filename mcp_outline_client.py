@@ -2,7 +2,9 @@ import json
 import asyncio
 import os
 import re
+import time
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from mcp import ClientSession
@@ -11,6 +13,17 @@ from mcp.client.streamable_http import streamable_http_client
 
 class MCPOutlineError(RuntimeError):
     pass
+
+
+class ViralizerProPendingError(MCPOutlineError):
+    """The direct Pro job exists and should not be duplicated through MCP."""
+
+    pass
+
+
+VIRALIZER_PRO_DEFAULT_BASE_URL = (
+    "https://295fnm3s92.execute-api.us-west-1.amazonaws.com/DEV"
+)
 
 
 _IDEA_TECHNICAL_KEYS = {
@@ -118,6 +131,105 @@ def _mcp_config() -> tuple[str, dict[str, str]]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return url, headers
+
+
+def _pro_api_config() -> tuple[str, dict[str, str]] | None:
+    """Return the direct Viralizer Pro API configuration when enabled."""
+    enabled = os.getenv("VIRALIZER_PRO_API_ENABLED", "true").strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return None
+    token = (
+        os.getenv("VIRALIZER_PRO_AUTH_TOKEN", "").strip()
+        or os.getenv("MCP_AUTH_TOKEN", "").strip()
+    )
+    if not token:
+        return None
+    base_url = (
+        os.getenv("VIRALIZER_PRO_API_BASE_URL", VIRALIZER_PRO_DEFAULT_BASE_URL)
+        .strip()
+        .rstrip("/")
+    )
+    return base_url, {"Authorization": f"Bearer {token}"}
+
+
+def _direct_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap the response shapes returned by the direct Pro API."""
+    candidates = [payload]
+    for key in ("records", "data", "page", "result"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+    return next(
+        (item for item in candidates if _has_usable_viralizer_content(item)),
+        candidates[-1],
+    )
+
+
+async def _get_full_report_from_pro_api(topic: str) -> dict[str, Any] | None:
+    """Run topic analysis through Viralizer's direct REST API."""
+    config = _pro_api_config()
+    if config is None:
+        return None
+    base_url, headers = config
+    poll_seconds = max(
+        2.0, min(15.0, float(os.getenv("VIRALIZER_PRO_POLL_SECONDS", "5")))
+    )
+    max_wait_seconds = max(
+        15.0, min(300.0, float(os.getenv("VIRALIZER_PRO_MAX_WAIT_SECONDS", "120")))
+    )
+    language = os.getenv("VIRALIZER_PRO_LANGUAGE", "en").strip() or "en"
+    body = {
+        "keyword": topic,
+        "language": language,
+        "client_params": {"client_source": "creatorthon-v3"},
+    }
+
+    async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
+        response = await client.post(f"{base_url}/analyze/topic", json=body)
+        if response.status_code in {401, 403}:
+            raise MCPOutlineError(
+                "Viralizer Pro authorization was rejected. Refresh VIRALIZER_PRO_AUTH_TOKEN."
+            )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise MCPOutlineError("Viralizer Pro returned an invalid topic response.")
+        report = _direct_report_payload(payload)
+        records = payload.get("records") if isinstance(payload.get("records"), dict) else {}
+        task_id = payload.get("task_id") or records.get("task_id")
+        if _has_usable_viralizer_content(report):
+            if not _report_matches_requested_topic(report, topic):
+                raise MCPOutlineError(
+                    f"Viralizer Pro returned a completed report for a different topic instead of '{topic}'."
+                )
+            return report
+        if not task_id:
+            raise MCPOutlineError("Viralizer Pro started no readable topic-analysis task.")
+
+        deadline = time.monotonic() + max_wait_seconds
+        while time.monotonic() < deadline:
+            await asyncio.sleep(poll_seconds)
+            response = await client.get(
+                f"{base_url}/view/task_page/{quote(str(task_id), safe='')}"
+            )
+            if response.status_code in {401, 403}:
+                raise MCPOutlineError(
+                    "Viralizer Pro authorization expired while preparing the report."
+                )
+            response.raise_for_status()
+            polled = response.json()
+            if not isinstance(polled, dict):
+                continue
+            report = _direct_report_payload(polled)
+            if _has_usable_viralizer_content(report):
+                if not _report_matches_requested_topic(report, topic):
+                    raise MCPOutlineError(
+                        f"Viralizer Pro returned a completed report for a different topic instead of '{topic}'."
+                    )
+                return report
+        raise ViralizerProPendingError(
+            f"Viralizer Pro is still preparing '{topic}' after {int(max_wait_seconds)} seconds."
+        )
 
 
 def _json_from_text(text: str) -> dict[str, Any]:
@@ -322,7 +434,7 @@ def _has_usable_viralizer_content(payload: dict[str, Any]) -> bool:
     return False
 
 
-async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
+async def _get_full_report_from_mcp_only(topic: str) -> dict[str, Any]:
     url, headers = _mcp_config()
     tool_name = os.getenv("MCP_TOOL_NAME", "").strip()
     topic_argument = os.getenv("MCP_TOPIC_ARGUMENT", "topic").strip() or "topic"
@@ -378,6 +490,28 @@ async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
             f"Viralizer returned a completed report for a different topic instead of '{topic}'. Please retry."
         )
     return final_payload
+
+
+async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
+    """Prefer the direct Pro API and retain MCP as an automatic fallback."""
+    pro_error: Exception | None = None
+    try:
+        direct = await _get_full_report_from_pro_api(topic)
+        if direct is not None:
+            return direct
+    except ViralizerProPendingError:
+        raise
+    except (MCPOutlineError, httpx.HTTPError, ValueError, TypeError) as exc:
+        pro_error = exc
+
+    try:
+        return await _get_full_report_from_mcp_only(topic)
+    except MCPOutlineError as mcp_error:
+        if pro_error is not None:
+            raise MCPOutlineError(
+                f"Direct Viralizer Pro API failed: {pro_error} MCP fallback failed: {mcp_error}"
+            ) from mcp_error
+        raise
 
 
 async def get_outline_from_mcp(topic: str) -> dict[str, Any]:
