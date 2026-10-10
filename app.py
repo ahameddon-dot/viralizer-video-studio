@@ -72,7 +72,7 @@ from creatorthon_store import (
     list_assets, list_participant_videos, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
-    get_cached_category_topics, get_cached_topic_insight, list_active_profile_interests,
+    get_cached_category_topics, get_cached_topic_insight,
     save_cached_category_topics, save_cached_topic_insight,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
@@ -2054,7 +2054,6 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
 CREATORTHON_PREFETCH_CATEGORIES = (
     "Fashion", "AI", "Technology", "Beauty", "Business", "Gaming",
     "Food", "Sports", "Travel", "Cryptos", "Stocks", "Health",
-    "Entertainment", "Movies", "VC", "Events", "Music", "Arts", "Comedy", "eCommerce", "Products",
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
@@ -2101,17 +2100,9 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
 async def _prefetch_all_creatorthon_topics() -> None:
     concurrency = max(1, min(6, int(os.getenv("CREATORTHON_PREFETCH_CONCURRENCY", "2"))))
     semaphore = asyncio.Semaphore(concurrency)
-    active_limit = max(1, min(100, int(os.getenv("CREATORTHON_PREFETCH_ACTIVE_CATEGORY_LIMIT", "40"))))
-    active_days = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_ACTIVE_DAYS", "7"))))
-    participant_categories = list_active_profile_interests(
-        ROOT,
-        max_categories=active_limit,
-        active_within_seconds=active_days * 86400,
-    )
-    categories = list(dict.fromkeys((*CREATORTHON_PREFETCH_CATEGORIES, *participant_categories)))
-    # Featured categories warm first, followed by participants' recent custom choices.
-    # MCP report work is bounded by the shared semaphore.
-    for category in categories:
+    # Event traffic is concentrated in the 12 featured categories. Warm those first
+    # and leave custom categories on the normal request-time generation path.
+    for category in CREATORTHON_PREFETCH_CATEGORIES:
         await _prefetch_creatorthon_category(category, semaphore)
 
 
@@ -2120,8 +2111,8 @@ def _prefetch_interval_seconds() -> float:
 
 
 async def _creatorthon_prefetch_scheduler() -> None:
-    # Let live traffic settle after a deployment before starting provider-heavy background work.
-    startup_delay = max(30, int(os.getenv("CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS", "120")))
+    # Event warm-up should begin as soon as the deployed service is healthy.
+    startup_delay = max(0, int(os.getenv("CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS", "5")))
     await asyncio.sleep(startup_delay)
     while True:
         cycle_started = time.monotonic()

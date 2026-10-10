@@ -79,15 +79,13 @@ services:
       - key: CREATORTHON_PREFETCH_CONCURRENCY
         value: 2
       - key: CREATORTHON_PREFETCH_TTL_SECONDS
-        value: 5400
+        value: 21600
       - key: CREATORTHON_PREFETCH_INTERVAL_SECONDS
         value: 3600
+      - key: CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS
+        value: 5
       - key: CREATORTHON_PREFETCH_STALE_SECONDS
         value: 86400
-      - key: CREATORTHON_PREFETCH_ACTIVE_CATEGORY_LIMIT
-        value: 40
-      - key: CREATORTHON_PREFETCH_ACTIVE_DAYS
-        value: 7
       - key: YOUTUBE_CLIENT_ID
         sync: false
       - key: YOUTUBE_CLIENT_SECRET
