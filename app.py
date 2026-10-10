@@ -2065,26 +2065,31 @@ def _topic_title_value(topic: dict[str, Any]) -> str:
 
 
 async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> None:
-    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "5400"))
+    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400"))
     topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "6"))))
     insight_limit = max(0, min(topic_limit, int(os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "6"))))
-    queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
-    try:
-        topics = await discover_category_topics(queries, topic_limit)
-        topics = [
-            item for item in annotate_topic_taxonomy(topics, [category], category, "Everything")
-            if _english_topic(item)
-        ][:topic_limit]
-    except Exception:
-        # Never erase the last known-good category when discovery is temporarily unavailable.
-        return
+    topics = get_cached_category_topics(ROOT, category)
     if not topics:
-        return
-    save_cached_category_topics(ROOT, category, topics, ttl_seconds)
+        queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
+        try:
+            topics = await discover_category_topics(queries, topic_limit)
+            topics = [
+                item for item in annotate_topic_taxonomy(topics, [category], category, "Everything")
+                if _english_topic(item)
+            ][:topic_limit]
+        except Exception:
+            # Never erase the last known-good category when discovery is temporarily unavailable.
+            return
+        if not topics:
+            return
+        save_cached_category_topics(ROOT, category, topics, ttl_seconds)
 
     async def prepare(topic: dict[str, Any]) -> None:
         title = _topic_title_value(topic)
         if not title:
+            return
+        cached = get_cached_topic_insight(ROOT, title)
+        if cached and int(cached.get("query_refiner_version") or 0) >= MCP_QUERY_REFINER_VERSION:
             return
         async with semaphore:
             try:
@@ -2106,23 +2111,16 @@ async def _prefetch_all_creatorthon_topics() -> None:
         await _prefetch_creatorthon_category(category, semaphore)
 
 
-def _prefetch_interval_seconds() -> float:
-    return float(max(300, int(os.getenv("CREATORTHON_PREFETCH_INTERVAL_SECONDS", "3600"))))
-
-
 async def _creatorthon_prefetch_scheduler() -> None:
-    # Event warm-up should begin as soon as the deployed service is healthy.
+    # Build one stable event snapshot. Valid category topics and reports are reused
+    # after service restarts and are not automatically refreshed during the event.
     startup_delay = max(0, int(os.getenv("CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS", "5")))
     await asyncio.sleep(startup_delay)
-    while True:
-        cycle_started = time.monotonic()
-        try:
-            await _prefetch_all_creatorthon_topics()
-        except Exception:
-            # Keep the scheduler alive and preserve the last successful cache.
-            pass
-        elapsed = time.monotonic() - cycle_started
-        await asyncio.sleep(max(60.0, _prefetch_interval_seconds() - elapsed))
+    try:
+        await _prefetch_all_creatorthon_topics()
+    except Exception:
+        # Preserve every category/report that completed successfully.
+        pass
 
 
 async def _run_creatorthon_insight_queue(user_id: str) -> None:

@@ -79,9 +79,7 @@ services:
       - key: CREATORTHON_PREFETCH_CONCURRENCY
         value: 2
       - key: CREATORTHON_PREFETCH_TTL_SECONDS
-        value: 21600
-      - key: CREATORTHON_PREFETCH_INTERVAL_SECONDS
-        value: 3600
+        value: 86400
       - key: CREATORTHON_PREFETCH_STARTUP_DELAY_SECONDS
         value: 5
       - key: CREATORTHON_PREFETCH_STALE_SECONDS
