@@ -4,6 +4,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import time
@@ -88,6 +89,7 @@ CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
 CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
 CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
+LOGGER = logging.getLogger("uvicorn.error")
 
 
 async def prepare_article_intelligence_safely(
@@ -2064,11 +2066,12 @@ def _topic_title_value(topic: dict[str, Any]) -> str:
     return " ".join(str(topic.get("topic") or topic.get("title") or topic.get("name") or "").split())
 
 
-async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> None:
+async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semaphore) -> dict[str, Any]:
     ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400"))
     topic_limit = max(1, min(30, int(os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "6"))))
     insight_limit = max(0, min(topic_limit, int(os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "6"))))
     topics = get_cached_category_topics(ROOT, category)
+    topic_source = "cache" if topics else "fetched"
     if not topics:
         queries = build_category_discovery_queries(category, "", "", "Everything", "")[:2]
         try:
@@ -2077,29 +2080,53 @@ async def _prefetch_creatorthon_category(category: str, semaphore: asyncio.Semap
                 item for item in annotate_topic_taxonomy(topics, [category], category, "Everything")
                 if _english_topic(item)
             ][:topic_limit]
-        except Exception:
+        except Exception as exc:
             # Never erase the last known-good category when discovery is temporarily unavailable.
-            return
+            LOGGER.exception("Creatorthon prefetch failed to discover category=%s: %s", category, exc)
+            return {"category": category, "topics": 0, "reports": 0, "failed": 1}
         if not topics:
-            return
+            LOGGER.warning("Creatorthon prefetch returned no topics category=%s", category)
+            return {"category": category, "topics": 0, "reports": 0, "failed": 1}
         save_cached_category_topics(ROOT, category, topics, ttl_seconds)
+
+    counters = {"cached": 0, "saved": 0, "failed": 0}
 
     async def prepare(topic: dict[str, Any]) -> None:
         title = _topic_title_value(topic)
         if not title:
+            counters["failed"] += 1
             return
         cached = get_cached_topic_insight(ROOT, title)
         if cached and int(cached.get("query_refiner_version") or 0) >= MCP_QUERY_REFINER_VERSION:
+            counters["cached"] += 1
             return
         async with semaphore:
             try:
                 result = await _proprietary_insight_payload(title)
-            except Exception:
+            except Exception as exc:
+                counters["failed"] += 1
+                LOGGER.exception(
+                    "Creatorthon prefetch report failed category=%s topic=%r: %s", category, title, exc
+                )
                 return
             save_cached_topic_insight(ROOT, title, result, ttl_seconds)
+            counters["saved"] += 1
 
     if insight_limit:
         await asyncio.gather(*(prepare(topic) for topic in topics[:insight_limit]))
+    report_count = counters["cached"] + counters["saved"]
+    LOGGER.info(
+        "Creatorthon prefetch category complete category=%s topics=%d topic_source=%s reports_ready=%d "
+        "reports_cached=%d reports_saved=%d reports_failed=%d ttl_hours=%.1f",
+        category, len(topics), topic_source, report_count, counters["cached"], counters["saved"],
+        counters["failed"], ttl_seconds / 3600,
+    )
+    return {
+        "category": category,
+        "topics": len(topics),
+        "reports": report_count,
+        "failed": counters["failed"],
+    }
 
 
 async def _prefetch_all_creatorthon_topics() -> None:
@@ -2107,8 +2134,23 @@ async def _prefetch_all_creatorthon_topics() -> None:
     semaphore = asyncio.Semaphore(concurrency)
     # Event traffic is concentrated in the 12 featured categories. Warm those first
     # and leave custom categories on the normal request-time generation path.
+    LOGGER.info(
+        "Creatorthon event prefetch started categories=%d topics_per_category=%s reports_per_category=%s",
+        len(CREATORTHON_PREFETCH_CATEGORIES),
+        os.getenv("CREATORTHON_PREFETCH_TOPICS_PER_CATEGORY", "6"),
+        os.getenv("CREATORTHON_PREFETCH_INSIGHTS_PER_CATEGORY", "6"),
+    )
+    results = []
     for category in CREATORTHON_PREFETCH_CATEGORIES:
-        await _prefetch_creatorthon_category(category, semaphore)
+        results.append(await _prefetch_creatorthon_category(category, semaphore))
+    LOGGER.info(
+        "Creatorthon event prefetch complete categories_ready=%d/%d topics_ready=%d reports_ready=%d failures=%d",
+        sum(1 for item in results if item.get("topics") and item.get("reports")),
+        len(CREATORTHON_PREFETCH_CATEGORIES),
+        sum(int(item.get("topics") or 0) for item in results),
+        sum(int(item.get("reports") or 0) for item in results),
+        sum(int(item.get("failed") or 0) for item in results),
+    )
 
 
 async def _creatorthon_prefetch_scheduler() -> None:
@@ -2118,9 +2160,9 @@ async def _creatorthon_prefetch_scheduler() -> None:
     await asyncio.sleep(startup_delay)
     try:
         await _prefetch_all_creatorthon_topics()
-    except Exception:
+    except Exception as exc:
         # Preserve every category/report that completed successfully.
-        pass
+        LOGGER.exception("Creatorthon event prefetch stopped unexpectedly: %s", exc)
 
 
 async def _run_creatorthon_insight_queue(user_id: str) -> None:
