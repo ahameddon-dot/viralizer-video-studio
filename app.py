@@ -2337,6 +2337,58 @@ async def creatorthon_admin_videos(request: Request):
     return {"videos": videos, "count": len(videos)}
 
 
+@app.post("/api/creatorthon/admin/videos/{project_id}/publish-youtube")
+async def creatorthon_admin_publish_youtube(request: Request, project_id: str):
+    """Publish a participant's completed video to the central Viralizer channel."""
+    creatorthon_admin_user(request)
+    summary = next((item for item in list_participant_videos(ROOT) if item.get("id") == project_id), None)
+    if not summary:
+        raise HTTPException(404, "Participant video not found.")
+    user_id = str(summary.get("user_id") or "")
+    project = update_project(ROOT, user_id, project_id, {})
+    if not project:
+        raise HTTPException(404, "Participant project not found.")
+    if not publishing_status().get("youtube", {}).get("configured"):
+        raise HTTPException(409, "The Viralizer YouTube channel is not connected.")
+
+    production = dict(project.get("production") or {})
+    published = dict(production.get("published") or {})
+    previous = dict(published.get("youtube_viralizer") or {})
+    if previous.get("status") == "published":
+        return {"result": {**previous, "already_published": True}, "all_published": True}
+
+    video_url = str(project.get("video_url") or "")
+    match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", video_url)
+    if not match:
+        raise HTTPException(422, "Only a completed, watermarked Creatorthon video can be published.")
+    video_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
+    if not video_path.is_file() and not await restore_object_file(video_path, f"finished_videos/{match.group(1)}"):
+        raise HTTPException(404, "The completed video could not be found.")
+
+    topic = dict(project.get("topic") or {})
+    title = str(project.get("title") or topic.get("role_focused_title") or topic.get("topic") or "Viralizer video").strip()
+    summary_text = str(topic.get("summary") or topic.get("description") or "").strip()
+    caption = "\n\n".join(value for value in (title, summary_text) if value)
+    hashtags = build_hashtags(topic or {"title": title})
+    if MANDATORY_HASHTAG.casefold() not in {tag.casefold() for tag in hashtags}:
+        hashtags.insert(0, MANDATORY_HASHTAG)
+    try:
+        upload = await publish_all(video_path, video_url, caption, hashtags, ["youtube"])
+    except (ObjectStoreError, SocialPublishError, YouTubeOAuthError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result = dict((upload.get("results") or {}).get("youtube") or {})
+    result.update({
+        "channel_title": os.getenv("YOUTUBE_CHANNEL_TITLE", "Viralizer YouTube").strip() or "Viralizer YouTube",
+        "account_type": "viralizer", "published_by_admin": True,
+    })
+    if result.get("status") != "published":
+        raise HTTPException(422, str(result.get("detail") or "YouTube could not publish this video."))
+    published["youtube_viralizer"] = result
+    production["published"] = published
+    update_project(ROOT, user_id, project_id, {"status": "published", "production": production})
+    return {"result": result, "all_published": True, "hashtags": hashtags}
+
+
 @app.put("/api/creatorthon/admin/capacity")
 async def creatorthon_admin_capacity(request: Request, payload: CreatorthonAdminCapacityRequest):
     admin = creatorthon_admin_user(request)

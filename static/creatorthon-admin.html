@@ -69,7 +69,7 @@ $('#resetEvent').onclick=async()=>{if(!confirm('Reset the Creatorthon event to 0
 updateBulkStatus();
 </script>
 <style>
-.video-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:13px;margin-top:14px}.video-card{overflow:hidden;border:1px solid #2b334d;border-radius:14px;background:#0b0f1d}.video-card video,.video-poster{display:block;width:100%;aspect-ratio:16/9;background:#050711;object-fit:cover}.video-poster{display:grid;place-items:center;color:#777f99;font-size:11px}.video-copy{padding:14px}.video-copy h3{margin:0 0 7px;font-size:14px;line-height:1.35}.video-owner{margin-bottom:10px;color:#c9a8f5;font-size:11px;line-height:1.45}.video-meta{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.video-link{display:inline-flex;padding:8px 11px;border-radius:9px;background:#8b2cff;color:#fff;text-decoration:none;font-size:10px;font-weight:850}.stats{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.video-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:13px;margin-top:14px}.video-card{overflow:hidden;border:1px solid #2b334d;border-radius:14px;background:#0b0f1d}.video-card video,.video-poster{display:block;width:100%;aspect-ratio:16/9;background:#050711;object-fit:cover}.video-poster{display:grid;place-items:center;color:#777f99;font-size:11px}.video-copy{padding:14px}.video-copy h3{margin:0 0 7px;font-size:14px;line-height:1.35}.video-owner{margin-bottom:10px;color:#c9a8f5;font-size:11px;line-height:1.45}.video-meta{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.video-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.video-link,.video-publish{display:inline-flex;min-height:34px;align-items:center;padding:8px 11px;border:0;border-radius:9px;background:#8b2cff;color:#fff;text-decoration:none;font-size:10px;font-weight:850;cursor:pointer}.video-link{background:#252c43}.video-publish:disabled{opacity:.55;cursor:wait}.video-result{width:100%;margin-top:3px;color:#62e4a4;font-size:10px;line-height:1.4}.video-result.fail{color:#ff9bb3}.video-result a{color:#cfa4ff}.stats{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 </style>
 <script>
 let participantVideos=[];
@@ -92,8 +92,16 @@ function renderParticipantVideos(){
     const owner=document.createElement('div');owner.className='video-owner';owner.textContent=(video.full_name||'Name unavailable')+' · '+(video.email||'Email unavailable');
     const meta=document.createElement('div');meta.className='video-meta';
     [video.provider==='heygen'?'Presenter video':'AI video',video.status||'completed',when(video.updated_at)].forEach(value=>{const pill=document.createElement('span');pill.className='pill';pill.textContent=value;meta.append(pill)});
-    copy.append(title,owner,meta);if(videoUrl){const link=document.createElement('a');link.className='video-link';link.href=videoUrl;link.target='_blank';link.rel='noopener';link.textContent='Open video ↗';copy.append(link)}card.append(copy);host.append(card);
+    copy.append(title,owner,meta);if(videoUrl){const actions=document.createElement('div');actions.className='video-actions';const link=document.createElement('a');link.className='video-link';link.href=videoUrl;link.target='_blank';link.rel='noopener';link.textContent='Open video ↗';const publish=document.createElement('button');publish.type='button';publish.className='video-publish';publish.textContent='Publish to Viralizer YouTube';publish.onclick=()=>publishParticipantVideo(video,publish,actions);actions.append(link,publish);copy.append(actions)}card.append(copy);host.append(card);
   });
+}
+async function publishParticipantVideo(video,button,actions){
+  const title=video.title||video.topic||'Untitled video';
+  if(!confirm('Publish “'+title+'” by '+(video.full_name||video.email||'this participant')+' to the public Viralizer YouTube channel?'))return;
+  button.disabled=true;button.textContent='Publishing…';
+  let result=actions.querySelector('.video-result');if(!result){result=document.createElement('div');result.className='video-result';actions.append(result)}
+  result.className='video-result';result.textContent='Uploading to Viralizer YouTube…';
+  try{const data=await api('/api/creatorthon/admin/videos/'+encodeURIComponent(video.id)+'/publish-youtube',{method:'POST'}),published=data.result||{},url=published.url||(published.id?'https://youtu.be/'+encodeURIComponent(published.id):'');button.textContent=published.already_published?'Already published ✓':'Published ✓';result.replaceChildren(document.createTextNode(published.already_published?'This video was already published.':'Published successfully.'));if(url){const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.textContent=' View on YouTube ↗';result.append(link)}}catch(error){button.disabled=false;button.textContent='Publish to Viralizer YouTube';result.className='video-result fail';result.textContent=error.message}
 }
 async function loadParticipantVideos(){const result=await api('/api/creatorthon/admin/videos');participantVideos=result.videos||[];renderParticipantVideos()}
 $('#videoSearch').oninput=renderParticipantVideos;
