@@ -1049,7 +1049,10 @@ CREATORTHON_UNLIMITED_EMAILS = frozenset({
     "yusufiid@gmail.com",
     "ansariarif1@gmail.com",
 })
-CREATORTHON_ADMIN_EMAILS = CREATORTHON_UNLIMITED_EMAILS
+CREATORTHON_ADMIN_EMAILS = frozenset({
+    "ahamed.don@gmail.com",
+    "ansariarif1@gmail.com",
+})
 
 
 def _unlimited_creatorthon_user(user: dict[str, Any]) -> bool:
