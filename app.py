@@ -953,6 +953,14 @@ async def creatorthon_concept(request: Request):
     creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon-concept.html", headers={"Cache-Control": "no-store"})
 
+
+@app.get("/creatorthon/product")
+async def creatorthon_product(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon/login?next=/creatorthon/product", status_code=303)
+    creatorthon_user(request)
+    return FileResponse(ROOT / "static" / "creatorthon-product.html", headers={"Cache-Control": "no-store"})
+
 @app.get("/creatorthon-v2/login", response_class=HTMLResponse)
 async def creatorthon_v2_login(request: Request):
     if read_google_session(request.cookies.get(AUTH_COOKIE, "")):

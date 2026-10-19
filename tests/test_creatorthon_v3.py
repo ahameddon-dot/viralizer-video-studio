@@ -10,6 +10,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CreatorthonV3Tests(unittest.TestCase):
+    def test_product_video_builder_uses_secured_creatorthon_pipeline(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
+        v3_page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn('@app.get("/creatorthon/product")', app_source)
+        self.assertIn('href="/creatorthon/product"', v3_page)
+        self.assertIn("Food:{icon:'🍽️'", page)
+        self.assertIn("'Real Estate':{icon:'🏡'", page)
+        self.assertIn("Dental:{icon:'🦷'", page)
+        self.assertIn("Chettinad Biryani", page)
+        self.assertIn("Kitchen to table", page)
+        self.assertIn("/api/creatorthon/prepare-prompt", page)
+        self.assertIn("/api/creatorthon/concept/generate", page)
+        self.assertIn("prompt:''", page)
+
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
             "type": "http", "method": "GET", "scheme": "https", "path": "/", "query_string": b"",
