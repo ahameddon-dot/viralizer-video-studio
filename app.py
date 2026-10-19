@@ -1285,10 +1285,16 @@ def _public_workspace(data: dict[str, Any]) -> dict[str, Any]:
 def _creatorthon_generation_prompt(project: dict[str, Any], submitted_prompt: str | None) -> tuple[str, bool]:
     """Use an explicit participant prompt when supplied; otherwise keep the secured server prompt."""
     custom = str(submitted_prompt or "").strip()
-    if custom:
-        return custom, True
     stored = project.get("prompt") if isinstance(project.get("prompt"), dict) else {}
-    return str(stored.get("text") or "").strip(), False
+    stored_text = str(stored.get("text") or "").strip()
+    if custom:
+        # The concept creator saves its generated prompt before starting the
+        # provider job, then submits the same value again.  An identical value
+        # is still the secured Viralizer prompt, not a participant override.
+        if stored_text and custom == stored_text:
+            return stored_text, False
+        return custom, True
+    return stored_text, False
 
 
 def _creatorthon_prompt_matches_topic(topic: dict[str, Any], prompt: str) -> bool:

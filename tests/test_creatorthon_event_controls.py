@@ -336,6 +336,12 @@ class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prompt, "PRIVATE VIRALIZER PROMPT")
         self.assertFalse(custom)
 
+    def test_resubmitted_saved_prompt_remains_a_viralizer_prompt(self):
+        project = {"prompt": {"text": "  GENERATED VIRALIZER PROMPT  "}}
+        prompt, custom = app._creatorthon_generation_prompt(project, "GENERATED VIRALIZER PROMPT")
+        self.assertEqual(prompt, "GENERATED VIRALIZER PROMPT")
+        self.assertFalse(custom)
+
     def test_custom_prompt_topic_alignment_detects_match_and_mismatch(self):
         topic = {"topic": "PlayStation 5 gaming console update"}
         self.assertTrue(app._creatorthon_prompt_matches_topic(topic, "Show a gamer unboxing a PlayStation 5 console."))
