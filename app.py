@@ -127,6 +127,12 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     industry = clean(content.get("category"), 12)
     style = clean(content.get("creative_style"), 20) or "Product showcase"
     style_direction = clean(content.get("style_direction"), 50)
+    attributes = content.get("product_attributes") if isinstance(content.get("product_attributes"), dict) else {}
+    attribute_locks = [f"{clean(key, 8)}: {clean(value, 20)}" for key, value in attributes.items() if clean(value, 20)]
+    goal = clean(content.get("campaign_goal"), 12)
+    audience = clean(content.get("target_audience"), 16)
+    mood = clean(content.get("visual_mood"), 12)
+    platform = clean(content.get("target_platform"), 12)
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
@@ -142,8 +148,10 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     return " ".join([
         f"Create one coherent {duration}-second {aspect} {style.lower()} commercial for {subtype}, a {industry} product.",
         f"PRODUCT IDENTITY LOCK: {subject}. This exact product is the sole hero subject in every shot and must never be reinterpreted as another object.",
+        ("MANDATORY PRODUCT ATTRIBUTES: " + "; ".join(attribute_locks) + ". Preserve every attribute without substitution in all shots.") if attribute_locks else "",
         f"SETTING: {environment}.",
         f"ADVERTISING ART DIRECTION: {style_direction or style}. Make every frame feel intentionally art-directed for a premium paid social campaign, never like generic stock footage.",
+        f"CAMPAIGN: objective {goal or 'conversion'}; target audience {audience or 'relevant customers'}; visual mood {mood or 'premium'}; delivery {platform or aspect}.",
         "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
         f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",

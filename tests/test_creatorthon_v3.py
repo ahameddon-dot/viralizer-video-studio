@@ -13,6 +13,7 @@ class CreatorthonV3Tests(unittest.TestCase):
     def test_product_video_builder_uses_secured_creatorthon_pipeline(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
+        catalog = (ROOT / "static" / "product-video-catalog.js").read_text(encoding="utf-8")
         v3_page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn('@app.get("/creatorthon/product")', app_source)
         self.assertIn('href="/creatorthon/product"', v3_page)
@@ -23,12 +24,23 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Kitchen to table", page)
         self.assertIn("'Real Estate':[['🏡','Property walkthrough'", page)
         self.assertIn("Dental:[['✨','Smile transformation'", page)
-        self.assertIn("const activeStyles=()=>styleCatalog[state.industry]||fallbackStyles", page)
+        self.assertIn("const activeStyles=()=>productStyleCatalog[state.industry+':'+state.product]||styleCatalog[state.industry]||fallbackStyles", page)
+        self.assertIn("'Fashion:Sarees'", page)
+        self.assertIn("Saree unboxing", page)
+        self.assertIn("Draping tutorial", page)
+        self.assertIn("360° saree view", page)
         self.assertIn("/api/creatorthon/prepare-prompt", page)
         self.assertIn("/api/creatorthon/concept/generate", page)
         self.assertIn("prompt:''", page)
         self.assertIn("gaming controllers", page)
         self.assertIn("product_visual_spec:spec", page)
+        self.assertIn("product-video-catalog.js", page)
+        self.assertIn("'Fashion:Sarees'", catalog)
+        self.assertIn("'Fashion:Innerwear'", catalog)
+        self.assertIn("Kanjivaram silk", catalog)
+        self.assertIn("Premium flat lay", catalog)
+        self.assertIn("product_attributes:state.attributes", page)
+        self.assertIn("Scene plan", page)
 
     def test_product_prompt_locks_dental_aligner_identity(self):
         prompt = app._creatorthon_product_prompt({
@@ -38,6 +50,10 @@ class CreatorthonV3Tests(unittest.TestCase):
             "product_subtype": "Clear Aligners",
             "creative_style": "Product showcase",
             "style_direction": "Clinical product detail and a confident patient outcome",
+            "campaign_goal": "Bookings",
+            "target_audience": "Young adults",
+            "visual_mood": "Clinical and trustworthy",
+            "product_attributes": {"benefit": "Natural appearance", "stage": "Consultation"},
             "product_visual_spec": {
                 "subject": "transparent medical dental aligners fitted over natural teeth",
                 "environment": "a bright modern dental clinic",
@@ -51,6 +67,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("never be reinterpreted as another object", prompt)
         self.assertIn("CONVERSION ARC", prompt)
         self.assertIn("premium paid social campaign", prompt)
+        self.assertIn("MANDATORY PRODUCT ATTRIBUTES", prompt)
+        self.assertIn("benefit: Natural appearance", prompt)
+        self.assertIn("objective Bookings", prompt)
 
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
