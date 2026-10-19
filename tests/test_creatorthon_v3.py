@@ -58,6 +58,25 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Ladle clang, steam and crowd ambience", catalog)
         self.assertIn("Authentic rapid street service", catalog)
         self.assertIn("Family sharing portion", catalog)
+        for schema in (
+            "Food:Pizza", "Food:Desserts", "Food:Beverages",
+            "Real Estate:Property for sale", "Real Estate:Property for rent", "Real Estate:New development",
+            "Dental:Invisible braces", "Dental:Dental implants", "Dental:Smile care", "Dental:Preventive care",
+            "Fashion:Apparel", "Fashion:Accessories",
+            "Beauty:Skincare", "Beauty:Cosmetics", "Beauty:Salon",
+            "Automotive:Vehicles", "Automotive:Auto services",
+            "Technology:Software", "Technology:Devices",
+            "Travel:Destinations", "Travel:Hospitality",
+        ):
+            self.assertIn(f"'{schema}'", catalog)
+        self.assertIn("'Food:Pizza'", page)
+        self.assertIn("Dough to slice", page)
+        self.assertIn("'Food:Desserts'", page)
+        self.assertIn("Cut and centre reveal", page)
+        self.assertIn("'Food:Beverages'", page)
+        self.assertIn("Pour and refresh", page)
+        self.assertIn("function specializedVisualSpec()", page)
+        self.assertIn("avoid:['clay pots','rice vessels','biryani','cake'", page)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
     def test_product_prompt_locks_dental_aligner_identity(self):

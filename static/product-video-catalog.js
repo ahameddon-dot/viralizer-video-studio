@@ -13,6 +13,64 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['sound','Sound direction',['Ladle clang, steam and crowd ambience','Handi lid, rice scoop and plate sounds','Busy stall voices and serving sounds','Cinematic food sound design','Narration-led with subtle stall ambience']],
       ['interaction','Human interaction',['Server taps ladle, portions and hands over plate','Cook opens handi and serves customer','Customer watches the serving ritual','Family receives banana-leaf service','First-bite customer reaction']]
     ],
+    'Food:Pizza':[
+      ['dough','Dough / crust',['Neapolitan thin crust','Classic hand-tossed','Roman crisp crust','Deep-dish crust','Sourdough crust','Stuffed crust']],
+      ['sauce','Sauce',['San Marzano tomato','Classic tomato','White garlic','Pesto','Spicy tomato']],
+      ['cheese','Cheese',['Fresh mozzarella','Low-moisture mozzarella','Burrata finish','Four-cheese blend','Vegan cheese']],
+      ['topping','Hero topping',['Basil and olive oil','Pepperoni','Mushroom','Grilled vegetables','Chicken','Seafood']],
+      ['oven','Oven',['Wood-fired oven','Stone deck oven','Electric pizza oven','Home oven']],
+      ['action','Hero action',['Dough stretching','Sauce and topping assembly','Oven launch and flame','Slicing and cheese pull','Boxing for delivery']],
+      ['service','Service moment',['Table service','Counter pickup','Delivery handoff','Friends sharing','Chef presentation']]
+    ],
+    'Food:Desserts':[
+      ['dessert','Dessert family',['Cake','Pastry','Indian sweet','Frozen dessert','Pudding','Layered dessert']],
+      ['texture','Texture',['Molten centre','Soft and spongy','Crisp and flaky','Creamy','Chewy','Frozen and smooth']],
+      ['filling','Filling / flavour',['Chocolate','Vanilla','Fruit','Caramel','Pistachio','Rose and saffron']],
+      ['finish','Decoration',['Chocolate glaze','Fresh fruit','Piped cream','Nuts','Sugar dusting','Minimal premium finish']],
+      ['action','Hero action',['Cut and reveal centre','Spoon scoop','Glaze pour','Final decoration','Serve warm','Box and ribbon']],
+      ['service','Serving style',['Dessert plate','Glass cup','Celebration table','Gift box','Cafe counter']]
+    ],
+    'Food:Beverages':[
+      ['base','Drink base',['Coffee','Tea','Fresh fruit','Milk','Sparkling water','Herbal infusion']],
+      ['temperature','Temperature',['Hot','Iced','Chilled','Frozen blended']],
+      ['flavour','Flavour',['Classic','Citrus','Berry','Tropical','Chocolate','Spiced']],
+      ['garnish','Garnish',['No garnish','Citrus wheel','Fresh mint','Fruit pieces','Foam art','Spice dust']],
+      ['vessel','Cup / glass',['Ceramic cup','Clear glass','Tall takeaway cup','Bottle','Cocktail glass']],
+      ['action','Hero action',['Espresso extraction','Pour over ice','Shake and strain','Blend and pour','Garnish close-up','First sip reaction']]
+    ],
+    'Real Estate:Property for sale':[
+      ['property','Property class',['Apartment','Villa','Independent house','Plot / land','Commercial property']],
+      ['configuration','Configuration',['Studio','1 BHK','2 BHK','3 BHK','4+ BHK','Custom']],
+      ['status','Status',['Ready to move','Under construction','Newly renovated','Resale']],
+      ['amenity','Hero feature',['Balcony view','Premium interiors','Garden','Pool','Parking','Prime location']],
+      ['interaction','Viewing journey',['Agent-led walkthrough','Couple viewing','Family viewing','Investor inspection','Property-only tour']]
+    ],
+    'Real Estate:Property for rent':[
+      ['property','Rental type',['Apartment','Villa','Room','Office','Retail space']],
+      ['term','Rental term',['Long-term','Short-term','Corporate lease','Student rental','Holiday rental']],
+      ['furnishing','Furnishing',['Unfurnished','Semi-furnished','Fully furnished','Serviced']],
+      ['practical','Practical highlight',['Commute','Storage','Utilities','Security','Parking','Move-in ready']],
+      ['interaction','Rental journey',['Agent and tenant tour','Tenant move-in','Roommate viewing','Business tenant tour','Property-only tour']]
+    ],
+    'Real Estate:New development':[
+      ['development','Development type',['Residential tower','Gated community','Villa project','Mixed-use development','Holiday homes']],
+      ['stage','Launch stage',['Pre-launch','New launch','Under construction','Near completion','Ready to move']],
+      ['proof','Proof to show',['Master plan','Model apartment','Construction progress','Amenities','Neighbourhood access']],
+      ['buyer','Buyer',['Home buyer','Family','Investor','Luxury buyer','Overseas buyer']],
+      ['interaction','Launch presentation',['Sales-gallery tour','Model-home walkthrough','Developer presentation','Family discovery','Architectural showcase']]
+    ],
+    'Dental:Invisible braces':[
+      ['patient','Patient',['Adult professional','Young adult','Teenager with parent']],['stage','Stage',['Consultation','Digital scan','Aligner fitting','Progress check','Final result']],['benefit','Benefit',['Nearly invisible','Removable convenience','Comfort','Confidence']],['interaction','Clinical interaction',['Orthodontist consultation','Aligner demonstration','Adult patient fitting','Progress comparison']]
+    ],
+    'Dental:Dental implants':[
+      ['case','Implant case',['Single tooth','Multiple teeth','Full arch','Same-day assessment']],['stage','Stage',['Consultation','3D scan','Treatment explanation','Restoration fitting','Final smile']],['trust','Trust proof',['Implant specialist','Digital planning','Sterile clinic','Patient comfort']],['interaction','Clinical interaction',['Specialist explains model','Adult patient consultation','Restoration reveal']]
+    ],
+    'Dental:Smile care':[
+      ['service','Smile service',['Whitening','Veneers','Smile makeover','Polishing']],['concern','Concern',['Staining','Uneven smile','Shape','Brightness']],['stage','Stage',['Consultation','Shade check','Treatment','Before and after']],['interaction','Clinical interaction',['Dentist and adult patient','Mirror reveal','Treatment demonstration']]
+    ],
+    'Dental:Preventive care':[
+      ['service','Preventive service',['Check-up','Cleaning','Gum care','Children’s check-up']],['focus','Care focus',['Early detection','Plaque removal','Gum health','Oral-hygiene education']],['trust','Trust cue',['Gentle care','Family-friendly clinic','Qualified dentist','Modern diagnostics']],['interaction','Clinical interaction',['Dentist explains findings','Adult check-up','Parent and child visit','Brushing demonstration']]
+    ],
     'Fashion:Sarees':[
       ['fabric','Fabric / weave',['Kanjivaram silk','Banarasi silk','Cotton','Linen','Chiffon','Georgette','Organza','Tussar','Chanderi','Paithani']],
       ['occasion','Occasion',['Bridal','Wedding guest','Festival','Party','Office','Everyday','Luxury gifting']],
@@ -30,6 +88,22 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['presentation','Presentation',['Adult model wearing — catalogue','Adult model wearing — natural movement','Adult model wearing — runway/editorial','Model and stylist interaction','Mannequin display','Premium flat lay','Packaging and unboxing','Outfit layering']],
       ['transparency','Transparency',['Opaque','Semi-sheer panels','Sheer layered fabric','Fully transparent garment']],
       ['coverage','Styling / coverage',['Opaque underwear beneath','Skin-tone coverage garment','Full bodysuit beneath','Layered over clothing','Strategic commercial coverage','Mannequin or product-only']]
+    ],
+    'Fashion:Apparel':[
+      ['garment','Garment category',['Dress','Kurta set','Lehenga','Shirt','T-shirt','Trousers','Denim','Activewear','Kidswear']],
+      ['material','Material',['Cotton','Silk','Linen','Denim','Knit','Technical fabric']],
+      ['fit','Fit',['Slim','Regular','Relaxed','Oversized','Tailored']],
+      ['detail','Hero detail',['Fabric movement','Construction','Embroidery','Print','Buttons and hardware','Comfort']],
+      ['presentation','Presentation',['Adult model catalogue','Adult model lifestyle','Adult model runway','Styling transformation','Outfit layering','Mannequin','Product-only 360°']],
+      ['transparency','Transparency',['Opaque','Semi-sheer panels','Sheer layered fabric','Fully transparent garment']],
+      ['coverage','Styling / coverage',['Standard garment coverage','Opaque underwear beneath','Skin-tone coverage garment','Bodysuit beneath','Layered over clothing','Mannequin or product-only']]
+    ],
+    'Fashion:Accessories':[
+      ['accessory','Accessory type',['Handbag','Jewellery','Watch','Footwear','Sunglasses','Scarf']],
+      ['material','Material / finish',['Leather','Metal','Gold tone','Silver tone','Fabric','Acetate','Mixed material']],
+      ['detail','Hero detail',['Craftsmanship','Clasp or closure','Stitching','Stone setting','Dial and mechanism','Sole and comfort']],
+      ['use','Use occasion',['Everyday','Office','Evening','Wedding','Travel','Sport']],
+      ['presentation','Presentation',['Adult model wearing','Hands-on demonstration','Styled complete look','Product-only 360°','Unboxing','Macro craftsmanship']]
     ],
     'Fashion:*':[
       ['material','Material',['Cotton','Silk','Linen','Denim','Leather','Knit','Technical fabric']],
@@ -73,6 +147,15 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['result','Visual result',['Hydrated glow','Smooth finish','Even-looking tone','Defined look','Healthy shine']],
       ['interaction','Human interaction',['Adult model applies product','Beauty expert demonstrates','Adult customer routine','Before-and-after reaction','Hands-only texture demonstration']]
     ],
+    'Beauty:Skincare':[
+      ['concern','Skin concern',['Dryness','Acne care','Pigmentation','Ageing','Dullness','Sensitivity']],['ingredient','Hero ingredient',['Vitamin C','Hyaluronic acid','Niacinamide','Retinol','Aloe vera','Ceramides']],['texture','Texture',['Serum','Cream','Gel','Foam','Oil']],['routine','Routine step',['Cleanse','Treat','Moisturise','Protect']],['interaction','Application',['Adult model applies product','Dermatology expert demonstrates','Hands-only texture test','Morning routine','Night routine']]
+    ],
+    'Beauty:Cosmetics':[
+      ['product','Makeup product',['Lipstick','Foundation','Eye makeup','Blush','Bridal makeup']],['finish','Finish',['Matte','Dewy','Satin','Glossy','Natural']],['shade','Shade direction',['Nude','Bold red','Pink','Warm neutral','Deep tone','Custom']],['proof','Proof moment',['One-swipe pigment','Blendability','Wear test','Before and after','Complete look']],['interaction','Application',['Adult model self-application','Makeup artist applies','Mirror reveal','Hands-only swatch']]
+    ],
+    'Beauty:Salon':[
+      ['service','Salon service',['Hair transformation','Facial','Nail art','Spa treatment']],['stage','Service stage',['Consultation','Preparation','Treatment','Styling','Final reveal']],['experience','Experience',['Luxury','Relaxing','Fast makeover','Bridal preparation','Wellness']],['proof','Result proof',['Before and after','Texture and shine','Client reaction','Technique close-up']],['interaction','People',['Stylist and adult client','Therapist and adult client','Nail artist demonstration','Client mirror reveal']]
+    ],
     'Automotive:*':[
       ['variant','Variant',['Entry variant','Mid variant','Top variant','Sport edition','Luxury edition','Electric']],
       ['feature','Hero feature',['Exterior design','Premium cabin','Safety','Performance','Fuel efficiency','Infotainment','Charging']],
@@ -80,6 +163,12 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['environment','Driving environment',['City streets','Open highway','Coastal road','Mountain road','Showroom','Private driveway']],
       ['action','Conversion action',['Book test drive','Request price','Visit showroom','Pre-order now']],
       ['interaction','Human interaction',['Driver uses the vehicle','Family enters and travels','Salesperson gives walkthrough','Passenger experiences cabin','Vehicle-only showcase']]
+    ],
+    'Automotive:Vehicles':[
+      ['vehicle','Vehicle class',['SUV','Electric car','Luxury sedan','Motorcycle']],['variant','Variant',['Entry','Mid','Top','Sport','Luxury','Electric']],['feature','Hero feature',['Exterior','Cabin','Safety','Performance','Efficiency','Infotainment','Charging']],['environment','Environment',['City','Highway','Coastal road','Mountain road','Showroom']],['interaction','People',['Adult driver','Family journey','Salesperson walkthrough','Passenger cabin experience','Vehicle-only']]
+    ],
+    'Automotive:Auto services':[
+      ['service','Service',['Detailing','Ceramic coating','Maintenance','Tyre care']],['vehicle','Vehicle',['Car','SUV','Luxury car','Motorcycle','Commercial vehicle']],['stage','Process stage',['Inspection','Cleaning','Repair or application','Quality check','Handover']],['proof','Proof',['Before and after','Water beading','Diagnostic result','Finish close-up','Safety check']],['interaction','People',['Technician at work','Advisor explains service','Customer handover','Hands-only process']]
     ],
     'Technology:*':[
       ['user','User type',['Professional','Creator','Student','Business owner','Developer','Family']],
@@ -89,6 +178,12 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['action','Conversion action',['Start free trial','Buy now','Book demo','Download today','Join waitlist']],
       ['interaction','Human interaction',['Creator uses the product','Professional completes a task','Presenter demonstrates feature','Customer reaction and result','Hands-only demonstration']]
     ],
+    'Technology:Software':[
+      ['software','Software type',['Mobile app','SaaS platform','AI assistant','Business software']],['user','User',['Creator','Professional','Student','Business team','Developer']],['workflow','Workflow',['Onboarding','Create task','Automate work','Collaborate','Analyse result']],['proof','Proof',['Time saved','Before and after','Completed workflow','Dashboard insight','Team result']],['action','Action',['Start free trial','Book demo','Download','Join waitlist']]
+    ],
+    'Technology:Devices':[
+      ['device','Device',['Smartphone','Laptop','Wearable','Smart-home device']],['feature','Hero feature',['Camera','Performance','Battery','Display','Design','Connectivity']],['setting','Use setting',['Work desk','Creator studio','Travel','Home','Outdoor']],['proof','Proof',['Speed demonstration','Camera result','Battery day','Device handoff','Connected-home action']],['interaction','People',['Adult professional uses device','Creator demonstration','Family use','Hands-only product demo','Product-only 360°']]
+    ],
     'Travel:*':[
       ['traveller','Traveller',['Couple','Family','Solo traveller','Friends','Luxury traveller','Business traveller']],
       ['experience','Hero experience',['Beach','Culture','Food','Adventure','Wellness','Nightlife','Nature']],
@@ -96,6 +191,12 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['season','Season',['Summer','Winter','Monsoon','Spring','Festival season','Year-round']],
       ['action','Booking action',['Book now','Plan your trip','Reserve your stay','Enquire today']],
       ['interaction','Human interaction',['Traveller arrival and discovery','Couple experiences destination','Family holiday journey','Host welcomes guest','Destination-only film']]
+    ],
+    'Travel:Destinations':[
+      ['destination','Destination type',['Beach','City','Mountain','Cultural','Nature','Adventure']],['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],['journey','Journey stage',['Arrival','Discovery','Signature activity','Food and culture','Sunset finale']],['season','Season',['Summer','Winter','Monsoon','Spring','Festival']],['interaction','People',['Traveller arrival','Couple experience','Family journey','Local guide interaction','Destination-only']]
+    ],
+    'Travel:Hospitality':[
+      ['property','Hospitality type',['Luxury hotel','Resort','Homestay','Restaurant experience']],['space','Hero space',['Room','Pool','Restaurant','Spa','Lobby','View']],['service','Service moment',['Welcome','Check-in','Room reveal','Dining service','Turndown','Guest assistance']],['guest','Guest',['Couple','Family','Solo adult','Business traveller','Luxury guest']],['interaction','People',['Host welcomes guest','Staff service','Guest room discovery','Dining interaction','Property-only tour']]
     ],
     '*:*':[
       ['benefit','Primary benefit',['Convenience','Quality','Performance','Comfort','Value','Premium experience']],
