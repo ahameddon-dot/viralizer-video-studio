@@ -132,6 +132,28 @@ def _provider_safe_product_prompt(prompt: str) -> str:
     return safe
 
 
+def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
+    """Build a short visual-only retry after an upstream sensitive-text rejection."""
+    product = str(content.get("product") or "").strip().casefold()
+    aspect = {"9:16": "vertical", "16:9": "landscape", "1:1": "square"}.get(aspect_ratio, "vertical")
+    if product == "biryani":
+        return (
+            f"Create a {duration}-second {aspect} commercial food video. Show one consistent serving of "
+            "freshly cooked aromatic biryani at a clean street-food stall. Shot one: a food server rhythmically "
+            "taps a large rice ladle on a steaming metal cooking vessel and opens the lid. Shot two: realistic hands "
+            "fold the rice from the bottom, lift a generous portion, place it on a plate or banana leaf, and add one "
+            "boiled egg. Shot three: add onion yogurt sauce and a savoury side, hand the plate to a customer, then "
+            "finish on an appetising close-up with visible steam and separate rice grains. Natural food physics, "
+            "accurate hands, hygienic service, warm documentary lighting, no text, no logos, no unrelated food."
+        )
+    subtype = _provider_safe_product_prompt(str(content.get("product_subtype") or content.get("topic") or "product"))
+    return (
+        f"Create a {duration}-second {aspect} commercial for one consistent {subtype}. Show a clear product reveal, "
+        "one realistic use by a customer, and a polished final hero view. Natural movement, accurate hands, premium "
+        "commercial lighting, no text, no logos, no unrelated objects."
+    )
+
+
 def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
     """Compile a literal product commercial without editorial-topic reinterpretation."""
     clean = lambda value, limit=120: " ".join(str(value or "").split()[:limit])
@@ -3028,6 +3050,34 @@ async def generate_video(request: GenerateRequest):
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
         return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video"}
     except VideoProviderError as exc:
+        if (
+            selected_provider == "pixverse"
+            and content.get("product_video")
+            and "sensitive information" in str(exc).casefold()
+        ):
+            retry_prompt = _provider_safe_product_retry_prompt(content, request.duration, request.aspect_ratio)
+            try:
+                job_id = await generate_with_provider(
+                    selected_provider,
+                    retry_prompt,
+                    content=content,
+                    duration=request.duration,
+                    quality=request.quality,
+                    narration=request.narration or build_narration_script(content, request.duration),
+                    avatar_id=request.avatar_id,
+                    voice_id=request.voice_id,
+                    background=request.background,
+                    aspect_ratio=request.aspect_ratio,
+                    visual_mode=request.visual_mode,
+                    captions=request.captions,
+                    style_id=request.heygen_style_id,
+                    brand_kit_id=request.brand_kit_id,
+                )
+                production.update(job_id=job_id, provider=selected_provider, status="processing", prompt=retry_prompt)
+                record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+                return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": retry_prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video with provider-safe direction"}
+            except VideoProviderError as retry_exc:
+                raise HTTPException(502, str(retry_exc)) from retry_exc
         raise HTTPException(502, str(exc)) from exc
 
 

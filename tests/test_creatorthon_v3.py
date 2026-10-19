@@ -106,6 +106,26 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Traditional Tamil wedding-service counter", catalog)
         self.assertNotIn("Tamil Muslim wedding-style counter", catalog)
 
+        retry = app._provider_safe_product_retry_prompt({
+            "product": "Biryani",
+            "product_subtype": "Chettinad Biryani",
+            "target_audience": "Students",
+            "product_attributes": {
+                "protein": "Beef where locally appropriate",
+                "stall": "Tamil Muslim wedding-style counter",
+            },
+        }, 15, "9:16")
+        self.assertIn("street-food stall", retry)
+        self.assertIn("rhythmically taps a large rice ladle", retry)
+        self.assertIn("boiled egg", retry)
+        self.assertNotIn("Students", retry)
+        self.assertNotIn("Muslim", retry)
+        self.assertNotIn("Beef", retry)
+
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn('"sensitive information" in str(exc).casefold()', app_source)
+        self.assertIn("Generating video with provider-safe direction", app_source)
+
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
             "type": "http", "method": "GET", "scheme": "https", "path": "/", "query_string": b"",
