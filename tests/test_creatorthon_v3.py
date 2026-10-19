@@ -41,6 +41,7 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Premium flat lay", catalog)
         self.assertIn("product_attributes:state.attributes", page)
         self.assertIn("Scene plan", page)
+        self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
     def test_product_prompt_locks_dental_aligner_identity(self):
         prompt = app._creatorthon_product_prompt({
