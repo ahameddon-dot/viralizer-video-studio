@@ -6,8 +6,11 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['vessel','Cooking vessel',['Large aluminium handi','Traditional copper deg','Heavy steel biryani pot','Clay pot']],
       ['service_action','Signature serving action',['Ladle tapping on the vessel','Handi opening with steam','Rice folding from the bottom','Select and place meat piece','Place boiled egg on top','Fast plate assembly','Customer handoff across counter']],
       ['surface','Serving surface',['Banana leaf','Round steel plate','Paper-lined plate','Parcel box','Family bucket']],
+      ['portion','Portion size',['Single regular serving','Large generous serving','Family sharing portion','Catering service portion']],
       ['sides','Side dish',['Onion raita','Brinjal gravy','Mirchi ka salan','Pickle and onion','Boiled egg','Raita and salan combo']],
       ['atmosphere','Atmosphere',['Busy lunch rush','Evening street lights','Smoky roadside service','Clean heritage shop','Festival crowd','Late-night food street']],
+      ['pace','Service pace',['Authentic rapid street service','Rhythmic real-time serving','Cinematic slow-motion highlights','Fast social-video cuts']],
+      ['sound','Sound direction',['Ladle clang, steam and crowd ambience','Handi lid, rice scoop and plate sounds','Busy stall voices and serving sounds','Cinematic food sound design','Narration-led with subtle stall ambience']],
       ['interaction','Human interaction',['Server taps ladle, portions and hands over plate','Cook opens handi and serves customer','Customer watches the serving ritual','Family receives banana-leaf service','First-bite customer reaction']]
     ],
     'Fashion:Sarees':[

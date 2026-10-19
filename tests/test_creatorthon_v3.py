@@ -51,7 +51,13 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("add '+side+', hand the complete serving across the counter", page)
         self.assertIn("product_attributes:state.attributes", page)
         self.assertIn("human_interaction:humanDirection()", page)
-        self.assertIn("Scene plan", page)
+        self.assertIn("Three-shot storyboard", page)
+        self.assertIn("function biryaniAuthenticity()", page)
+        self.assertIn("Kolkata Biryani':'fragrant long-grain rice with the signature whole potato, boiled egg", page)
+        self.assertIn("Thalassery Biryani':'short-grain kaima or jeerakasala rice", page)
+        self.assertIn("Ladle clang, steam and crowd ambience", catalog)
+        self.assertIn("Authentic rapid street service", catalog)
+        self.assertIn("Family sharing portion", catalog)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
     def test_product_prompt_locks_dental_aligner_identity(self):
