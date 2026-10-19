@@ -21,6 +21,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Dental:{icon:'🦷'", page)
         self.assertIn("Chettinad Biryani", page)
         self.assertIn("Kitchen to table", page)
+        self.assertIn("'Real Estate':[['🏡','Property walkthrough'", page)
+        self.assertIn("Dental:[['✨','Smile transformation'", page)
+        self.assertIn("const activeStyles=()=>styleCatalog[state.industry]||fallbackStyles", page)
         self.assertIn("/api/creatorthon/prepare-prompt", page)
         self.assertIn("/api/creatorthon/concept/generate", page)
         self.assertIn("prompt:''", page)
@@ -34,6 +37,7 @@ class CreatorthonV3Tests(unittest.TestCase):
             "product": "Invisible braces",
             "product_subtype": "Clear Aligners",
             "creative_style": "Product showcase",
+            "style_direction": "Clinical product detail and a confident patient outcome",
             "product_visual_spec": {
                 "subject": "transparent medical dental aligners fitted over natural teeth",
                 "environment": "a bright modern dental clinic",
@@ -45,6 +49,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("transparent medical dental aligners", prompt)
         self.assertIn("ABSOLUTELY DO NOT SHOW: gaming controllers", prompt)
         self.assertIn("never be reinterpreted as another object", prompt)
+        self.assertIn("CONVERSION ARC", prompt)
+        self.assertIn("premium paid social campaign", prompt)
 
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({

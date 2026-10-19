@@ -126,6 +126,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     subtype = clean(content.get("product_subtype") or product, 24)
     industry = clean(content.get("category"), 12)
     style = clean(content.get("creative_style"), 20) or "Product showcase"
+    style_direction = clean(content.get("style_direction"), 50)
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
@@ -142,8 +143,10 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         f"Create one coherent {duration}-second {aspect} {style.lower()} commercial for {subtype}, a {industry} product.",
         f"PRODUCT IDENTITY LOCK: {subject}. This exact product is the sole hero subject in every shot and must never be reinterpreted as another object.",
         f"SETTING: {environment}.",
+        f"ADVERTISING ART DIRECTION: {style_direction or style}. Make every frame feel intentionally art-directed for a premium paid social campaign, never like generic stock footage.",
+        "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
-        f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, restrained premium camera movement, accurate human interaction, and commercially polished lighting.",
+        f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",
         ("Campaign context for narration only, not generated typography: " + "; ".join(value for value in campaign if value) + ".") if any(campaign) else "",
         ("ABSOLUTELY DO NOT SHOW: " + ", ".join(avoid) + ".") if avoid else "",
         "No unrelated products, metaphorical substitutions, electronics unless explicitly requested, readable text, labels, captions, UI, fake logos, morphing, duplicated objects, deformed hands, or anatomical distortion.",
@@ -154,8 +157,22 @@ def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> st
     clean = lambda value, limit=30: " ".join(str(value or "").split()[:limit])
     product = clean(content.get("product_subtype") or content.get("product") or content.get("topic"), 10)
     brand, offer, cta = clean(content.get("brand"), 8), clean(content.get("offer"), 10), clean(content.get("cta"), 8)
-    words = " ".join(filter(None, [brand, product, offer, cta or "Discover it today."])).split()
-    return " ".join(words[:max(8, round(duration * 2.0))]).strip() + ("" if not words else ".")
+    industry = clean(content.get("category"), 8).casefold()
+    if industry == "food":
+        copy = f"Crave the authentic taste of {product}. {offer}. {cta or 'Order yours today.'}"
+    elif industry == "real estate":
+        copy = f"Step into {product}, designed for the way you want to live. {offer}. {cta or 'Enquire today.'}"
+    elif industry == "dental":
+        copy = f"Discover a more confident smile with {product}. Professional care, planned for you. {cta or 'Book a consultation.'}"
+    elif industry == "travel":
+        copy = f"Your next unforgettable experience starts with {product}. {offer}. {cta or 'Book your journey.'}"
+    else:
+        copy = f"Meet {product}, created to make every moment better. {offer}. {cta or 'Discover it today.'}"
+    if brand:
+        copy = f"{brand} presents. {copy}"
+    words = " ".join(copy.replace(" .", ".").split()).split()
+    text = " ".join(words[:max(8, round(duration * 2.0))]).strip(" ,;:-")
+    return text + ("" if not text or text[-1] in ".!?" else ".")
 
 
 def apply_selected_alternate_direction(content: dict[str, Any], user_direction: str = "") -> dict[str, Any]:
