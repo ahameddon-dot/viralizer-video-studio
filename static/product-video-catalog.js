@@ -1,5 +1,15 @@
 window.PRODUCT_VIDEO_OPTIONS={
   attributes:{
+    'Food:Biryani':[
+      ['protein','Biryani type',['Chicken','Mutton','Beef where locally appropriate','Fish','Prawn','Egg','Vegetable','Chef special']],
+      ['stall','Street-stall style',['Chennai roadside stall','Hyderabad street stall','Kerala thattukada','Kolkata biryani shop','Lucknow heritage shop','Tamil Muslim wedding-style counter']],
+      ['vessel','Cooking vessel',['Large aluminium handi','Traditional copper deg','Heavy steel biryani pot','Clay pot']],
+      ['service_action','Signature serving action',['Ladle tapping on the vessel','Handi opening with steam','Rice folding from the bottom','Select and place meat piece','Place boiled egg on top','Fast plate assembly','Customer handoff across counter']],
+      ['surface','Serving surface',['Banana leaf','Round steel plate','Paper-lined plate','Parcel box','Family bucket']],
+      ['sides','Side dish',['Onion raita','Brinjal gravy','Mirchi ka salan','Pickle and onion','Boiled egg','Raita and salan combo']],
+      ['atmosphere','Atmosphere',['Busy lunch rush','Evening street lights','Smoky roadside service','Clean heritage shop','Festival crowd','Late-night food street']],
+      ['interaction','Human interaction',['Server taps ladle, portions and hands over plate','Cook opens handi and serves customer','Customer watches the serving ritual','Family receives banana-leaf service','First-bite customer reaction']]
+    ],
     'Fashion:Sarees':[
       ['fabric','Fabric / weave',['Kanjivaram silk','Banarasi silk','Cotton','Linen','Chiffon','Georgette','Organza','Tussar','Chanderi','Paithani']],
       ['occasion','Occasion',['Bridal','Wedding guest','Festival','Party','Office','Everyday','Luxury gifting']],
