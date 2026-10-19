@@ -119,6 +119,45 @@ async def prepare_article_intelligence_safely(
         return fallback
 
 
+def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
+    """Compile a literal product commercial without editorial-topic reinterpretation."""
+    clean = lambda value, limit=120: " ".join(str(value or "").split()[:limit])
+    product = clean(content.get("product") or content.get("topic"), 24)
+    subtype = clean(content.get("product_subtype") or product, 24)
+    industry = clean(content.get("category"), 12)
+    style = clean(content.get("creative_style"), 20) or "Product showcase"
+    spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
+    subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
+    environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
+    beats = [clean(value, 60) for value in spec.get("beats", []) if clean(value, 60)][:3]
+    if not beats:
+        beats = [f"establish {subject}", f"show one believable use of {subject}", f"finish on a clean hero view of {subject}"]
+    avoid = [clean(value, 20) for value in spec.get("avoid", []) if clean(value, 20)]
+    campaign = [
+        clean(content.get("brand"), 12), clean(content.get("offer"), 16),
+        clean(content.get("location"), 12), clean(content.get("cta"), 16),
+    ]
+    aspect = {"9:16": "vertical 9:16", "16:9": "landscape 16:9", "1:1": "square 1:1"}.get(aspect_ratio, "vertical 9:16")
+    return " ".join([
+        f"Create one coherent {duration}-second {aspect} {style.lower()} commercial for {subtype}, a {industry} product.",
+        f"PRODUCT IDENTITY LOCK: {subject}. This exact product is the sole hero subject in every shot and must never be reinterpreted as another object.",
+        f"SETTING: {environment}.",
+        "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
+        f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, restrained premium camera movement, accurate human interaction, and commercially polished lighting.",
+        ("Campaign context for narration only, not generated typography: " + "; ".join(value for value in campaign if value) + ".") if any(campaign) else "",
+        ("ABSOLUTELY DO NOT SHOW: " + ", ".join(avoid) + ".") if avoid else "",
+        "No unrelated products, metaphorical substitutions, electronics unless explicitly requested, readable text, labels, captions, UI, fake logos, morphing, duplicated objects, deformed hands, or anatomical distortion.",
+    ]).strip()[:3500]
+
+
+def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> str:
+    clean = lambda value, limit=30: " ".join(str(value or "").split()[:limit])
+    product = clean(content.get("product_subtype") or content.get("product") or content.get("topic"), 10)
+    brand, offer, cta = clean(content.get("brand"), 8), clean(content.get("offer"), 10), clean(content.get("cta"), 8)
+    words = " ".join(filter(None, [brand, product, offer, cta or "Discover it today."])).split()
+    return " ".join(words[:max(8, round(duration * 2.0))]).strip() + ("" if not words else ".")
+
+
 def apply_selected_alternate_direction(content: dict[str, Any], user_direction: str = "") -> dict[str, Any]:
     """Turn a selected V3 alternate into an authoritative shot without changing story facts."""
     concept = " ".join(str(content.get("selected_alternate_concept") or "").split())[:80]
@@ -3017,10 +3056,18 @@ async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepa
     user = creatorthon_user(request)
     user_id = str(user.get("sub", ""))
     payload.content = _creatorthon_user_variation(user_id, payload.content)
-    prepared = await video_prompt(payload)
-    prepared["narration"] = _creatorthon_variation_narration(str(prepared.get("narration") or ""), payload.content)
-    if prepared.get("heygen_script"):
-        prepared["heygen_script"] = _creatorthon_variation_narration(str(prepared.get("heygen_script") or ""), payload.content)
+    if payload.content.get("product_video"):
+        prepared = {
+            "prompt": _creatorthon_product_prompt(payload.content, payload.duration, payload.aspect_ratio),
+            "narration": _creatorthon_product_narration(payload.content, payload.duration),
+            "content": payload.content,
+            "article_intelligence": {},
+        }
+    else:
+        prepared = await video_prompt(payload)
+        prepared["narration"] = _creatorthon_variation_narration(str(prepared.get("narration") or ""), payload.content)
+        if prepared.get("heygen_script"):
+            prepared["heygen_script"] = _creatorthon_variation_narration(str(prepared.get("heygen_script") or ""), payload.content)
     title = str(payload.content.get("topic") or payload.content.get("title") or "Selected topic").strip()
     angle = str(payload.content.get("variation_label") or payload.content.get("selected_alternate_concept") or "").strip()
     concept = str(payload.prompt or (f"{title} · {angle}" if angle else title)).strip()

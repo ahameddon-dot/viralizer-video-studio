@@ -24,6 +24,27 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("/api/creatorthon/prepare-prompt", page)
         self.assertIn("/api/creatorthon/concept/generate", page)
         self.assertIn("prompt:''", page)
+        self.assertIn("gaming controllers", page)
+        self.assertIn("product_visual_spec:spec", page)
+
+    def test_product_prompt_locks_dental_aligner_identity(self):
+        prompt = app._creatorthon_product_prompt({
+            "topic": "Clear Aligners",
+            "category": "Dental",
+            "product": "Invisible braces",
+            "product_subtype": "Clear Aligners",
+            "creative_style": "Product showcase",
+            "product_visual_spec": {
+                "subject": "transparent medical dental aligners fitted over natural teeth",
+                "environment": "a bright modern dental clinic",
+                "beats": ["orthodontist holds aligners beside a dental model", "patient fits aligner over natural teeth", "finish on a natural smile"],
+                "avoid": ["gaming controllers", "electronics", "futuristic gadgets"],
+            },
+        }, 10, "9:16")
+        self.assertIn("PRODUCT IDENTITY LOCK", prompt)
+        self.assertIn("transparent medical dental aligners", prompt)
+        self.assertIn("ABSOLUTELY DO NOT SHOW: gaming controllers", prompt)
+        self.assertIn("never be reinterpreted as another object", prompt)
 
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
