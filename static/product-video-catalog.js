@@ -1,8 +1,8 @@
 window.PRODUCT_VIDEO_OPTIONS={
   attributes:{
     'Food:Biryani':[
-      ['protein','Biryani type',['Chicken','Mutton','Beef where locally appropriate','Fish','Prawn','Egg','Vegetable','Chef special']],
-      ['stall','Street-stall style',['Chennai roadside stall','Hyderabad street stall','Kerala thattukada','Kolkata biryani shop','Lucknow heritage shop','Tamil Muslim wedding-style counter']],
+      ['protein','Biryani type',['Chicken','Mutton','Regional meat biryani','Fish','Prawn','Egg','Vegetable','Chef special']],
+      ['stall','Street-stall style',['Chennai roadside stall','Hyderabad street stall','Kerala thattukada','Kolkata biryani shop','Lucknow heritage shop','Traditional Tamil wedding-service counter']],
       ['vessel','Cooking vessel',['Large aluminium handi','Traditional copper deg','Heavy steel biryani pot','Clay pot']],
       ['service_action','Signature serving action',['Ladle tapping on the vessel','Handi opening with steam','Rice folding from the bottom','Select and place meat piece','Place boiled egg on top','Fast plate assembly','Customer handoff across counter']],
       ['surface','Serving surface',['Banana leaf','Round steel plate','Paper-lined plate','Parcel box','Family bucket']],

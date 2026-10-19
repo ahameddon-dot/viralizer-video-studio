@@ -93,6 +93,19 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("adult patient", prompt)
         self.assertIn("Never expose nipples or genitals", prompt)
 
+    def test_product_prompt_removes_identity_sensitive_provider_triggers(self):
+        prompt = app._provider_safe_product_prompt(
+            "Beef where locally appropriate at a Tamil Muslim wedding-style counter"
+        )
+        self.assertEqual(prompt, "regional meat biryani at a traditional Tamil wedding-service counter")
+        self.assertNotIn("Muslim", prompt)
+        self.assertNotIn("Beef", prompt)
+
+        catalog = (ROOT / "static" / "product-video-catalog.js").read_text(encoding="utf-8")
+        self.assertIn("Regional meat biryani", catalog)
+        self.assertIn("Traditional Tamil wedding-service counter", catalog)
+        self.assertNotIn("Tamil Muslim wedding-style counter", catalog)
+
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
             "type": "http", "method": "GET", "scheme": "https", "path": "/", "query_string": b"",

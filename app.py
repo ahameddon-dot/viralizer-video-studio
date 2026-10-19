@@ -119,6 +119,19 @@ async def prepare_article_intelligence_safely(
         return fallback
 
 
+def _provider_safe_product_prompt(prompt: str) -> str:
+    """Keep cultural visuals while removing identity-sensitive provider trigger wording."""
+    safe = str(prompt or "")
+    replacements = {
+        r"Tamil Muslim wedding(?:-style)?": "traditional Tamil wedding-service",
+        r"Muslim wedding(?:-style)?": "traditional wedding-service",
+        r"Beef where locally appropriate": "regional meat biryani",
+    }
+    for pattern, replacement in replacements.items():
+        safe = re.sub(pattern, replacement, safe, flags=re.IGNORECASE)
+    return safe
+
+
 def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
     """Compile a literal product commercial without editorial-topic reinterpretation."""
     clean = lambda value, limit=120: " ".join(str(value or "").split()[:limit])
@@ -146,7 +159,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         clean(content.get("location"), 12), clean(content.get("cta"), 16),
     ]
     aspect = {"9:16": "vertical 9:16", "16:9": "landscape 16:9", "1:1": "square 1:1"}.get(aspect_ratio, "vertical 9:16")
-    return " ".join([
+    prompt = " ".join([
         f"Create one coherent {duration}-second {aspect} {style.lower()} commercial for {subtype}, a {industry} product.",
         f"PRODUCT IDENTITY LOCK: {subject}. This exact product is the sole hero subject in every shot and must never be reinterpreted as another object.",
         ("MANDATORY PRODUCT ATTRIBUTES: " + "; ".join(attribute_locks) + ". Preserve every attribute without substitution in all shots.") if attribute_locks else "",
@@ -162,6 +175,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         ("ABSOLUTELY DO NOT SHOW: " + ", ".join(avoid) + ".") if avoid else "",
         "No unrelated products, metaphorical substitutions, electronics unless explicitly requested, readable text, labels, captions, UI, fake logos, morphing, duplicated objects, deformed hands, or anatomical distortion.",
     ]).strip()[:3500]
+    return _provider_safe_product_prompt(prompt)
 
 
 def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> str:
@@ -2975,6 +2989,9 @@ async def generate_video(request: GenerateRequest):
         )
     production = prepare_production(content, request.duration, request.prompt or "", quality_mode=effective_quality_mode, aspect_ratio=request.aspect_ratio, quality=request.quality, generation_type="text_to_video")
     prompt = production["prompt"]
+    if content.get("product_video"):
+        prompt = _provider_safe_product_prompt(prompt)
+        production["prompt"] = prompt
     if not prompt:
         raise HTTPException(422, "The selected content did not produce a usable video direction.")
     if selected_provider == "hybrid":
