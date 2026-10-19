@@ -133,6 +133,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     audience = clean(content.get("target_audience"), 16)
     mood = clean(content.get("visual_mood"), 12)
     platform = clean(content.get("target_platform"), 12)
+    human_interaction = clean(content.get("human_interaction"), 80)
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
@@ -152,6 +153,8 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         f"SETTING: {environment}.",
         f"ADVERTISING ART DIRECTION: {style_direction or style}. Make every frame feel intentionally art-directed for a premium paid social campaign, never like generic stock footage.",
         f"CAMPAIGN: objective {goal or 'conversion'}; target audience {audience or 'relevant customers'}; visual mood {mood or 'premium'}; delivery {platform or aspect}.",
+        f"HUMAN PRESENTATION: {human_interaction}" if human_interaction else "Show believable, natural interaction by the intended adult customer whenever people improve the product demonstration.",
+        "For fashion, swimwear, lingerie, innerwear, sheer or transparent garments: use clearly adult professional models only, preserve the garment's real material and transparency, and use selected opaque undergarments, a coverage garment, bodysuit, layering, strategic commercial coverage, or mannequin presentation. Never expose nipples or genitals; never use erotic posing, fetish framing, voyeuristic angles, or an ambiguous-age model.",
         "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
         f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",

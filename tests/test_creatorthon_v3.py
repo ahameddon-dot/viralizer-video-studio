@@ -39,7 +39,12 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("'Fashion:Innerwear'", catalog)
         self.assertIn("Kanjivaram silk", catalog)
         self.assertIn("Premium flat lay", catalog)
+        self.assertIn("Adult model wearing — catalogue", catalog)
+        self.assertIn("Fully transparent garment", catalog)
+        self.assertIn("Agent guides buyer walkthrough", catalog)
+        self.assertIn("Chef prepares and plates", catalog)
         self.assertIn("product_attributes:state.attributes", page)
+        self.assertIn("human_interaction:humanDirection()", page)
         self.assertIn("Scene plan", page)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
@@ -55,6 +60,7 @@ class CreatorthonV3Tests(unittest.TestCase):
             "target_audience": "Young adults",
             "visual_mood": "Clinical and trustworthy",
             "product_attributes": {"benefit": "Natural appearance", "stage": "Consultation"},
+            "human_interaction": "A dentist consults and treats a clearly adult patient.",
             "product_visual_spec": {
                 "subject": "transparent medical dental aligners fitted over natural teeth",
                 "environment": "a bright modern dental clinic",
@@ -71,6 +77,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("MANDATORY PRODUCT ATTRIBUTES", prompt)
         self.assertIn("benefit: Natural appearance", prompt)
         self.assertIn("objective Bookings", prompt)
+        self.assertIn("HUMAN PRESENTATION", prompt)
+        self.assertIn("adult patient", prompt)
+        self.assertIn("Never expose nipples or genitals", prompt)
 
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({
