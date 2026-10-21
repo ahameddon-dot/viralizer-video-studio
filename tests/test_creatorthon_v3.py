@@ -441,9 +441,18 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("cat-card loading", page)
         self.assertIn("@keyframes shimmer", page)
         self.assertIn("state.loadingCategories=new Set(state.categories)", page)
-        self.assertIn("show('home');let ready=0", page)
+        self.assertIn("show('home');let ready=state.categories.length-state.loadingCategories.size", page)
         self.assertIn("categories ready", page)
         self.assertIn("state.loadingCategories.delete(c)", page)
+
+    def test_category_topic_lists_require_ten_items_and_keep_relevant_subcategories(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        self.assertIn("cached.topics.length>=10", page)
+        self.assertIn("topics=(d.topics||[]).slice(0,10)", page)
+        self.assertNotIn("filter(t=>String(t.category||'').toLowerCase()===category.toLowerCase())", page)
+        self.assertIn('CREATORTHON_TOPICS_PER_CATEGORY", "10"', app_source)
+        self.assertIn("len(category_topics) < minimum_topics", app_source)
 
     def test_topic_selection_opens_one_proprietary_insight_panel_before_video_creation(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")

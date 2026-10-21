@@ -2010,6 +2010,7 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     cached_topics: list[dict[str, Any]] = []
     cached_keys: set[str] = set()
     all_categories_cached = True
+    minimum_topics = max(3, int(os.getenv("CREATORTHON_TOPICS_PER_CATEGORY", "10")))
     for interest in interests:
         category_topics = get_cached_category_topics(
             ROOT,
@@ -2017,9 +2018,8 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
             allow_stale=True,
             stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
         )
-        if not category_topics:
+        if len(category_topics) < minimum_topics:
             all_categories_cached = False
-            break
         for topic in category_topics:
             key = _topic_title_value(topic).casefold()
             if key and key not in cached_keys:
@@ -2034,13 +2034,20 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
         }
     queries: list[str] = []
     for interest in interests:
-        queries.extend(build_category_discovery_queries(interest, "", "", "Everything", "")[:2])
+        queries.extend(build_category_discovery_queries(interest, "", "", "Everything", "")[:4])
     try:
-        topics = await discover_category_topics(queries, 24)
+        topics = await discover_category_topics(queries, max(40, minimum_topics * 3))
     except httpx.HTTPError as exc:
         raise HTTPException(502, f"Could not discover worldwide topics: {exc}") from exc
-    topics = [item for item in annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything") if _english_topic(item)]
-    personalized = _personalize_topics_fast(topics, role, user_type, interests[0])
+    discovered = [item for item in annotate_topic_taxonomy(topics, interests, "Creatorthon", "Everything") if _english_topic(item)]
+    combined: list[dict[str, Any]] = []
+    combined_keys: set[str] = set()
+    for item in [*cached_topics, *discovered]:
+        key = _topic_title_value(item).casefold()
+        if key and key not in combined_keys:
+            combined_keys.add(key)
+            combined.append(item)
+    personalized = _personalize_topics_fast(combined, role, user_type, interests[0])
     return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
             "creator_role": role, "role_match_scale": 200}
 
