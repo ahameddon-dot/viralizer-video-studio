@@ -146,6 +146,12 @@ class CreatorthonV3Tests(unittest.TestCase):
             "candidate winner",
         )
         self.assertEqual([item["title"] for item in searched], ["Who will win the city election?"])
+        usc_event = app._kalshi_event_topic({
+            "title": "College Football: Teams to leave their Conference",
+            "category": "Sports",
+            "markets": [{"status": "active", "yes_sub_title": "USC", "title": "Will USC leave the Big Ten?", "last_price_dollars": "0.12"}],
+        })
+        self.assertEqual(app._search_prediction_market_topics([usc_event], "USC"), [usc_event])
         polymarket = app._polymarket_topic({
             "question": "Will an event happen?", "outcomes": '["Yes","No"]',
             "outcomePrices": '["0.72","0.28"]', "oneDayPriceChange": 0.03,

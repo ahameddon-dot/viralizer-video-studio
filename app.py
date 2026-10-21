@@ -2105,6 +2105,39 @@ def _search_prediction_market_topics(topics: list[dict[str, Any]], query: str) -
     return matches
 
 
+async def _search_kalshi_topics(query: str, *, result_limit: int = 30, page_limit: int = 20) -> list[dict[str, Any]]:
+    """Search later Kalshi cursor pages as well as nested outcome names."""
+    matches: list[dict[str, Any]] = []
+    cursor = ""
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic search"}) as client:
+        for _ in range(max(1, page_limit)):
+            params = {"limit": 200, "status": "open", "with_nested_markets": "true"}
+            if cursor:
+                params["cursor"] = cursor
+            response = None
+            for attempt in range(3):
+                try:
+                    response = await client.get("https://api.elections.kalshi.com/trade-api/v2/events", params=params)
+                    response.raise_for_status()
+                    break
+                except httpx.HTTPError:
+                    if attempt == 2:
+                        if matches:
+                            return matches[:result_limit]
+                        raise
+                    await asyncio.sleep(0.35 * (attempt + 1))
+            payload = response.json()
+            page_topics = [topic for item in payload.get("events", []) if (topic := _kalshi_event_topic(item))]
+            matches.extend(_search_prediction_market_topics(page_topics, query))
+            if len(matches) >= result_limit:
+                break
+            cursor = str(payload.get("cursor") or "")
+            if not cursor:
+                break
+    matches.sort(key=lambda item: (_prediction_number(item.get("volume")), abs(_prediction_number(item.get("movement_24h")))), reverse=True)
+    return matches[:result_limit]
+
+
 async def _prefetch_prediction_market_topics() -> None:
     """Warm both market feeds and persist MCP reports before presentation traffic."""
     await asyncio.sleep(max(0, int(os.getenv("PREDICTION_MARKET_PREFETCH_DELAY_SECONDS", "2"))))
@@ -2157,8 +2190,8 @@ async def creatorthon_prediction_markets(request: Request, source: str):
     if not query and cached and time.time() - cached[0] < 300:
         return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True}
     try:
-        topics = await _fetch_prediction_market_topics(source, limit=200 if query else 30)
-        if query:
+        topics = await (_search_kalshi_topics(query) if query and source == "kalshi" else _fetch_prediction_market_topics(source, limit=200 if query else 30))
+        if query and source != "kalshi":
             topics = _search_prediction_market_topics(topics, query)[:30]
     except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
         LOGGER.warning("Prediction market fetch failed source=%s error=%s", source, exc)
