@@ -103,6 +103,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Viralizer does not recommend buying, selling or placing a trade", page)
         self.assertIn("What Yes means:", page)
         self.assertIn("kalshi-outcomes", page)
+        self.assertIn('id="marketSearch"', page)
+        self.assertIn("?q='+encodeURIComponent(state.predictionQuery)", page)
 
     def test_prediction_market_payloads_are_normalized_for_v3_topics(self):
         kalshi = app._kalshi_market_topic({
@@ -139,6 +141,11 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertEqual(kalshi_event["movement_24h"], 4.0)
         self.assertIn("officially declared", kalshi_event["what_yes_means"])
         self.assertEqual(kalshi_event["settlement_sources"][0]["name"], "Election authority")
+        searched = app._search_prediction_market_topics(
+            [kalshi_event, {"title": "Will rainfall exceed average?", "outcomes": []}],
+            "candidate winner",
+        )
+        self.assertEqual([item["title"] for item in searched], ["Who will win the city election?"])
         polymarket = app._polymarket_topic({
             "question": "Will an event happen?", "outcomes": '["Yes","No"]',
             "outcomePrices": '["0.72","0.28"]', "oneDayPriceChange": 0.03,

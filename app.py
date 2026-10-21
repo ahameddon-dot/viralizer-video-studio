@@ -2075,7 +2075,7 @@ def _polymarket_topic(market: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-async def _fetch_prediction_market_topics(source: str) -> list[dict[str, Any]]:
+async def _fetch_prediction_market_topics(source: str, *, limit: int = 30) -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic reader"}) as client:
         if source == "kalshi":
             response = await client.get("https://api.elections.kalshi.com/trade-api/v2/events", params={"limit": 200, "status": "open", "with_nested_markets": "true"})
@@ -2088,7 +2088,21 @@ async def _fetch_prediction_market_topics(source: str) -> list[dict[str, Any]]:
             raw = response.json()
             topics = [topic for item in (raw if isinstance(raw, list) else []) if (topic := _polymarket_topic(item))]
     topics.sort(key=lambda item: (_prediction_number(item.get("volume")), abs(_prediction_number(item.get("movement_24h")))), reverse=True)
-    return topics[:30]
+    return topics[:max(1, min(200, limit))]
+
+
+def _search_prediction_market_topics(topics: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    terms = [term for term in re.findall(r"[\w'-]+", query.casefold()) if len(term) > 1]
+    if not terms:
+        return topics
+    matches = []
+    for topic in topics:
+        outcome_text = " ".join(str(item.get("label") or "") for item in topic.get("outcomes", []) if isinstance(item, dict))
+        haystack = " ".join(str(topic.get(key) or "") for key in ("title", "topic", "market_context", "market_category", "summary", "what_yes_means"))
+        haystack = f"{haystack} {outcome_text}".casefold()
+        if all(term in haystack for term in terms):
+            matches.append(topic)
+    return matches
 
 
 async def _prefetch_prediction_market_topics() -> None:
@@ -2136,20 +2150,24 @@ async def _prefetch_prediction_market_topics() -> None:
 async def creatorthon_prediction_markets(request: Request, source: str):
     creatorthon_user(request)
     source = source.strip().casefold()
+    query = " ".join(str(request.query_params.get("q") or "").split())[:120]
     if source not in {"kalshi", "polymarket"}:
         raise HTTPException(404, "Choose Kalshi or Polymarket.")
     cached = PREDICTION_MARKET_CACHE.get(source)
-    if cached and time.time() - cached[0] < 300:
+    if not query and cached and time.time() - cached[0] < 300:
         return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True}
     try:
-        topics = await _fetch_prediction_market_topics(source)
+        topics = await _fetch_prediction_market_topics(source, limit=200 if query else 30)
+        if query:
+            topics = _search_prediction_market_topics(topics, query)[:30]
     except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
         LOGGER.warning("Prediction market fetch failed source=%s error=%s", source, exc)
-        if cached:
+        if cached and not query:
             return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True, "stale": True}
         raise HTTPException(502, f"{source.title()} markets are temporarily unavailable.") from exc
-    PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
-    return {"source": source.title(), "topics": topics, "count": len(topics), "cached": False, "refresh_seconds": 300}
+    if not query:
+        PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
+    return {"source": source.title(), "topics": topics, "count": len(topics), "cached": False, "query": query, "refresh_seconds": 300}
 
 
 @app.post("/api/creatorthon/refine-objective")
