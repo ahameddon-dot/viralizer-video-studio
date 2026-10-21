@@ -90,6 +90,7 @@ CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
 CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+PREDICTION_COVERAGE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -848,6 +849,11 @@ class CreatorthonAdminAllowanceRequest(BaseModel):
 
 class CreatorthonInsightsRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=500)
+
+
+class CreatorthonPredictionCoverageRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=500)
+    context: str = Field(default="", max_length=500)
 
 
 class CreatorthonInsightQueueRequest(BaseModel):
@@ -2201,6 +2207,47 @@ async def creatorthon_prediction_markets(request: Request, source: str):
     if not query:
         PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
     return {"source": source.title(), "topics": topics, "count": len(topics), "cached": False, "query": query, "refresh_seconds": 300}
+
+
+@app.post("/api/creatorthon/prediction-coverage")
+async def creatorthon_prediction_coverage(request: Request, payload: CreatorthonPredictionCoverageRequest):
+    creatorthon_user(request)
+    topic = " ".join(payload.topic.split())
+    context = " ".join(payload.context.split())
+    cache_key = f"{topic.casefold()}|{context.casefold()}"
+    cached = PREDICTION_COVERAGE_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < 1800:
+        return {"topic": topic, "articles": cached[1], "cached": True}
+    query = " ".join(f"{topic} {context}".split()[:30])
+    try:
+        discovered = await discover_category_topics(query, 8)
+    except Exception as exc:
+        LOGGER.warning("Prediction coverage discovery failed topic=%r error=%s", topic, exc)
+        return {"topic": topic, "articles": [], "cached": False}
+    articles = []
+    seen_urls: set[str] = set()
+    for item in discovered:
+        urls = [str(value).strip() for value in item.get("source_urls", []) if str(value).startswith(("http://", "https://"))]
+        url = str(item.get("canonical_url") or item.get("discovery_url") or (urls[0] if urls else "")).strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        publisher = str(item.get("publisher_name") or item.get("publisher_domain") or "").strip()
+        if not publisher:
+            platforms = item.get("source_platforms") if isinstance(item.get("source_platforms"), list) else []
+            publisher = str(platforms[0] if platforms else "News coverage")
+        articles.append({
+            "title": _topic_title_value(item),
+            "url": url,
+            "publisher": publisher,
+            "published_at": str(item.get("published_at") or ""),
+            "summary": str(item.get("summary") or "")[:360],
+            "image": str(item.get("image") or ""),
+        })
+        if len(articles) >= 3:
+            break
+    PREDICTION_COVERAGE_CACHE[cache_key] = (time.time(), articles)
+    return {"topic": topic, "articles": articles, "cached": False}
 
 
 @app.post("/api/creatorthon/refine-objective")

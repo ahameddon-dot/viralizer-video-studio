@@ -105,6 +105,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("kalshi-outcomes", page)
         self.assertIn('id="marketSearch"', page)
         self.assertIn("?q='+encodeURIComponent(state.predictionQuery)", page)
+        self.assertIn("Coverage across the web", page)
+        self.assertIn("/api/creatorthon/prediction-coverage", page)
+        self.assertIn("selectCoverageArticle", page)
 
     def test_prediction_market_payloads_are_normalized_for_v3_topics(self):
         kalshi = app._kalshi_market_topic({

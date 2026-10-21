@@ -816,7 +816,9 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
                     image_url = html.unescape(image_match.group(1)) if image_match else ""
                     description = html.unescape(re.sub(r"<[^>]+>", " ", raw_description))
                     description = " ".join(description.split())
-                    found.append(record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1, description, image_url))
+                    entry = record(title, search_query, f"Google News {country}", item.findtext("link", ""), published, 1, description, image_url)
+                    entry["publisher_name"] = " ".join((item.findtext("source") or f"Google News {country}").split())
+                    found.append(entry)
                 return found
             except Exception:
                 return []
@@ -897,6 +899,7 @@ def record(
         "discovery_url": url,
         "canonical_url": publisher_url,
         "publisher_domain": (urlparse(publisher_url).hostname or "").removeprefix("www."),
+        "publisher_name": (urlparse(publisher_url).hostname or "").removeprefix("www."),
         "mentions": 1,
         "source_platforms": [source],
         "source_engagement": {source: engagement},
