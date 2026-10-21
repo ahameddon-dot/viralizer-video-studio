@@ -302,6 +302,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("window.addEventListener('popstate'", page)
         self.assertIn("sessionStorage.setItem('viralizerV3RouteState'", page)
         self.assertIn("async function restoreBrowserRoute", page)
+        self.assertIn("dashboardPromise=loadDashboard()", page)
+        self.assertIn("if(dashboardPromise)await dashboardPromise", page)
 
     def test_product_wizard_steps_are_refresh_safe(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
