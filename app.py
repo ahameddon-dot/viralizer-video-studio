@@ -2218,15 +2218,31 @@ async def creatorthon_prediction_coverage(request: Request, payload: Creatorthon
     cached = PREDICTION_COVERAGE_CACHE.get(cache_key)
     if cached and time.time() - cached[0] < 1800:
         return {"topic": topic, "articles": cached[1], "cached": True}
-    query = " ".join(f"{topic} {context}".split()[:30])
+    stopwords = {"will", "would", "could", "should", "the", "a", "an", "be", "been", "being", "is", "are", "was", "were", "when", "where", "what", "which", "who", "how", "any", "before", "after", "during", "by", "in", "on", "at", "to", "of", "for", "and", "or"}
+    topic_terms = {word for word in re.findall(r"[a-z0-9]+", topic.casefold()) if len(word) > 2 and word not in stopwords}
+    proper_phrases = re.findall(r"(?:[A-Z][\w'-]+(?:\s+|$)){2,6}", topic)
+    core_phrase = max((" ".join(value.split()) for value in proper_phrases), key=len, default="")
+    queries = [topic, f"latest news {topic}"]
+    if core_phrase and core_phrase.casefold() != topic.casefold():
+        queries.insert(0, f'"{core_phrase}"')
+    if context and len(context.split()) <= 8:
+        queries.append(f"{topic} {context}")
     try:
-        discovered = await discover_category_topics(query, 8)
+        discovered = await discover_category_topics(queries, 20)
     except Exception as exc:
         LOGGER.warning("Prediction coverage discovery failed topic=%r error=%s", topic, exc)
         return {"topic": topic, "articles": [], "cached": False}
+    ranked_articles = []
+    for item in discovered:
+        article_terms = set(re.findall(r"[a-z0-9]+", _topic_title_value(item).casefold()))
+        overlap = len(topic_terms & article_terms)
+        if topic_terms and overlap < min(2, len(topic_terms)):
+            continue
+        ranked_articles.append((overlap, str(item.get("published_at") or ""), item))
+    ranked_articles.sort(key=lambda value: (value[0], value[1]), reverse=True)
     articles = []
     seen_urls: set[str] = set()
-    for item in discovered:
+    for _, _, item in ranked_articles:
         urls = [str(value).strip() for value in item.get("source_urls", []) if str(value).startswith(("http://", "https://"))]
         url = str(item.get("canonical_url") or item.get("discovery_url") or (urls[0] if urls else "")).strip()
         if not url or url in seen_urls:
