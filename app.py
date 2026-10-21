@@ -172,7 +172,17 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
-    sequence_mode = clean(spec.get("sequence_mode"), 40)
+    category_continuity = {
+        "Food": "same dish, kitchen or counter, cookware, chef and serving vessel from preparation through service",
+        "Real Estate": "same property, architecture, floor plan, finishes, agent and viewers from exterior through interior",
+        "Dental": "same adult patient, clinician, clinic, teeth and treatment stage throughout",
+        "Fashion": "same garment, fabric, colour, construction, adult model, styling and studio throughout",
+        "Beauty": "same product, packaging, adult model or client, professional and treatment setting throughout",
+        "Automotive": "same vehicle, body, paint, wheels, cabin, driver and physical location throughout",
+        "Technology": "same device or software task, user, workspace and interaction flow throughout",
+        "Travel": "same destination, property, landscape, travellers, wardrobe, weather and time of day throughout",
+    }.get(industry, "same product, customer, environment, lighting and time of day throughout")
+    sequence_mode = clean(spec.get("sequence_mode"), 40) or "single continuous product story in one coherent setting"
     beats = [clean(value, 60) for value in spec.get("beats", []) if clean(value, 60)][:3]
     if not beats:
         beats = [f"establish {subject}", f"show one believable use of {subject}", f"finish on a clean hero view of {subject}"]
@@ -193,6 +203,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         "For fashion, swimwear, lingerie, innerwear, sheer or transparent garments: use clearly adult professional models only, preserve the garment's real material and transparency, and use selected opaque undergarments, a coverage garment, bodysuit, layering, strategic commercial coverage, or mannequin presentation. Never expose nipples or genitals; never use erotic posing, fetish framing, voyeuristic angles, or an ambiguous-age model.",
         "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
         (f"SEQUENCE RULE: {sequence_mode}. Treat the clip as one continuous event with natural temporal and spatial continuity." if sequence_mode else ""),
+        f"CATEGORY CONTINUITY LOCK: preserve the {category_continuity}. Do not jump to a second location, replace the subject, change a person's identity or wardrobe, or reset the time of day.",
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
         f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",
         ("Campaign context for narration only, not generated typography: " + "; ".join(value for value in campaign if value) + ".") if any(campaign) else "",
@@ -207,7 +218,29 @@ def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> st
     product = clean(content.get("product_subtype") or content.get("product") or content.get("topic"), 10)
     brand, offer, cta = clean(content.get("brand"), 8), clean(content.get("offer"), 10), clean(content.get("cta"), 8)
     industry = clean(content.get("category"), 8).casefold()
-    if industry == "food":
+    language = clean(content.get("narration_language") or "English", 4).casefold()
+    localized = {
+        "tamil": {
+            "food": f"உண்மையான {product} சுவையை அனுபவியுங்கள். {offer}. {cta or 'இன்றே ஆர்டர் செய்யுங்கள்.'}",
+            "real estate": f"உங்கள் கனவு வாழ்க்கைக்கான {product}. {offer}. {cta or 'இன்றே விசாரிக்கவும்.'}",
+            "dental": f"{product} மூலம் நம்பிக்கையான புன்னகையைப் பெறுங்கள். உங்களுக்கான நிபுணத்துவ பராமரிப்பு. {cta or 'ஆலோசனைக்கு முன்பதிவு செய்யுங்கள்.'}",
+            "travel": f"மறக்க முடியாத உங்கள் அடுத்த பயணம் {product} உடன் தொடங்குகிறது. {offer}. {cta or 'இன்றே உங்கள் பயணத்தை முன்பதிவு செய்யுங்கள்.'}",
+            "default": f"உங்கள் ஒவ்வொரு தருணத்தையும் சிறப்பாக்கும் {product}. {offer}. {cta or 'இன்றே அறிந்துகொள்ளுங்கள்.'}",
+            "presents": "வழங்குகிறது",
+        },
+        "hindi": {"default": f"हर पल को बेहतर बनाने वाला {product}. {offer}. {cta or 'आज ही जानें.'}", "presents": "प्रस्तुत करता है"},
+        "malayalam": {"default": f"ഓരോ നിമിഷവും മികച്ചതാക്കുന്ന {product}. {offer}. {cta or 'ഇന്നുതന്നെ അറിയൂ.'}", "presents": "അവതരിപ്പിക്കുന്നു"},
+        "telugu": {"default": f"ప్రతి క్షణాన్ని మెరుగుపరిచే {product}. {offer}. {cta or 'ఈరోజే తెలుసుకోండి.'}", "presents": "సమర్పిస్తోంది"},
+        "kannada": {"default": f"ಪ್ರತಿ ಕ್ಷಣವನ್ನೂ ಉತ್ತಮಗೊಳಿಸುವ {product}. {offer}. {cta or 'ಇಂದೇ ತಿಳಿಯಿರಿ.'}", "presents": "ಪ್ರಸ್ತುತಪಡಿಸುತ್ತದೆ"},
+        "bengali": {"default": f"প্রতিটি মুহূর্তকে আরও সুন্দর করে {product}. {offer}. {cta or 'আজই জানুন.'}", "presents": "উপস্থাপন করছে"},
+        "arabic": {"default": f"اكتشف {product} المصمم ليجعل كل لحظة أفضل. {offer}. {cta or 'اكتشفه اليوم.'}", "presents": "تقدم"},
+    }
+    if language in localized:
+        phrases = localized[language]
+        copy = phrases.get(industry, phrases["default"])
+        if brand:
+            copy = f"{brand} {phrases['presents']}. {copy}"
+    elif industry == "food":
         copy = f"Crave the authentic taste of {product}. {offer}. {cta or 'Order yours today.'}"
     elif industry == "real estate":
         copy = f"Step into {product}, designed for the way you want to live. {offer}. {cta or 'Enquire today.'}"
@@ -217,7 +250,7 @@ def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> st
         copy = f"Your next unforgettable experience starts with {product}. {offer}. {cta or 'Book your journey.'}"
     else:
         copy = f"Meet {product}, created to make every moment better. {offer}. {cta or 'Discover it today.'}"
-    if brand:
+    if brand and language not in localized:
         copy = f"{brand} presents. {copy}"
     words = " ".join(copy.replace(" .", ".").split()).split()
     text = " ".join(words[:max(8, round(duration * 2.0))]).strip(" ,;:-")

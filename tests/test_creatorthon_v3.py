@@ -102,6 +102,39 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("same mountain skyline", prompt)
         self.assertIn("teleporting between locations", prompt)
 
+    def test_product_prompt_adds_category_continuity_to_every_industry(self):
+        expected = {
+            "Food": "same dish, kitchen or counter",
+            "Real Estate": "same property, architecture, floor plan",
+            "Dental": "same adult patient, clinician, clinic",
+            "Fashion": "same garment, fabric, colour",
+            "Beauty": "same product, packaging, adult model",
+            "Automotive": "same vehicle, body, paint",
+            "Technology": "same device or software task",
+            "Travel": "same destination, property, landscape",
+        }
+        for industry, lock in expected.items():
+            with self.subTest(industry=industry):
+                prompt = app._creatorthon_product_prompt({
+                    "category": industry,
+                    "product": "Example",
+                    "product_subtype": "Example product",
+                    "product_visual_spec": {"subject": "one exact subject", "beats": ["reveal", "demonstrate", "finish"]},
+                }, 15, "9:16")
+                self.assertIn("single continuous product story", prompt)
+                self.assertIn(lock, prompt)
+                self.assertIn("Do not jump to a second location", prompt)
+
+    def test_product_narration_honours_tamil_language(self):
+        narration = app._creatorthon_product_narration({
+            "category": "Travel",
+            "product_subtype": "Mountain Escape",
+            "narration_language": "Tamil",
+        }, 15)
+        self.assertIn("மறக்க முடியாத", narration)
+        self.assertIn("பயணத்தை முன்பதிவு", narration)
+        self.assertNotIn("Your next unforgettable experience", narration)
+
     def test_product_prompt_locks_dental_aligner_identity(self):
         prompt = app._creatorthon_product_prompt({
             "topic": "Clear Aligners",
