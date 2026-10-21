@@ -88,6 +88,7 @@ from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_author
 CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
 CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
 CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
+PREDICTION_MARKET_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 LOGGER = logging.getLogger("uvicorn.error")
@@ -704,9 +705,10 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 @app.on_event("startup")
 async def start_daily_scheduler():
     asyncio.create_task(daily_trends.scheduler())
-    global CREATORTHON_PREFETCH_TASK
+    global CREATORTHON_PREFETCH_TASK, PREDICTION_MARKET_PREFETCH_TASK
     if os.getenv("CREATORTHON_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         CREATORTHON_PREFETCH_TASK = asyncio.create_task(_creatorthon_prefetch_scheduler())
+    PREDICTION_MARKET_PREFETCH_TASK = asyncio.create_task(_prefetch_prediction_market_topics())
 
 
 @app.get("/health")
@@ -2073,6 +2075,63 @@ def _polymarket_topic(market: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+async def _fetch_prediction_market_topics(source: str) -> list[dict[str, Any]]:
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic reader"}) as client:
+        if source == "kalshi":
+            response = await client.get("https://api.elections.kalshi.com/trade-api/v2/events", params={"limit": 200, "status": "open", "with_nested_markets": "true"})
+            response.raise_for_status()
+            raw = response.json().get("events", [])
+            topics = [topic for item in raw if (topic := _kalshi_event_topic(item))]
+        else:
+            response = await client.get("https://gamma-api.polymarket.com/markets", params={"active": "true", "closed": "false", "limit": 100, "order": "volume24hr", "ascending": "false"})
+            response.raise_for_status()
+            raw = response.json()
+            topics = [topic for item in (raw if isinstance(raw, list) else []) if (topic := _polymarket_topic(item))]
+    topics.sort(key=lambda item: (_prediction_number(item.get("volume")), abs(_prediction_number(item.get("movement_24h")))), reverse=True)
+    return topics[:30]
+
+
+async def _prefetch_prediction_market_topics() -> None:
+    """Warm both market feeds and persist MCP reports before presentation traffic."""
+    await asyncio.sleep(max(0, int(os.getenv("PREDICTION_MARKET_PREFETCH_DELAY_SECONDS", "2"))))
+    ttl_seconds = int(os.getenv("CREATORTHON_PREFETCH_TTL_SECONDS", "86400"))
+    report_limit = max(0, min(12, int(os.getenv("PREDICTION_MARKET_PREFETCH_REPORTS_PER_SOURCE", "6"))))
+    LOGGER.info("Prediction market prefetch started sources=2 reports_per_source=%d", report_limit)
+
+    async def warm(source: str) -> dict[str, int]:
+        try:
+            topics = await _fetch_prediction_market_topics(source)
+        except Exception as exc:
+            LOGGER.exception("Prediction market prefetch failed source=%s: %s", source, exc)
+            return {"topics": 0, "reports": 0, "failed": 1}
+        PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
+        saved = 0
+        failed = 0
+        for topic in topics[:report_limit]:
+            title = _topic_title_value(topic)
+            if not title:
+                continue
+            cached = get_cached_topic_insight(ROOT, title, stale_max_age_seconds=ttl_seconds)
+            if cached and int(cached.get("query_refiner_version") or 0) >= MCP_QUERY_REFINER_VERSION:
+                saved += 1
+                continue
+            try:
+                result = await _proprietary_insight_payload(title)
+                save_cached_topic_insight(ROOT, title, result, ttl_seconds)
+                saved += 1
+            except Exception as exc:
+                failed += 1
+                LOGGER.exception("Prediction market MCP prefetch failed source=%s topic=%r: %s", source, title, exc)
+        LOGGER.info("Prediction market source ready source=%s topics=%d reports=%d failed=%d", source, len(topics), saved, failed)
+        return {"topics": len(topics), "reports": saved, "failed": failed}
+
+    results = await asyncio.gather(warm("kalshi"), warm("polymarket"))
+    LOGGER.info(
+        "Prediction market prefetch complete topics=%d reports=%d failures=%d",
+        sum(item["topics"] for item in results), sum(item["reports"] for item in results), sum(item["failed"] for item in results),
+    )
+
+
 @app.get("/api/creatorthon/prediction-markets/{source}")
 async def creatorthon_prediction_markets(request: Request, source: str):
     creatorthon_user(request)
@@ -2083,24 +2142,12 @@ async def creatorthon_prediction_markets(request: Request, source: str):
     if cached and time.time() - cached[0] < 300:
         return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True}
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic reader"}) as client:
-            if source == "kalshi":
-                response = await client.get("https://api.elections.kalshi.com/trade-api/v2/events", params={"limit": 200, "status": "open", "with_nested_markets": "true"})
-                response.raise_for_status()
-                raw = response.json().get("events", [])
-                topics = [topic for item in raw if (topic := _kalshi_event_topic(item))]
-            else:
-                response = await client.get("https://gamma-api.polymarket.com/markets", params={"active": "true", "closed": "false", "limit": 100, "order": "volume24hr", "ascending": "false"})
-                response.raise_for_status()
-                raw = response.json()
-                topics = [topic for item in (raw if isinstance(raw, list) else []) if (topic := _polymarket_topic(item))]
+        topics = await _fetch_prediction_market_topics(source)
     except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
         LOGGER.warning("Prediction market fetch failed source=%s error=%s", source, exc)
         if cached:
             return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True, "stale": True}
         raise HTTPException(502, f"{source.title()} markets are temporarily unavailable.") from exc
-    topics.sort(key=lambda item: (_prediction_number(item.get("volume")), abs(_prediction_number(item.get("movement_24h")))), reverse=True)
-    topics = topics[:30]
     PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
     return {"source": source.title(), "topics": topics, "count": len(topics), "cached": False, "refresh_seconds": 300}
 
