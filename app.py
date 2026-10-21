@@ -448,9 +448,16 @@ async def require_password(request: Request, call_next):
                     status_code=423,
                 )
             return _creatorthon_frozen_response(request, signed_in=bool(google_user))
-    # The V3 custom domain is the product itself, so its root is responsible for
-    # showing either the V3 Google sign-in or the authenticated V3 application.
-    if request.url.path == "/" and _is_creatorthon_v3_host(request):
+    # The V3 custom domain is the product itself. Every clean browser route must
+    # use the Google session (rather than falling through to the legacy password
+    # middleware), otherwise refreshing a nested URL sends users to the wrong app.
+    v3_clean_roots = {"/", "/profile", "/product", "/workspace", "/concept", "/admin"}
+    v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/")
+    is_v3_clean_route = request.url.path in v3_clean_roots or request.url.path.startswith(v3_clean_prefixes)
+    if _is_creatorthon_v3_host(request) and is_v3_clean_route:
+        if request.url.path != "/" and not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+            destination = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+            return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/?=&%"), status_code=303)
         return await call_next(request)
     if request.url.path.startswith("/creatorthon") or request.url.path.startswith("/api/creatorthon"):
         google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
@@ -580,9 +587,9 @@ async def youtube_oauth_callback(request: Request, code: str = "", state: str = 
     expected_state = request.cookies.get(YOUTUBE_STATE_COOKIE, "")
     state_payload = read_google_state(state, max_age=600) if state and hmac.compare_digest(state, expected_state) else None
     if error or not code:
-        return RedirectResponse("/creatorthon/workspace?youtube=denied", status_code=303)
+        return RedirectResponse("/workspace?youtube=denied", status_code=303)
     if not state_payload or str(state_payload.get("sub") or "") != str(user.get("sub") or ""):
-        return RedirectResponse("/creatorthon/workspace?youtube=state", status_code=303)
+        return RedirectResponse("/workspace?youtube=state", status_code=303)
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc)).split(",")[0].strip()
     try:
@@ -591,8 +598,8 @@ async def youtube_oauth_callback(request: Request, code: str = "", state: str = 
         )
         save_youtube_connection(ROOT, str(user.get("sub", "")), connection)
     except YouTubeOAuthError:
-        return RedirectResponse("/creatorthon/workspace?youtube=failed", status_code=303)
-    response = RedirectResponse("/creatorthon/workspace?youtube=connected", status_code=303)
+        return RedirectResponse("/workspace?youtube=failed", status_code=303)
+    response = RedirectResponse("/workspace?youtube=connected", status_code=303)
     response.delete_cookie(YOUTUBE_STATE_COOKIE)
     return response
 
@@ -635,6 +642,16 @@ async def admin_logout():
 
 @app.get("/admin")
 async def admin_dashboard(request: Request):
+    if _is_creatorthon_v3_host(request):
+        user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+        if not user:
+            return RedirectResponse("/creatorthon-v3/login?next=/admin", status_code=303)
+        if not _creatorthon_admin_user(user):
+            raise HTTPException(403, "Creatorthon organizer access required.")
+        return FileResponse(
+            ROOT / "static" / "creatorthon-admin.html",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
     if not is_admin_authenticated(request):
         return RedirectResponse("/admin/login", status_code=303)
     return FileResponse(ROOT / "static" / "admin.html")
@@ -1145,6 +1162,55 @@ async def creatorthon_v3(request: Request):
         return RedirectResponse("/creatorthon-v3/login", status_code=303)
     return FileResponse(
         ROOT / "static" / "creatorthon-v3.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+def _v3_app_response() -> FileResponse:
+    return FileResponse(
+        ROOT / "static" / "creatorthon-v3.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/profile")
+@app.get("/topics/{category_slug:path}")
+@app.get("/markets/{source}")
+@app.get("/create/{topic_slug:path}")
+@app.get("/review/{project_id}")
+@app.get("/generating/{project_id}")
+@app.get("/result/{project_id}")
+@app.get("/project/{project_id}")
+async def creatorthon_v3_clean_route(request: Request, category_slug: str = "", source: str = "", topic_slug: str = "", project_id: str = ""):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        destination = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/?=&%"), status_code=303)
+    return _v3_app_response()
+
+
+@app.get("/product")
+async def creatorthon_product_clean(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3/login?next=/product", status_code=303)
+    creatorthon_user(request)
+    return FileResponse(ROOT / "static" / "creatorthon-product.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/concept")
+async def creatorthon_concept_clean(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3/login?next=/concept", status_code=303)
+    creatorthon_user(request)
+    return FileResponse(ROOT / "static" / "creatorthon-concept.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/workspace")
+async def creatorthon_workspace_clean(request: Request):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        return RedirectResponse("/creatorthon-v3/login?next=/workspace", status_code=303)
+    creatorthon_user(request)
+    return FileResponse(
+        ROOT / "static" / "creatorthon-workspace.html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
 

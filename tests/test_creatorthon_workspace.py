@@ -72,6 +72,7 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         page = (ROOT / "static" / "creatorthon-workspace.html").read_text(encoding="utf-8")
         self.assertIn('@app.get("/creatorthon/workspace")', app_source)
+        self.assertIn('@app.get("/workspace")', app_source)
         self.assertIn('@app.get("/api/creatorthon/workspace")', app_source)
         self.assertIn('@app.post("/api/creatorthon/reports")', app_source)
         self.assertIn("My Workspace", page)
@@ -91,10 +92,9 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
         self.assertIn("Copy link", page)
         self.assertIn("copyYouTube", page)
         self.assertIn("card-actions", page)
-        self.assertIn('href="/creatorthon/workspace"', page)
-        self.assertIn('href="/creatorthon"', page)
-        self.assertIn('href="/logout?next=/creatorthon/login"', page)
-        self.assertNotIn("/creatorthon-v3", page)
+        self.assertIn('href="/workspace"', page)
+        self.assertIn("'/project/'+encodeURIComponent(id)", page)
+        self.assertIn('href="/logout?next=/"', page)
         self.assertIn("/api/creatorthon/publishing/status", page)
         self.assertIn("/api/creatorthon/publish", page)
         self.assertIn('@app.delete("/api/creatorthon/projects/{project_id}/video")', app_source)
@@ -103,7 +103,8 @@ class CreatorthonWorkspaceTests(unittest.TestCase):
     def test_all_creatorthon_versions_link_to_shared_workspace(self):
         for filename in ("creatorthon.html", "creatorthon-v2.html", "creatorthon-v3.html"):
             page = (ROOT / "static" / filename).read_text(encoding="utf-8")
-            self.assertIn('/creatorthon/workspace', page, filename)
+            expected = '/workspace' if filename == 'creatorthon-v3.html' else '/creatorthon/workspace'
+            self.assertIn(expected, page, filename)
 
     def test_standard_creatorthon_displays_event_participant_number(self):
         page = (ROOT / "static" / "creatorthon.html").read_text(encoding="utf-8")

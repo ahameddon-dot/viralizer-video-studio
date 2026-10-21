@@ -16,7 +16,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         catalog = (ROOT / "static" / "product-video-catalog.js").read_text(encoding="utf-8")
         v3_page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
         self.assertIn('@app.get("/creatorthon/product")', app_source)
-        self.assertIn('href="/creatorthon/product"', v3_page)
+        self.assertIn('@app.get("/product")', app_source)
+        self.assertIn('href="/product"', v3_page)
         self.assertIn("Food:{icon:'🍽️'", page)
         self.assertIn("'Real Estate':{icon:'🏡'", page)
         self.assertIn("Dental:{icon:'🦷'", page)
@@ -290,8 +291,17 @@ class CreatorthonV3Tests(unittest.TestCase):
         })
         self.assertTrue(app._is_creatorthon_v3_host(request))
         source = Path(app.__file__).read_text(encoding="utf-8")
-        self.assertIn('if request.url.path == "/" and _is_creatorthon_v3_host(request):', source)
+        self.assertIn('if _is_creatorthon_v3_host(request) and is_v3_clean_route:', source)
         self.assertIn('return await creatorthon_v3_login(request, next="/")', source)
+
+    def test_v3_clean_routes_support_refresh_and_browser_history(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        for route in ("/profile", "/topics/{category_slug:path}", "/markets/{source}", "/create/{topic_slug:path}", "/review/{project_id}", "/generating/{project_id}", "/result/{project_id}", "/project/{project_id}"):
+            self.assertIn(f'@app.get("{route}")', app_source)
+        self.assertIn("window.addEventListener('popstate'", page)
+        self.assertIn("sessionStorage.setItem('viralizerV3RouteState'", page)
+        self.assertIn("async function restoreBrowserRoute", page)
 
     def test_v3_is_an_isolated_route(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
@@ -306,7 +316,7 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn('@app.get("/creatorthon/login"', app_source)
         self.assertIn('async def logout(next: str = "/login")', app_source)
         self.assertIn('href="/logout?next=/creatorthon/login"', v1_page)
-        self.assertIn('href="/logout?next=/creatorthon-v3/login"', v3_page)
+        self.assertIn('href="/logout?next=/"', v3_page)
 
     def test_v3_contains_requested_creator_journey(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
