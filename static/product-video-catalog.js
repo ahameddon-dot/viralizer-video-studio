@@ -193,13 +193,49 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['interaction','Human interaction',['Traveller arrival and discovery','Couple experiences destination','Family holiday journey','Host welcomes guest','Destination-only film']]
     ],
     'Travel:Destinations':[
-      ['geography','Exact setting',['Snowy Himalayan hill town','Kashmir mountain valley','Swiss Alpine village','Japanese mountain onsen town','Rocky Mountain lodge','Andean mountain retreat']],
+      ['geography','Exact setting',['Coastal escape','Historic city centre','Mountain retreat','Cultural heritage district','Nature reserve','Adventure destination']],
       ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
-      ['stay','Base / stay',['Wood-and-stone mountain lodge','Boutique hillside hotel','Private view villa','Luxury ski resort','Traditional local homestay','Scenic glamping camp']],
+      ['stay','Base / stay',['Boutique hotel','Private villa','Luxury resort','Traditional homestay','Scenic lodge','Glamping camp']],
+      ['activity','Hero activity',['Arrival and view reveal','Guided local experience','Signature food experience','Scenic exploration','Relaxation moment','Adventure activity']],
+      ['weather','Weather and light',['Warm sunrise','Clear daylight','Golden-hour light','Soft overcast daylight','Blue-hour glow']],
+      ['journey','Story moment',['First arrival','Romantic escape','Adventure discovery','Luxury retreat','Weekend reset']],
+      ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Destination-only']]
+    ],
+    'Travel:Destinations:Beach Holiday':[
+      ['geography','Exact beach setting',['Maldives-style tropical island','Goa-style Indian beach','Mediterranean coastal cove','Bali-style beach village','Caribbean white-sand beach','Luxury private-island resort']],
+      ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
+      ['stay','Beach stay',['Overwater villa','Private beachfront villa','Luxury beach resort','Boutique coastal hotel','Beachside eco lodge']],
+      ['activity','Hero activity',['Barefoot beach arrival','Villa-to-beach reveal','Sunset shoreline walk','Private breakfast by the sea','Snorkelling departure','Pool and ocean relaxation']],
+      ['weather','Weather and light',['Bright tropical morning','Clear turquoise-water daylight','Warm golden sunset','Soft coastal sunrise','Blue-hour resort glow']],
+      ['journey','Story moment',['Romantic escape','Family beach holiday','Luxury retreat','Island discovery','Weekend reset']],
+      ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Destination-only']]
+    ],
+    'Travel:Destinations:City Break':[
+      ['geography','Exact city setting',['Paris-style historic centre','Dubai-style modern skyline','Tokyo-style neon district','Singapore-style waterfront','Rome-style heritage streets','New York-style urban centre']],
+      ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
+      ['stay','City stay',['Boutique city hotel','Luxury skyline hotel','Historic townhouse stay','Modern serviced apartment','Central business hotel']],
+      ['activity','Hero activity',['Hotel arrival and street discovery','Landmark walking route','Rooftop dining experience','Local café and market visit','Waterfront evening walk','Museum and culture visit']],
+      ['weather','Weather and light',['Crisp morning daylight','Clear city afternoon','Warm golden hour','Rain-reflected evening lights','Blue-hour skyline glow']],
+      ['journey','Story moment',['First city arrival','Romantic weekend','Food and culture discovery','Luxury city escape','Fast weekend itinerary']],
+      ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Destination-only']]
+    ],
+    'Travel:Destinations:Mountain Escape':[
+      ['geography','Exact mountain setting',['Snowy Himalayan hill town','Kashmir mountain valley','Swiss Alpine village','Japanese mountain onsen town','Rocky Mountain lodge','Andean mountain retreat']],
+      ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
+      ['stay','Mountain stay',['Wood-and-stone mountain lodge','Boutique hillside hotel','Private view villa','Luxury ski resort','Traditional local homestay','Scenic glamping camp']],
       ['activity','Hero activity',['Lodge arrival and balcony reveal','Cable-car ascent','Guided snow walk','Mountain café experience','Viewpoint discovery','Fireside retreat']],
       ['weather','Weather and light',['Fresh snow, warm sunrise','Clear winter daylight','Light snowfall, warm windows','Golden-hour mountain light','Blue-hour lodge glow']],
       ['journey','Story moment',['First arrival','Romantic escape','Adventure discovery','Luxury retreat','Weekend reset']],
       ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Destination-only']]
+    ],
+    'Travel:Destinations:Cultural Tour':[
+      ['geography','Exact cultural setting',['Rajasthan heritage city','Tamil temple town','Kyoto historic district','Moroccan medina','Italian heritage quarter','Ancient Southeast Asian city']],
+      ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
+      ['stay','Cultural stay',['Restored heritage hotel','Traditional courtyard homestay','Boutique old-town hotel','Palace-style property','Local guesthouse']],
+      ['activity','Hero activity',['Local guide heritage walk','Artisan workshop visit','Temple or monument approach','Traditional food experience','Market and architecture discovery','Cultural performance evening']],
+      ['weather','Weather and light',['Soft morning light','Clear heritage-street daylight','Warm golden hour','Festival evening glow','Blue-hour architectural light']],
+      ['journey','Story moment',['Culture discovery','Heritage weekend','Local craft journey','Food and history tour','Festival experience']],
+      ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Traveller and same local guide']]
     ],
     'Travel:Hospitality':[
       ['property','Hospitality type',['Luxury hotel','Resort','Homestay','Restaurant experience']],['space','Hero space',['Room','Pool','Restaurant','Spa','Lobby','View']],['service','Service moment',['Welcome','Check-in','Room reveal','Dining service','Turndown','Guest assistance']],['guest','Guest',['Couple','Family','Solo adult','Business traveller','Luxury guest']],['interaction','People',['Host welcomes guest','Staff service','Guest room discovery','Dining interaction','Property-only tour']]

@@ -81,6 +81,16 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("same mountain skyline", page)
         self.assertIn("Snowy Himalayan hill town", catalog)
         self.assertIn("Lodge arrival and balcony reveal", catalog)
+        self.assertIn("'Travel:Destinations:Beach Holiday'", catalog)
+        self.assertIn("Maldives-style tropical island", catalog)
+        self.assertIn("Barefoot beach arrival", catalog)
+        self.assertIn("'Travel:Destinations:City Break'", catalog)
+        self.assertIn("'Travel:Destinations:Mountain Escape'", catalog)
+        self.assertIn("'Travel:Destinations:Cultural Tour'", catalog)
+        self.assertIn("subtypeKey=key+':'+state.subtype", page)
+        self.assertIn("mixing beach, mountain, city or cultural scenery", page)
+        self.assertIn("lightweight resort clothing", page)
+        self.assertIn("state.subtype=v;state.attributes={}", page)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
     def test_product_prompt_enforces_continuous_travel_sequence(self):
