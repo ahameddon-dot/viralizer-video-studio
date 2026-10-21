@@ -193,7 +193,13 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['interaction','Human interaction',['Traveller arrival and discovery','Couple experiences destination','Family holiday journey','Host welcomes guest','Destination-only film']]
     ],
     'Travel:Destinations':[
-      ['destination','Destination type',['Beach','City','Mountain','Cultural','Nature','Adventure']],['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],['journey','Journey stage',['Arrival','Discovery','Signature activity','Food and culture','Sunset finale']],['season','Season',['Summer','Winter','Monsoon','Spring','Festival']],['interaction','People',['Traveller arrival','Couple experience','Family journey','Local guide interaction','Destination-only']]
+      ['geography','Exact setting',['Snowy Himalayan hill town','Kashmir mountain valley','Swiss Alpine village','Japanese mountain onsen town','Rocky Mountain lodge','Andean mountain retreat']],
+      ['traveller','Traveller',['Couple','Family','Solo adult','Friends','Luxury traveller']],
+      ['stay','Base / stay',['Wood-and-stone mountain lodge','Boutique hillside hotel','Private view villa','Luxury ski resort','Traditional local homestay','Scenic glamping camp']],
+      ['activity','Hero activity',['Lodge arrival and balcony reveal','Cable-car ascent','Guided snow walk','Mountain café experience','Viewpoint discovery','Fireside retreat']],
+      ['weather','Weather and light',['Fresh snow, warm sunrise','Clear winter daylight','Light snowfall, warm windows','Golden-hour mountain light','Blue-hour lodge glow']],
+      ['journey','Story moment',['First arrival','Romantic escape','Adventure discovery','Luxury retreat','Weekend reset']],
+      ['interaction','People',['Same couple throughout','Same family throughout','Same solo adult throughout','Same friends throughout','Destination-only']]
     ],
     'Travel:Hospitality':[
       ['property','Hospitality type',['Luxury hotel','Resort','Homestay','Restaurant experience']],['space','Hero space',['Room','Pool','Restaurant','Spa','Lobby','View']],['service','Service moment',['Welcome','Check-in','Room reveal','Dining service','Turndown','Guest assistance']],['guest','Guest',['Couple','Family','Solo adult','Business traveller','Luxury guest']],['interaction','People',['Host welcomes guest','Staff service','Guest room discovery','Dining interaction','Property-only tour']]

@@ -77,7 +77,30 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Pour and refresh", page)
         self.assertIn("function specializedVisualSpec()", page)
         self.assertIn("avoid:['clay pots','rice vessels','biryani','cake'", page)
+        self.assertIn("single continuous micro-story", page)
+        self.assertIn("same mountain skyline", page)
+        self.assertIn("Snowy Himalayan hill town", catalog)
+        self.assertIn("Lodge arrival and balcony reveal", catalog)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
+
+    def test_product_prompt_enforces_continuous_travel_sequence(self):
+        prompt = app._creatorthon_product_prompt({
+            "category": "Travel",
+            "product": "Destinations",
+            "product_subtype": "Mountain Escape",
+            "creative_style": "Destination film",
+            "product_visual_spec": {
+                "subject": "the same adult couple at one mountain lodge",
+                "environment": "one lodge with the same mountain skyline",
+                "sequence_mode": "single continuous micro-story; do not cut to a second destination",
+                "beats": ["arrive outside the lodge", "walk to its viewpoint", "share a natural reaction"],
+                "avoid": ["changing country", "teleporting between locations"],
+            },
+        }, 15, "9:16")
+        self.assertIn("SEQUENCE RULE: single continuous micro-story", prompt)
+        self.assertIn("natural temporal and spatial continuity", prompt)
+        self.assertIn("same mountain skyline", prompt)
+        self.assertIn("teleporting between locations", prompt)
 
     def test_product_prompt_locks_dental_aligner_identity(self):
         prompt = app._creatorthon_product_prompt({

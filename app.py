@@ -172,6 +172,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
+    sequence_mode = clean(spec.get("sequence_mode"), 40)
     beats = [clean(value, 60) for value in spec.get("beats", []) if clean(value, 60)][:3]
     if not beats:
         beats = [f"establish {subject}", f"show one believable use of {subject}", f"finish on a clean hero view of {subject}"]
@@ -191,6 +192,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         f"HUMAN PRESENTATION: {human_interaction}" if human_interaction else "Show believable, natural interaction by the intended adult customer whenever people improve the product demonstration.",
         "For fashion, swimwear, lingerie, innerwear, sheer or transparent garments: use clearly adult professional models only, preserve the garment's real material and transparency, and use selected opaque undergarments, a coverage garment, bodysuit, layering, strategic commercial coverage, or mannequin presentation. Never expose nipples or genitals; never use erotic posing, fetish framing, voyeuristic angles, or an ambiguous-age model.",
         "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
+        (f"SEQUENCE RULE: {sequence_mode}. Treat the clip as one continuous event with natural temporal and spatial continuity." if sequence_mode else ""),
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
         f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",
         ("Campaign context for narration only, not generated typography: " + "; ".join(value for value in campaign if value) + ".") if any(campaign) else "",
