@@ -101,6 +101,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("/api/creatorthon/prediction-markets/", page)
         self.assertIn("Market probabilities are not confirmed facts or financial advice", page)
         self.assertIn("Viralizer does not recommend buying, selling or placing a trade", page)
+        self.assertIn("What Yes means:", page)
+        self.assertIn("kalshi-outcomes", page)
 
     def test_prediction_market_payloads_are_normalized_for_v3_topics(self):
         kalshi = app._kalshi_market_topic({
@@ -111,6 +113,32 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertEqual(kalshi["probability"], 63.0)
         self.assertEqual(kalshi["movement_24h"], 4.0)
         self.assertIn("not a confirmed prediction", kalshi["summary"])
+        kalshi_event = app._kalshi_event_topic({
+            "title": "Who will win the city election?",
+            "sub_title": "The candidate officially declared the winner",
+            "category": "Politics",
+            "event_ticker": "CITYWINNER-26",
+            "settlement_sources": [{"name": "Election authority", "url": "https://example.com/results"}],
+            "markets": [
+                {
+                    "status": "active", "yes_sub_title": "Candidate A", "last_price_dollars": "0.62",
+                    "previous_price_dollars": "0.58", "volume_24h_fp": "25000",
+                    "close_time": "2026-11-01T00:00:00Z",
+                    "rules_primary": "Resolves Yes if Candidate A is officially declared the winner.",
+                },
+                {
+                    "status": "active", "yes_sub_title": "Candidate B", "last_price_dollars": "0.31",
+                    "previous_price_dollars": "0.30", "volume_24h_fp": "12000",
+                    "close_time": "2026-11-01T00:00:00Z",
+                },
+            ],
+        })
+        self.assertEqual(kalshi_event["title"], "Who will win the city election?")
+        self.assertEqual(kalshi_event["market_category"], "Politics")
+        self.assertEqual(kalshi_event["outcomes"][0], {"label": "Candidate A", "probability": 62.0})
+        self.assertEqual(kalshi_event["movement_24h"], 4.0)
+        self.assertIn("officially declared", kalshi_event["what_yes_means"])
+        self.assertEqual(kalshi_event["settlement_sources"][0]["name"], "Election authority")
         polymarket = app._polymarket_topic({
             "question": "Will an event happen?", "outcomes": '["Yes","No"]',
             "outcomePrices": '["0.72","0.28"]', "oneDayPriceChange": 0.03,

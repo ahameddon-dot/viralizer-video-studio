@@ -2008,6 +2008,47 @@ def _kalshi_market_topic(market: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _kalshi_event_topic(event: dict[str, Any]) -> dict[str, Any] | None:
+    title = " ".join(str(event.get("title") or "").split())
+    markets = [item for item in event.get("markets", []) if isinstance(item, dict) and item.get("status") in {"active", "open"}]
+    if not title or not markets:
+        return None
+    def market_price(item: dict[str, Any]) -> float:
+        return max(0, min(1, _prediction_number(item.get("last_price_dollars") or item.get("yes_bid_dollars") or item.get("yes_ask_dollars"))))
+    def market_volume(item: dict[str, Any]) -> float:
+        return _prediction_number(item.get("volume_24h_fp") or item.get("volume_fp") or item.get("volume_24h") or item.get("volume"))
+    markets.sort(key=market_volume, reverse=True)
+    primary = markets[0]
+    probability = market_price(primary)
+    previous = _prediction_number(primary.get("previous_price_dollars"))
+    movement = probability - previous if previous else 0
+    outcomes = []
+    for item in markets[:6]:
+        label = " ".join(str(item.get("yes_sub_title") or item.get("subtitle") or item.get("title") or "Yes").split())
+        outcomes.append({"label": label[:110], "probability": round(market_price(item) * 100, 1)})
+    rules = " ".join(str(primary.get("rules_primary") or primary.get("early_close_condition") or "").split())
+    subtitle = " ".join(str(event.get("sub_title") or "").split())
+    event_ticker = str(event.get("event_ticker") or primary.get("event_ticker") or primary.get("ticker") or "").strip()
+    settlement_sources = [
+        {"name": str(item.get("name") or "").strip(), "url": str(item.get("url") or "").strip()}
+        for item in event.get("settlement_sources", []) if isinstance(item, dict) and item.get("name")
+    ][:3]
+    total_volume = sum(market_volume(item) for item in markets)
+    close_times = [str(item.get("close_time") or item.get("expected_expiration_time") or "") for item in markets]
+    close_time = min((value for value in close_times if value), default="")
+    return {
+        "topic": title, "title": title, "category": "Prediction Markets", "market_category": event.get("category") or "Other",
+        "prediction_source": "Kalshi", "probability": round(probability * 100, 1), "movement_24h": round(movement * 100, 1),
+        "leading_outcome": outcomes[0]["label"] if outcomes else "Yes", "outcomes": outcomes,
+        "market_context": subtitle, "what_yes_means": rules[:900], "settlement_sources": settlement_sources,
+        "volume": total_volume, "closes_at": close_time,
+        "market_url": f"https://kalshi.com/markets/{quote(event_ticker)}" if event_ticker else "https://kalshi.com/",
+        "summary": (f"{subtitle}. " if subtitle else "") + (f"A Yes outcome resolves when: {rules}" if rules else "Review the official Kalshi resolution rules."),
+        "source": "Kalshi", "source_name": "Kalshi", "source_platforms": ["Kalshi"], "source_count": 1,
+        "creator_angle": f"Explain in plain language what this Kalshi event asks, what Yes means, and what evidence could move its current implied probability without recommending a trade.",
+    }
+
+
 def _polymarket_topic(market: dict[str, Any]) -> dict[str, Any] | None:
     title = " ".join(str(market.get("question") or market.get("title") or "").split())
     if not title:
@@ -2044,10 +2085,10 @@ async def creatorthon_prediction_markets(request: Request, source: str):
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic reader"}) as client:
             if source == "kalshi":
-                response = await client.get("https://api.elections.kalshi.com/trade-api/v2/markets", params={"limit": 100, "status": "open"})
+                response = await client.get("https://api.elections.kalshi.com/trade-api/v2/events", params={"limit": 200, "status": "open", "with_nested_markets": "true"})
                 response.raise_for_status()
-                raw = response.json().get("markets", [])
-                topics = [topic for item in raw if (topic := _kalshi_market_topic(item))]
+                raw = response.json().get("events", [])
+                topics = [topic for item in raw if (topic := _kalshi_event_topic(item))]
             else:
                 response = await client.get("https://gamma-api.polymarket.com/markets", params={"active": "true", "closed": "false", "limit": 100, "order": "volume24hr", "ascending": "false"})
                 response.raise_for_status()
