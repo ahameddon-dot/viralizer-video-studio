@@ -780,7 +780,9 @@ def build_category_discovery_queries(
     return [f"{selected} {signal}{context_suffix}".strip() for signal in signals]
 
 
-async def discover_category_topics(query: str | list[str], limit: int = 30) -> list[dict[str, Any]]:
+async def discover_category_topics(
+    query: str | list[str], limit: int = 30, *, fast: bool = False, enrich: bool = True
+) -> list[dict[str, Any]]:
     """Discover current worldwide public-web topics without contacting Viralizer."""
     queries = [query] if isinstance(query, str) else query
     queries = [" ".join(str(value).split()[:45]).strip() for value in queries if str(value).strip()]
@@ -794,8 +796,13 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
         ("AU", "en-AU", "AU:en"),
         ("SA", "ar", "SA:ar"),
     )
+    if fast:
+        # Related-reporting cards need headlines, links and publishers only. A
+        # compact set of English editions is substantially faster and avoids
+        # multiplying slow external calls for every visible market card.
+        google_editions = google_editions[:3]
 
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=8 if fast else 25, follow_redirects=True, headers=headers) as client:
         async def google_feed(search_query: str, country: str, language: str, edition: str) -> list[dict[str, Any]]:
             try:
                 url = f"https://news.google.com/rss/search?q={quote_plus(search_query + ' when:30d')}&hl={language}&gl={country}&ceid={edition}"
@@ -838,10 +845,10 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
             except Exception:
                 return []
 
-        groups = await asyncio.gather(
-            *(google_feed(search_query, *edition) for search_query in queries for edition in google_editions),
-            *(gdelt_feed(search_query) for search_query in queries),
-        )
+        tasks = [google_feed(search_query, *edition) for search_query in queries for edition in google_editions]
+        if not fast:
+            tasks.extend(gdelt_feed(search_query) for search_query in queries)
+        groups = await asyncio.gather(*tasks)
 
     merged: dict[str, dict[str, Any]] = {}
     for item in (entry for group in groups for entry in group):
@@ -870,7 +877,8 @@ async def discover_category_topics(query: str | list[str], limit: int = 30) -> l
     for item in selected:
         item["youtube_search_topic"], item["alternate_topics"] = _youtube_search_terms(item["topic"])
         item["reputation_label"], item["reputation_signals"] = _reputation_label(item["topic"], item.get("summary", ""))
-    await enrich_topic_entities(selected)
+    if enrich:
+        await enrich_topic_entities(selected)
     return selected
 
 

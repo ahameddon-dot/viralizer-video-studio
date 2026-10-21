@@ -2225,10 +2225,14 @@ async def creatorthon_prediction_coverage(request: Request, payload: Creatorthon
     queries = [topic, f"latest news {topic}"]
     if core_phrase and core_phrase.casefold() != topic.casefold():
         queries.insert(0, f'"{core_phrase}"')
-    if context and len(context.split()) <= 8:
-        queries.append(f"{topic} {context}")
     try:
-        discovered = await discover_category_topics(queries, 20)
+        discovered = await asyncio.wait_for(
+            discover_category_topics(queries[:3], 12, fast=True, enrich=False),
+            timeout=12,
+        )
+    except asyncio.TimeoutError:
+        LOGGER.warning("Prediction coverage discovery timed out topic=%r", topic)
+        discovered = []
     except Exception as exc:
         LOGGER.warning("Prediction coverage discovery failed topic=%r error=%s", topic, exc)
         return {"topic": topic, "articles": [], "cached": False}
