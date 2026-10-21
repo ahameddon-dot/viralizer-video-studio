@@ -93,6 +93,34 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("state.subtype=v;state.attributes={}", page)
         self.assertIn("updateSummary();$('#next').disabled=!canContinue()||state.generating", page)
 
+    def test_prediction_market_category_has_two_live_source_buttons(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        self.assertIn("['Prediction Markets','◒']", page)
+        self.assertIn('data-prediction-source="kalshi"', page)
+        self.assertIn('data-prediction-source="polymarket"', page)
+        self.assertIn("/api/creatorthon/prediction-markets/", page)
+        self.assertIn("Market probabilities are not confirmed facts or financial advice", page)
+        self.assertIn("Viralizer does not recommend buying, selling or placing a trade", page)
+
+    def test_prediction_market_payloads_are_normalized_for_v3_topics(self):
+        kalshi = app._kalshi_market_topic({
+            "title": "Will rates change?", "last_price": 63, "price_change_24h": 4,
+            "volume_24h": 2500000, "close_time": "2026-11-01T00:00:00Z", "ticker": "RATE-26",
+        })
+        self.assertEqual(kalshi["prediction_source"], "Kalshi")
+        self.assertEqual(kalshi["probability"], 63.0)
+        self.assertEqual(kalshi["movement_24h"], 4.0)
+        self.assertIn("not a confirmed prediction", kalshi["summary"])
+        polymarket = app._polymarket_topic({
+            "question": "Will an event happen?", "outcomes": '["Yes","No"]',
+            "outcomePrices": '["0.72","0.28"]', "oneDayPriceChange": 0.03,
+            "volume24hr": 1000000, "endDate": "2026-12-01T00:00:00Z", "slug": "event-happen",
+        })
+        self.assertEqual(polymarket["prediction_source"], "Polymarket")
+        self.assertEqual(polymarket["leading_outcome"], "Yes")
+        self.assertEqual(polymarket["probability"], 72.0)
+        self.assertEqual(polymarket["movement_24h"], 3.0)
+
     def test_product_prompt_enforces_continuous_travel_sequence(self):
         prompt = app._creatorthon_product_prompt({
             "category": "Travel",

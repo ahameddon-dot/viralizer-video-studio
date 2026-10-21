@@ -88,6 +88,7 @@ from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_author
 CREATORTHON_FINISH_JOBS: dict[str, dict[str, Any]] = {}
 CREATORTHON_INSIGHT_TASKS: dict[str, asyncio.Task] = {}
 CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
+PREDICTION_MARKET_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -1964,6 +1965,103 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
     personalized = _personalize_topics_fast(topics, role, user_type, interests[0])
     return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
             "creator_role": role, "role_match_scale": 200}
+
+
+def _prediction_number(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _prediction_json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def _kalshi_market_topic(market: dict[str, Any]) -> dict[str, Any] | None:
+    title = " ".join(str(market.get("title") or market.get("subtitle") or "").split())
+    if not title:
+        return None
+    raw_price = _prediction_number(market.get("last_price") or market.get("yes_bid") or market.get("yes_ask"))
+    probability = raw_price if raw_price <= 1 else raw_price / 100
+    movement = _prediction_number(market.get("price_change_24h") or market.get("change_24h"))
+    if abs(movement) >= 1:
+        movement /= 100
+    volume = _prediction_number(market.get("volume_24h") or market.get("volume") or market.get("liquidity_dollars"))
+    ticker = str(market.get("event_ticker") or market.get("ticker") or "").strip()
+    return {
+        "topic": title, "title": title, "category": "Prediction Markets", "prediction_source": "Kalshi",
+        "probability": round(max(0, min(1, probability)) * 100, 1), "movement_24h": round(movement * 100, 1),
+        "volume": volume, "closes_at": market.get("close_time") or market.get("expected_expiration_time") or market.get("expiration_time"),
+        "market_url": f"https://kalshi.com/markets/{quote(ticker)}" if ticker else "https://kalshi.com/",
+        "summary": "Kalshi market-implied probability. This is market sentiment, not a confirmed prediction or financial advice.",
+        "source": "Kalshi", "source_name": "Kalshi", "source_platforms": ["Kalshi"], "source_count": 1,
+        "creator_angle": f"Explain what could move this market from its current {round(probability * 100)}% implied probability without recommending a trade.",
+    }
+
+
+def _polymarket_topic(market: dict[str, Any]) -> dict[str, Any] | None:
+    title = " ".join(str(market.get("question") or market.get("title") or "").split())
+    if not title:
+        return None
+    outcomes, prices = _prediction_json_list(market.get("outcomes")), _prediction_json_list(market.get("outcomePrices"))
+    numeric_prices = [_prediction_number(value) for value in prices]
+    lead_index = max(range(len(numeric_prices)), key=numeric_prices.__getitem__) if numeric_prices else 0
+    probability = numeric_prices[lead_index] if numeric_prices else _prediction_number(market.get("lastTradePrice"))
+    leading = str(outcomes[lead_index]) if lead_index < len(outcomes) else "Leading outcome"
+    movement = _prediction_number(market.get("oneDayPriceChange") or market.get("priceChange24h"))
+    volume = _prediction_number(market.get("volume24hr") or market.get("volume") or market.get("liquidity"))
+    slug = str(market.get("slug") or market.get("eventSlug") or "").strip()
+    return {
+        "topic": title, "title": title, "category": "Prediction Markets", "prediction_source": "Polymarket",
+        "leading_outcome": leading, "probability": round(max(0, min(1, probability)) * 100, 1),
+        "movement_24h": round(movement * 100, 1), "volume": volume,
+        "closes_at": market.get("endDate") or market.get("end_date_iso"),
+        "market_url": f"https://polymarket.com/event/{quote(slug)}" if slug else "https://polymarket.com/",
+        "summary": "Polymarket market-implied probability. This is market sentiment, not a confirmed prediction or financial advice.",
+        "source": "Polymarket", "source_name": "Polymarket", "source_platforms": ["Polymarket"], "source_count": 1,
+        "creator_angle": f"Explain the evidence behind {leading} at {round(probability * 100)}% without recommending a trade.",
+    }
+
+
+@app.get("/api/creatorthon/prediction-markets/{source}")
+async def creatorthon_prediction_markets(request: Request, source: str):
+    creatorthon_user(request)
+    source = source.strip().casefold()
+    if source not in {"kalshi", "polymarket"}:
+        raise HTTPException(404, "Choose Kalshi or Polymarket.")
+    cached = PREDICTION_MARKET_CACHE.get(source)
+    if cached and time.time() - cached[0] < 300:
+        return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True}
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"User-Agent": "Viralizer/3.0 market-topic reader"}) as client:
+            if source == "kalshi":
+                response = await client.get("https://api.elections.kalshi.com/trade-api/v2/markets", params={"limit": 100, "status": "open"})
+                response.raise_for_status()
+                raw = response.json().get("markets", [])
+                topics = [topic for item in raw if (topic := _kalshi_market_topic(item))]
+            else:
+                response = await client.get("https://gamma-api.polymarket.com/markets", params={"active": "true", "closed": "false", "limit": 100, "order": "volume24hr", "ascending": "false"})
+                response.raise_for_status()
+                raw = response.json()
+                topics = [topic for item in (raw if isinstance(raw, list) else []) if (topic := _polymarket_topic(item))]
+    except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Prediction market fetch failed source=%s error=%s", source, exc)
+        if cached:
+            return {"source": source.title(), "topics": cached[1], "count": len(cached[1]), "cached": True, "stale": True}
+        raise HTTPException(502, f"{source.title()} markets are temporarily unavailable.") from exc
+    topics.sort(key=lambda item: (_prediction_number(item.get("volume")), abs(_prediction_number(item.get("movement_24h")))), reverse=True)
+    topics = topics[:30]
+    PREDICTION_MARKET_CACHE[source] = (time.time(), topics)
+    return {"source": source.title(), "topics": topics, "count": len(topics), "cached": False, "refresh_seconds": 300}
 
 
 @app.post("/api/creatorthon/refine-objective")
