@@ -452,7 +452,7 @@ async def require_password(request: Request, call_next):
     # use the Google session (rather than falling through to the legacy password
     # middleware), otherwise refreshing a nested URL sends users to the wrong app.
     v3_clean_roots = {"/", "/profile", "/product", "/workspace", "/concept", "/admin"}
-    v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/")
+    v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/", "/product/", "/workspace/")
     is_v3_clean_route = request.url.path in v3_clean_roots or request.url.path.startswith(v3_clean_prefixes)
     if _is_creatorthon_v3_host(request) and is_v3_clean_route:
         if request.url.path != "/" and not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
@@ -1189,9 +1189,11 @@ async def creatorthon_v3_clean_route(request: Request, category_slug: str = "", 
 
 
 @app.get("/product")
-async def creatorthon_product_clean(request: Request):
+@app.get("/product/{step:path}")
+async def creatorthon_product_clean(request: Request, step: str = ""):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
-        return RedirectResponse("/creatorthon-v3/login?next=/product", status_code=303)
+        destination = request.url.path
+        return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/"), status_code=303)
     creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon-product.html", headers={"Cache-Control": "no-store"})
 
@@ -1205,9 +1207,11 @@ async def creatorthon_concept_clean(request: Request):
 
 
 @app.get("/workspace")
-async def creatorthon_workspace_clean(request: Request):
+@app.get("/workspace/{view}")
+async def creatorthon_workspace_clean(request: Request, view: str = ""):
     if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
-        return RedirectResponse("/creatorthon-v3/login?next=/workspace", status_code=303)
+        destination = request.url.path
+        return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/"), status_code=303)
     creatorthon_user(request)
     return FileResponse(
         ROOT / "static" / "creatorthon-workspace.html",
