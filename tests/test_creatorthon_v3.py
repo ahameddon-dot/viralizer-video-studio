@@ -304,6 +304,8 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("async function restoreBrowserRoute", page)
         self.assertIn("dashboardPromise=loadDashboard()", page)
         self.assertIn("if(dashboardPromise)await dashboardPromise", page)
+        self.assertIn("const categoryTopicRequests=new Map()", page)
+        self.assertIn("async function fetchCategoryTopics", page)
 
     def test_product_wizard_steps_are_refresh_safe(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
