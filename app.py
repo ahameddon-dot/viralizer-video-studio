@@ -260,6 +260,51 @@ def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> st
     return text + ("" if not text or text[-1] in ".!?" else ".")
 
 
+def _creatorthon_prediction_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
+    """Build a factual, source-aware prediction promo with a coherent visual story."""
+    clean = lambda value, limit=80: " ".join(str(value or "").split()[:limit])
+    title = clean(content.get("topic") or content.get("title") or "the selected event", 28)
+    subject = clean(content.get("subject") or content.get("player_team") or "the featured participant", 20)
+    probability = clean(content.get("probability"), 5)
+    previous = clean(content.get("previous_probability"), 5)
+    status = clean(content.get("status") or "Reported concern", 24)
+    evidence = clean(content.get("evidence") or "No additional verified detail supplied", 55)
+    source = clean(content.get("source_name") or content.get("market_source") or "Market update", 12)
+    reference = clean(content.get("reference_description"), 80)
+    confirmed = bool(content.get("confirmed_status"))
+    aspect = {"9:16": "vertical 9:16", "16:9": "landscape 16:9", "1:1": "square 1:1"}.get(aspect_ratio, "vertical 9:16")
+    probability_line = f"Current market probability: {probability}%." if probability else "Do not invent a probability."
+    movement_line = f"It moved from {previous}% to {probability}%." if previous and probability else "Do not invent market movement."
+    claim_rule = "The status is confirmed by the supplied source." if confirmed else "The status is not confirmed; frame it as reported, questionable, or uncertain, never as established fact."
+    return _provider_safe_product_prompt(" ".join([
+        f"Create a stunning, conversion-focused {duration}-second {aspect} sports and prediction-market promo about: {title}.",
+        (f"IDENTITY AND EVENT LOCK: follow the same {subject} and event throughout. Reference guidance: {reference}." if reference else f"EVENT LOCK: follow the same {subject} and event throughout; do not substitute a different person, team, sport, venue, or matchup."),
+        f"FACT LOCK: {probability_line} {movement_line} Status: {status}. Evidence supplied: {evidence}. Source: {source}. {claim_rule}",
+        "VISUAL STORY: open with premium event atmosphere and anticipation. Then show the featured adult athlete or participant experiencing a believable non-graphic physical setback, receiving sideline attention, or being unable to continue only when supported by the supplied status. Use body language, medical staff interaction, bench absence, equipment being set aside, or a lineup gap instead of explanatory injury text.",
+        "Reveal the probability as one bold, legible broadcast-style number with a restrained data graphic. Show what the uncertainty means through a tense team or audience reaction and tactical implication. Finish with a premium event hero composition, probability, source attribution, and clean call-to-action space.",
+        "SHOT ARC: 0–3 seconds event hook and identity; 3–7 seconds visible problem or availability uncertainty; 7–11 seconds probability reveal and implication; final seconds branded premium payoff. Use fast coherent rhythm, motivated camera movement, selective slow motion, realistic event lighting, tactile detail, authentic reactions and polished sound-design moments.",
+        "Major sports-network promo quality: photorealistic faces, accurate anatomy, consistent uniform and jersey number, plausible movement, cinematic contrast, volumetric atmosphere, crisp subject separation and premium commercial composition.",
+        "SAFETY AND TRUTH: adults only. No blood, exposed wounds, graphic impact, medical diagnosis, invented score, quote, award, opponent, source, financial promise, betting instruction, guaranteed outcome, or celebration of injury. Do not state an unconfirmed absence as fact. Probability is market sentiment, not a confirmed outcome or financial advice.",
+        "No paragraphs, subtitles, watermarks or fake logos inside footage. Only the supplied probability and short source/status wording may appear as minimal broadcast graphics; leave space for final typography.",
+    ]).strip()[:3500])
+
+
+def _creatorthon_prediction_narration(content: dict[str, Any], duration: int) -> str:
+    clean = lambda value, limit=30: " ".join(str(value or "").split()[:limit])
+    title = clean(content.get("topic") or content.get("title") or "this event", 18)
+    subject = clean(content.get("subject") or content.get("player_team") or "The key participant", 10)
+    probability = clean(content.get("probability"), 4)
+    status = clean(content.get("status") or "a reported availability concern", 12)
+    language = clean(content.get("narration_language") or "English", 3).casefold()
+    scripts = {
+        "tamil": f"{subject} குறித்து {status}. இப்போது {title} நிகழ்வின் சந்தை வாய்ப்பு {probability or 'புதிய'} சதவீதம். இது சந்தை கருத்து மட்டுமே; உறுதியான முடிவு அல்ல.",
+        "hindi": f"{subject} पर {status} की खबर है। {title} की बाज़ार संभावना अब {probability or 'नई'} प्रतिशत है। यह बाज़ार की राय है, पक्का नतीजा नहीं।",
+        "malayalam": f"{subject} സംബന്ധിച്ച് {status}. {title} ന്റെ വിപണി സാധ്യത ഇപ്പോൾ {probability or 'പുതിയ'} ശതമാനം. ഇത് വിപണി വിലയിരുത്തൽ മാത്രം; ഉറപ്പായ ഫലം അല്ല.",
+    }
+    pct = f"{probability} percent" if probability else "the latest market probability"
+    return scripts.get(language, f"{subject}: {status}. The market now puts {title} at {pct}. The situation changes the outlook—but probability is market sentiment, not a guaranteed result.")
+
+
 def apply_selected_alternate_direction(content: dict[str, Any], user_direction: str = "") -> dict[str, Any]:
     """Turn a selected V3 alternate into an authoritative shot without changing story facts."""
     concept = " ".join(str(content.get("selected_alternate_concept") or "").split())[:80]
@@ -451,8 +496,8 @@ async def require_password(request: Request, call_next):
     # The V3 custom domain is the product itself. Every clean browser route must
     # use the Google session (rather than falling through to the legacy password
     # middleware), otherwise refreshing a nested URL sends users to the wrong app.
-    v3_clean_roots = {"/", "/profile", "/product", "/workspace", "/concept", "/admin"}
-    v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/", "/product/", "/workspace/")
+    v3_clean_roots = {"/", "/profile", "/product", "/prediction-video", "/workspace", "/concept", "/admin"}
+    v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/", "/product/", "/prediction-video/", "/workspace/")
     is_v3_clean_route = request.url.path in v3_clean_roots or request.url.path.startswith(v3_clean_prefixes)
     if _is_creatorthon_v3_host(request) and is_v3_clean_route:
         if request.url.path != "/" and not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
@@ -1196,6 +1241,16 @@ async def creatorthon_product_clean(request: Request, step: str = ""):
         return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/"), status_code=303)
     creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon-product.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/prediction-video")
+@app.get("/prediction-video/{step:path}")
+async def creatorthon_prediction_video(request: Request, step: str = ""):
+    if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        destination = request.url.path
+        return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/"), status_code=303)
+    creatorthon_user(request)
+    return FileResponse(ROOT / "static" / "creatorthon-prediction-video.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/concept")
@@ -3567,7 +3622,14 @@ async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepa
     user = creatorthon_user(request)
     user_id = str(user.get("sub", ""))
     payload.content = _creatorthon_user_variation(user_id, payload.content)
-    if payload.content.get("product_video"):
+    if payload.content.get("prediction_video"):
+        prepared = {
+            "prompt": _creatorthon_prediction_prompt(payload.content, payload.duration, payload.aspect_ratio),
+            "narration": _creatorthon_prediction_narration(payload.content, payload.duration),
+            "content": payload.content,
+            "article_intelligence": {},
+        }
+    elif payload.content.get("product_video"):
         prepared = {
             "prompt": _creatorthon_product_prompt(payload.content, payload.duration, payload.aspect_ratio),
             "narration": _creatorthon_product_narration(payload.content, payload.duration),
@@ -3653,6 +3715,36 @@ Transcribe only clearly visible names and prices. Never invent products, prices,
         raise HTTPException(502, "No usable campaign concepts were found in the supplied material.")
     result.update(instruction=instruction[:1200], source_count=len(materials), requires_user_verification=True)
     return result
+
+
+@app.post("/api/creatorthon/prediction/analyze-references")
+async def analyze_prediction_references(request: Request, references: list[UploadFile] = File(...)):
+    """Describe supplied event references so the video prompt can retain visible identity cues."""
+    creatorthon_user(request)
+    if not 1 <= len(references) <= 5:
+        raise HTTPException(422, "Upload between one and five reference images.")
+    opened: list[Image.Image] = []
+    for upload in references:
+        raw = await upload.read(12 * 1024 * 1024 + 1)
+        if len(raw) > 12 * 1024 * 1024:
+            raise HTTPException(413, "Each reference image must be 12 MiB or smaller.")
+        try:
+            opened.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+        except Exception as exc:
+            raise HTTPException(415, "References must be readable JPEG, PNG, or WebP images.") from exc
+    canvas = Image.new("RGB", (1024, 1024), (18, 12, 24))
+    columns, rows = 2, (len(opened) + 1) // 2
+    cell_height = 1024 // max(1, rows)
+    for index, source in enumerate(opened):
+        fitted = ImageOps.fit(source, (512, cell_height), method=Image.Resampling.LANCZOS)
+        canvas.paste(fitted, ((index % columns) * 512, (index // columns) * cell_height))
+    output = io.BytesIO()
+    canvas.save(output, format="JPEG", quality=88)
+    try:
+        description = await analyze_reference_image("", output.getvalue(), "image/jpeg")
+    except OpenAIImageError as exc:
+        raise HTTPException(502, "Viralizer could not inspect the supplied references.") from exc
+    return {"reference_description": str(description)[:1600], "count": len(opened)}
 
 
 @app.post("/api/video/image/generate")
