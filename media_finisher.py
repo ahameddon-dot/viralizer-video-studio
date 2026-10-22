@@ -107,6 +107,12 @@ def _escape_drawtext(value):
 
 def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo=None):
     if not shutil.which("ffmpeg"): raise MediaFinisherError("FFmpeg is not installed on the server.")
+    dimensions=_media_info(video)
+    video_width=max(2,int(dimensions.get("width") or 0))
+    video_height=max(2,int(dimensions.get("height") or 0))
+    logo_width=max(96,min(240,round(video_width*.16)))
+    margin_x=max(18,round(video_width*.035))
+    margin_y=max(18,round(video_height*.035))
     cmd=["ffmpeg","-y","-i",str(video)]
     if audio: cmd += ["-i",str(audio)]
     next_input=1
@@ -129,7 +135,7 @@ def _ffmpeg(video, output, audio, logo, overlay_text="", overlay_position="botto
     font_setting=f"fontfile='{font_value}'" if font_path else "font='sans'"
     filters=[]; video_input="[0:v]"
     if logo:
-        filters += [f"[{logo_index}:v]scale='min(220,iw)':'-1'[logo]", f"{video_input}[logo]overlay=W-w-28:28:format=auto[vlogo]"]
+        filters += [f"[{logo_index}:v]scale={logo_width}:-1[logo]", f"{video_input}[logo]overlay=W-w-{margin_x}:{margin_y}:format=auto[vlogo]"]
         video_input="[vlogo]"
     if secondary_logo:
         filters += [f"[{secondary_logo_index}:v]scale='min(180,iw)':'-1'[brandlogo]", f"{video_input}[brandlogo]overlay=28:28:format=auto[vbrand]"]
@@ -200,6 +206,14 @@ def _append_outro(video: Path, outro: Path, output: Path) -> None:
 
 async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None, source_path=None):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
+    # Viralizer branding is a server-side invariant. Callers cannot omit or
+    # replace this primary mark; uploaded/customer logos remain secondary.
+    mandatory_logo=Path(__file__).parent/"static"/"viralizer-original-logo.png"
+    if not mandatory_logo.is_file(): raise MediaFinisherError("The required Viralizer logo is not installed on the server.")
+    mandatory_logo_bytes=mandatory_logo.read_bytes()
+    if secondary_logo_bytes is None and logo_bytes and logo_bytes != mandatory_logo_bytes:
+        secondary_logo_bytes=logo_bytes
+    logo_bytes=mandatory_logo_bytes
     output=folder/f"viralizer-{uuid.uuid4().hex}.mp4"
     with tempfile.TemporaryDirectory(prefix="viralizer-finish-") as name:
         temp=Path(name); video=temp/"source.mp4"
