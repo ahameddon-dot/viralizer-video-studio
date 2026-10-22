@@ -3,6 +3,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -13,7 +14,7 @@ import io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -856,6 +857,13 @@ class SiteUrlVideoRequest(BaseModel):
     url: str = Field(min_length=4, max_length=2000)
     duration: int = Field(default=10, ge=5, le=60)
     aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|3:4|1:1)$")
+
+
+class VideoReferenceAnalyzeRequest(BaseModel):
+    url: str = Field(min_length=10, max_length=2000)
+    instruction: str = Field(default="Create an original premium short inspired by the pacing and storytelling structure.", max_length=1200)
+    language: str = Field(default="English", max_length=40)
+    aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9)$")
 
 
 class CategoryIntelligenceRequest(BaseModel):
@@ -3716,6 +3724,107 @@ Transcribe only clearly visible names and prices. Never invent products, prices,
     result.update(instruction=instruction[:1200], source_count=len(materials), requires_user_verification=True)
     result["auto_prompt"] = str(result.get("auto_prompt") or result["concepts"][0].get("video_prompt") or result["concepts"][0].get("visual_direction") or "")[:5000]
     result["negative_prompt"] = str(result.get("negative_prompt") or result["concepts"][0].get("negative_prompt") or "")[:1800]
+    return result
+
+
+def _youtube_video_id(value: str) -> str:
+    """Return a conservative YouTube video id without accepting arbitrary hosts."""
+    try:
+        parsed = urlparse(value.strip())
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    candidate = ""
+    if host == "youtu.be":
+        candidate = parsed.path.strip("/").split("/")[0]
+    elif host in {"youtube.com", "m.youtube.com", "music.youtube.com"}:
+        parts = [part for part in parsed.path.split("/") if part]
+        if parsed.path == "/watch":
+            candidate = parse_qs(parsed.query).get("v", [""])[0]
+        elif len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+            candidate = parts[1]
+    return candidate if re.fullmatch(r"[A-Za-z0-9_-]{6,20}", candidate or "") else ""
+
+
+async def _youtube_reference_context(url: str) -> dict[str, str]:
+    """Read public metadata and captions when available; never download source footage."""
+    video_id = _youtube_video_id(url)
+    if not video_id:
+        raise HTTPException(422, "Enter a valid public YouTube or YouTube Shorts link.")
+    canonical = f"https://www.youtube.com/watch?v={video_id}"
+    thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    title = "YouTube reference"
+    author = ""
+    transcript = ""
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 Viralizer/3"}) as client:
+        try:
+            metadata = (await client.get("https://www.youtube.com/oembed", params={"url": canonical, "format": "json"})).json()
+            title = str(metadata.get("title") or title)[:300]
+            author = str(metadata.get("author_name") or "")[:160]
+            thumbnail = str(metadata.get("thumbnail_url") or thumbnail)
+        except (httpx.HTTPError, ValueError):
+            pass
+        try:
+            page = (await client.get(canonical)).text
+            match = re.search(r'"captionTracks":(\[.*?\])(?:,"audioTracks"|,"translationLanguages")', page)
+            if match:
+                tracks = json.loads(match.group(1))
+                track = next((item for item in tracks if str(item.get("languageCode", "")).startswith("en")), tracks[0])
+                caption_xml = (await client.get(str(track.get("baseUrl") or ""))).text
+                transcript = " ".join(
+                    html.unescape(re.sub(r"<[^>]+>", "", item)).strip()
+                    for item in re.findall(r"<text[^>]*>(.*?)</text>", caption_xml, re.S)
+                )[:8000]
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, json.JSONDecodeError):
+            transcript = ""
+    return {"video_id": video_id, "url": canonical, "title": title, "author": author, "thumbnail_url": thumbnail, "transcript": transcript}
+
+
+@app.post("/api/creatorthon/product/analyze-video-link")
+async def analyze_product_video_link(request: Request, payload: VideoReferenceAnalyzeRequest):
+    """Turn a public YouTube reference into an editable, original short-video campaign."""
+    creatorthon_user(request)
+    source = await _youtube_reference_context(payload.url)
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "Video-reference analysis is not configured.")
+    source_text = "\n".join(filter(None, [
+        f"Reference title: {source['title']}",
+        f"Publisher: {source['author']}",
+        f"Available captions: {source['transcript']}",
+        f"User request: {payload.instruction}",
+        f"Narration language: {payload.language}",
+        f"Output: {payload.aspect_ratio}",
+    ]))
+    prompt = f"""Analyze this public video reference only to understand its subject, hook, pacing, shot progression, sensory actions, and viewer payoff.
+{source_text[:11000]}
+Return only JSON: {{"brand":"","industry":"","summary":"","product_identity":{{"name":"","category":"","variant":"","materials":"","colors":"","packaging":"","visible_features":[],"reference_roles":["video inspiration"]}},"facts":[],"source_analysis":{{"hook":"","pacing":"","visual_language":"","scene_progression":[""],"audio_style":"","viewer_payoff":""}},"auto_prompt":"","negative_prompt":"","recommended_audience":"","recommended_goal":"","concepts":[{{"title":"","hook":"","product":"","visual_direction":"","video_prompt":"","negative_prompt":"","narration":"","music_direction":"","cta":"","duration":15,"aspect_ratio":"{payload.aspect_ratio}"}}]}}.
+Create up to six distinct, immediately usable concepts. They must be ORIGINAL: do not copy source footage, exact wording, logos, faces, channel identity, music, or a shot-for-shot sequence. Preserve only high-level storytelling mechanics. Every video_prompt must specify a timed 15-second or 30-second vertical/landscape scene sequence, realistic adult human actions where appropriate, macro/close/wide camera variety, continuity locks, narration in {payload.language}, sound design, music arc, and a clean branded final frame. Do not invent factual claims. No generated on-screen paragraph text; use only short editable labels and CTA. Put identity drift, visual glitches, unsafe actions, copied branding, watermarks, distorted anatomy, and generic stock footage in negative_prompt."""
+    content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+    if source.get("thumbnail_url"):
+        content.append({"type": "input_image", "image_url": source["thumbnail_url"]})
+    body = {"model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"), "input": [{"role": "user", "content": content}], "max_output_tokens": 2800}
+    try:
+        async with httpx.AsyncClient(timeout=150.0) as client:
+            response = await client.post("https://api.openai.com/v1/responses", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=body)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Viralizer could not analyze this video reference. Confirm that it is public and retry.") from exc
+    text = str(data.get("output_text") or "").strip() or " ".join(str(item.get("text") or "") for output in data.get("output") or [] for item in output.get("content") or [] if item.get("type") == "output_text")
+    match = re.search(r"\{.*\}", text, re.S)
+    try:
+        result = json.loads(match.group(0) if match else text)
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise HTTPException(502, "Viralizer could not structure the video analysis. Please retry.") from exc
+    concepts = [item for item in result.get("concepts", []) if isinstance(item, dict)][:6]
+    if not concepts:
+        raise HTTPException(502, "No usable recreation concepts were found.")
+    result["concepts"] = concepts
+    result["facts"] = result.get("facts") if isinstance(result.get("facts"), list) else []
+    result["auto_prompt"] = str(result.get("auto_prompt") or concepts[0].get("video_prompt") or "")[:6000]
+    result["negative_prompt"] = str(result.get("negative_prompt") or concepts[0].get("negative_prompt") or "")[:1800]
+    result.update(source=source, source_count=1, reference_type="youtube", requires_user_verification=True)
     return result
 
 
