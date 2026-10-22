@@ -3691,8 +3691,8 @@ async def analyze_product_materials(request: Request, instruction: str = Form("C
     if not api_key:
         raise HTTPException(503, "Product-material analysis is not configured.")
     prompt = f"""Analyze these product/menu/brochure images as factual source material. User request: {instruction[:1200]}
-Return only JSON: {{"brand":"","industry":"","summary":"","facts":[{{"name":"","description":"","price":"","category":""}}],"concepts":[{{"title":"","hook":"","product":"","visual_direction":"","narration":"","duration":15,"aspect_ratio":"9:16"}}]}}.
-Transcribe only clearly visible names and prices. Never invent products, prices, ingredients, offers, awards or locations. Produce up to six distinct premium ad concepts. Each visual_direction must request photorealistic preparation or use, natural human interaction, premium lighting, macro detail, three visual beats, and no generated text. Narration must stay below 32 words."""
+Return only JSON: {{"brand":"","industry":"","summary":"","product_identity":{{"name":"","category":"","variant":"","materials":"","colors":"","packaging":"","visible_features":[],"reference_roles":[]}},"facts":[{{"name":"","description":"","price":"","category":""}}],"auto_prompt":"","negative_prompt":"","recommended_audience":"","recommended_goal":"","concepts":[{{"title":"","hook":"","product":"","visual_direction":"","video_prompt":"","negative_prompt":"","narration":"","music_direction":"","cta":"","duration":15,"aspect_ratio":"9:16"}}]}}.
+Transcribe only clearly visible names and prices. Never invent products, prices, ingredients, offers, awards or locations. Identify whether each image is primarily product, packaging, menu, logo, person/model, location, or visual inspiration. Produce one immediately usable auto_prompt plus up to six distinct premium ad concepts. The auto_prompt and every video_prompt must explicitly lock the same visible product identity, material, colors, packaging and branding across all shots; specify a three-beat timeline, suitable adult human interaction, environment, camera movement, lighting, sound and final CTA composition. Adapt creative intensity to the requested Accurate, Promotional or Cinematic mode. Accurate stays literal; Promotional adds a conversion arc; Cinematic adds atmosphere and bolder camera language without changing facts. Use photorealistic motion and no generated text. Put defects, unrelated products, identity drift, invented claims/prices and distorted anatomy in negative_prompt. Narration must stay below 32 words."""
     payload = {"model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"), "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}, *image_parts]}], "max_output_tokens": 2400}
     try:
         async with httpx.AsyncClient(timeout=150.0) as client:
@@ -3714,6 +3714,8 @@ Transcribe only clearly visible names and prices. Never invent products, prices,
     if not result["concepts"]:
         raise HTTPException(502, "No usable campaign concepts were found in the supplied material.")
     result.update(instruction=instruction[:1200], source_count=len(materials), requires_user_verification=True)
+    result["auto_prompt"] = str(result.get("auto_prompt") or result["concepts"][0].get("video_prompt") or result["concepts"][0].get("visual_direction") or "")[:5000]
+    result["negative_prompt"] = str(result.get("negative_prompt") or result["concepts"][0].get("negative_prompt") or "")[:1800]
     return result
 
 
