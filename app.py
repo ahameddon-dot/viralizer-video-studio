@@ -3610,6 +3610,51 @@ async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepa
     }
 
 
+@app.post("/api/creatorthon/product/analyze")
+async def analyze_product_materials(request: Request, instruction: str = Form("Create a premium advertising campaign."), materials: list[UploadFile] = File(...)):
+    """Convert product/menu photographs into a factual, editable campaign brief."""
+    creatorthon_user(request)
+    if not 1 <= len(materials) <= 8:
+        raise HTTPException(422, "Upload between one and eight images.")
+    image_parts: list[dict[str, Any]] = []
+    for upload in materials:
+        content_type = (upload.content_type or "").lower()
+        if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
+            raise HTTPException(415, "Materials must be JPEG, PNG, or WebP images.")
+        raw = await upload.read(15 * 1024 * 1024 + 1)
+        if len(raw) > 15 * 1024 * 1024:
+            raise HTTPException(413, "Each image must be 15 MiB or smaller.")
+        image_parts.append({"type": "input_image", "image_url": f"data:{content_type};base64,{base64.b64encode(raw).decode('ascii')}"})
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(503, "Product-material analysis is not configured.")
+    prompt = f"""Analyze these product/menu/brochure images as factual source material. User request: {instruction[:1200]}
+Return only JSON: {{"brand":"","industry":"","summary":"","facts":[{{"name":"","description":"","price":"","category":""}}],"concepts":[{{"title":"","hook":"","product":"","visual_direction":"","narration":"","duration":15,"aspect_ratio":"9:16"}}]}}.
+Transcribe only clearly visible names and prices. Never invent products, prices, ingredients, offers, awards or locations. Produce up to six distinct premium ad concepts. Each visual_direction must request photorealistic preparation or use, natural human interaction, premium lighting, macro detail, three visual beats, and no generated text. Narration must stay below 32 words."""
+    payload = {"model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"), "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}, *image_parts]}], "max_output_tokens": 2400}
+    try:
+        async with httpx.AsyncClient(timeout=150.0) as client:
+            response = await client.post("https://api.openai.com/v1/responses", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=payload)
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Viralizer could not read the supplied material.") from exc
+    text = str(data.get("output_text") or "").strip() or " ".join(str(item.get("text") or "") for output in data.get("output") or [] for item in output.get("content") or [] if item.get("type") == "output_text")
+    match = re.search(r"\{.*\}", text, re.S)
+    try:
+        result = json.loads(match.group(0) if match else text)
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise HTTPException(502, "Viralizer could not structure the extracted details. Please retry.") from exc
+    if not isinstance(result, dict) or not isinstance(result.get("concepts"), list):
+        raise HTTPException(502, "Viralizer returned an incomplete campaign brief. Please retry.")
+    result["facts"] = result.get("facts") if isinstance(result.get("facts"), list) else []
+    result["concepts"] = [value for value in result["concepts"] if isinstance(value, dict)][:6]
+    if not result["concepts"]:
+        raise HTTPException(502, "No usable campaign concepts were found in the supplied material.")
+    result.update(instruction=instruction[:1200], source_count=len(materials), requires_user_verification=True)
+    return result
+
+
 @app.post("/api/video/image/generate")
 async def generate_image_video(
     content_json: str = Form(...),
