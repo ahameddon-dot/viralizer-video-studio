@@ -112,6 +112,7 @@ class ViralChannelAutomation:
         self.mcp_scorer = mcp_scorer
         self.lock = asyncio.Lock()
         self.task: asyncio.Task | None = None
+        self.upload_tasks: set[asyncio.Task] = set()
 
     def state(self) -> dict[str, Any]:
         try:
@@ -305,6 +306,148 @@ Describe only visible evidence. Do not suggest copying footage, faces, wording, 
         except Exception as exc:
             return {"status": "failed", "detail": str(exc)[:500], "sampled_frames": len(frames),
                     "frame_status": "ready" if frames else "unavailable", "frame_detail": frame_detail}
+
+    async def _probe_duration(self, video_path: Path) -> float:
+        command = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(video_path)]
+        result = await asyncio.to_thread(subprocess.run, command, capture_output=True, timeout=30, check=False)
+        try:
+            return max(0.1, float(result.stdout.decode("utf-8", errors="replace").strip()))
+        except (TypeError, ValueError):
+            raise ChannelAutomationError("The uploaded video duration could not be read.")
+
+    async def _sample_uploaded_frames(self, video_path: Path, work: Path) -> tuple[list[str], float]:
+        """Sample the whole timeline evenly so every section of an upload is inspected."""
+        duration = await self._probe_duration(video_path)
+        frame_count = max(10, min(20, int(math.ceil(duration / 1.5))))
+        interval = max(0.25, duration / frame_count)
+        pattern = work / "upload-frame-%03d.jpg"
+        command = ["ffmpeg", "-y", "-i", str(video_path), "-vf",
+                   f"fps=1/{interval:.4f},scale=640:-2", "-frames:v", str(frame_count), "-q:v", "3", str(pattern)]
+        result = await asyncio.to_thread(subprocess.run, command, capture_output=True, timeout=180, check=False)
+        frames = [base64.b64encode(path.read_bytes()).decode("ascii") for path in sorted(work.glob("upload-frame-*.jpg"))]
+        if not frames:
+            detail = result.stderr.decode("utf-8", errors="replace")[-500:]
+            raise ChannelAutomationError(detail or "No frames could be extracted from the uploaded video.")
+        return frames, duration
+
+    async def _transcribe_uploaded_video(self, video_path: Path, work: Path) -> dict[str, Any]:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not key:
+            return {"status": "unavailable", "text": "", "language": "", "detail": "OPENAI_API_KEY is not configured."}
+        audio_path = work / "speech.mp3"
+        command = ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", str(audio_path)]
+        result = await asyncio.to_thread(subprocess.run, command, capture_output=True, timeout=180, check=False)
+        if result.returncode != 0 or not audio_path.is_file() or audio_path.stat().st_size < 512:
+            return {"status": "unavailable", "text": "", "language": "", "detail": "No usable speech track was found."}
+        if audio_path.stat().st_size > 24 * 1024 * 1024:
+            return {"status": "unavailable", "text": "", "language": "", "detail": "The extracted speech track exceeds the transcription limit."}
+        try:
+            async with httpx.AsyncClient(timeout=240.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    data={"model": os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"), "response_format": "json"},
+                    files={"file": ("speech.mp3", audio_path.read_bytes(), "audio/mpeg")},
+                )
+                response.raise_for_status()
+            payload = response.json()
+            return {"status": "ready", "text": str(payload.get("text") or "").strip(),
+                    "language": str(payload.get("language") or ""), "detail": ""}
+        except Exception as exc:
+            return {"status": "failed", "text": "", "language": "", "detail": str(exc)[:500]}
+
+    async def _deep_uploaded_analysis(self, video_path: Path, *, title: str, category: str,
+                                      platform: str, output_duration: int, language: str) -> dict[str, Any]:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not key:
+            raise ChannelAutomationError("OPENAI_API_KEY is not configured.")
+        work = Path(tempfile.mkdtemp(prefix="viralizer-upload-analysis-"))
+        try:
+            frames, source_duration = await self._sample_uploaded_frames(video_path, work)
+            transcript = await self._transcribe_uploaded_video(video_path, work)
+            images = [{"type": "input_image", "image_url": f"data:image/jpeg;base64,{value}"} for value in frames]
+            prompt = f"""You are Viralizer's senior short-form video strategist. Analyze the ENTIRE uploaded video from evenly sampled frames and its transcript.
+Source title: {title or video_path.stem}
+Category: {category}. Target platform: {platform}. Desired original output: {output_duration} seconds. Output language: {language}.
+Source duration: {source_duration:.2f} seconds. Frames are chronological and cover the full timeline.
+Transcript: {str(transcript.get('text') or '')[:12000]}
+Return JSON only with this structure:
+{{"summary":"","main_subject":"","hook":{{"visual":"","spoken":"","first_frame":"","strength":0}},"timeline":[{{"time":"","visual":"","speech":"","camera":"","edit":"","purpose":""}}],"people_and_actions":[""],"camera_language":[""],"editing_pattern":"","caption_style":"","audio":{{"speech":"","music":"","sound_effects":[""]}},"emotional_arc":"","payoff":"","loop_method":"","retention_devices":[""],"viral_strengths":[""],"weaknesses":[""],"audience":"","viral_score":0,"copyright_safe_patterns":[""],"must_not_copy":[""]}}.
+Base claims only on visible or transcribed evidence. Explain the full progression, not merely individual images. Identify reusable creative mechanisms, but never recommend copying footage, faces, protected wording, branding, music, or an exact shot sequence."""
+            body = {"model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"),
+                    "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}, *images]}],
+                    "max_output_tokens": 3200}
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post("https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=body)
+                response.raise_for_status()
+            analysis = _json_object(_response_text(response.json()), purpose="uploaded video analysis")
+            analysis.update(status="ready", sampled_frames=len(frames), source_duration=round(source_duration, 2),
+                            transcript=transcript)
+            candidate = {"video_id": "upload", "url": "", "title": title or video_path.stem,
+                         "description": "User-authorized uploaded source video", "views": 0, "view_velocity": 0,
+                         "engagement_rate": 0, "metadata_score": float(analysis.get("viral_score") or 0),
+                         "opportunity_score": float(analysis.get("viral_score") or 0), "category": category,
+                         "mcp": {"status": "not_applicable", "score": 0}, "visual_analysis": analysis}
+            story = await self._story_from_upload(category, platform, output_duration, language, candidate)
+            story["research"] = {"source_type": "uploaded_video", "source_deleted": True,
+                                 "top_candidates": [candidate], "discovered_count": 1}
+            return story
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    async def _story_from_upload(self, category: str, platform: str, output_duration: int,
+                                 language: str, candidate: dict[str, Any]) -> dict[str, Any]:
+        key = os.getenv("OPENAI_API_KEY", "").strip()
+        evidence = candidate.get("visual_analysis") or {}
+        prompt = f"""Create one ORIGINAL, production-ready {output_duration}-second {platform} video for category {category} in {language} from this Viral DNA analysis:
+{json.dumps(evidence, ensure_ascii=False)[:30000]}
+Return JSON only: {{"title":"","category":"{category}","why_now":"","winning_patterns":[""],"originality_angle":"","hook":"","duration":{output_duration},"story_beats":[{{"time":"0-2s","visual":"","action":"","camera":"","audio":"","narration":"","on_screen_text":""}}],"narration":"","music_direction":"","sound_design":"","loop":"","thumbnail":"","caption":"","hashtags":[""],"generation_prompt":"","negative_prompt":"","quality_requirements":[""]}}.
+Make it visually specific, cinematic and feasible for AI video generation. Preserve successful mechanisms while changing the creative execution. Do not copy source footage, identifiable faces, exact wording, branding, music or shot order. End with a compact mandatory Viralizer logo beat."""
+        body = {"model": os.getenv("OPENAI_TEXT_MODEL", "gpt-4.1-mini"), "input": prompt, "max_output_tokens": 3200}
+        async with httpx.AsyncClient(timeout=240.0) as client:
+            response = await client.post("https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=body)
+            response.raise_for_status()
+        story = _json_object(_response_text(response.json()), purpose="uploaded video story synthesis")
+        story.update(id=uuid.uuid4().hex, status="awaiting_approval", created_at=_now(),
+                     mode="uploaded_video_deep_analysis", source_filename=candidate.get("title") or "Uploaded video")
+        return story
+
+    async def analyze_uploaded_video(self, video_path: Path, **settings: Any) -> None:
+        state = self.state()
+        job_id = str(settings.get("job_id") or uuid.uuid4().hex)
+        try:
+            story = await self._deep_uploaded_analysis(video_path, title=str(settings.get("title") or ""),
+                category=str(settings.get("category") or "Entertainment"), platform=str(settings.get("platform") or "Instagram Reels"),
+                output_duration=max(10, min(60, int(settings.get("output_duration") or 20))),
+                language=str(settings.get("language") or "English"))
+            state = self.state()
+            state.setdefault("drafts", []).insert(0, story)
+            state["drafts"] = state["drafts"][:100]
+            state.setdefault("upload_jobs", {})[job_id] = {"status": "complete", "draft_id": story["id"],
+                "title": story.get("title"), "completed_at": _now()}
+        except Exception as exc:
+            state = self.state()
+            state.setdefault("upload_jobs", {})[job_id] = {"status": "failed", "error": str(exc)[:500], "completed_at": _now()}
+        finally:
+            try:
+                video_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self.save(state)
+
+    def start_uploaded_video(self, video_path: Path, **settings: Any) -> dict[str, Any]:
+        job_id = uuid.uuid4().hex
+        state = self.state()
+        state.setdefault("upload_jobs", {})[job_id] = {"status": "analyzing", "filename": video_path.name,
+            "started_at": _now(), "sample_strategy": "full_timeline"}
+        state["upload_jobs"] = dict(list(state["upload_jobs"].items())[-20:])
+        self.save(state)
+        task = asyncio.create_task(self.analyze_uploaded_video(video_path, job_id=job_id, **settings))
+        self.upload_tasks.add(task)
+        task.add_done_callback(self.upload_tasks.discard)
+        return {"accepted": True, "job_id": job_id, "status": "analyzing"}
 
     async def _story(self, category: str, ranked: list[dict[str, Any]]) -> dict[str, Any]:
         key = os.getenv("OPENAI_API_KEY", "").strip()

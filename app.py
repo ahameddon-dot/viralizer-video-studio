@@ -3006,6 +3006,53 @@ async def creatorthon_admin_channel_automation_run(request: Request, payload: Ch
         raise HTTPException(409, str(exc)) from exc
 
 
+@app.post("/api/creatorthon/admin/channel-automation/analyze-upload")
+async def creatorthon_admin_channel_automation_analyze_upload(
+    request: Request,
+    video: UploadFile = File(...),
+    title: str = Form(""),
+    category: str = Form("Entertainment"),
+    platform: str = Form("Instagram Reels"),
+    output_duration: int = Form(20),
+    language: str = Form("English"),
+):
+    """Deep-analyse an organizer-authorized upload without retaining its source media."""
+    creatorthon_admin_user(request)
+    suffix = Path(video.filename or "source.mp4").suffix.lower()
+    allowed = {".mp4", ".mov", ".m4v", ".webm"}
+    if suffix not in allowed:
+        raise HTTPException(422, "Upload an MP4, MOV, M4V or WebM video.")
+    if category not in CHANNEL_AUTOMATION_CATEGORIES:
+        raise HTTPException(422, "Select a supported Viralizer category.")
+    if platform not in {"Instagram Reels", "YouTube Shorts", "TikTok"}:
+        raise HTTPException(422, "Select Instagram Reels, YouTube Shorts or TikTok.")
+    if not 10 <= output_duration <= 60:
+        raise HTTPException(422, "Output duration must be between 10 and 60 seconds.")
+    maximum = max(25, min(1000, int(os.getenv("CHANNEL_UPLOAD_MAX_MB", "300")))) * 1024 * 1024
+    upload_dir = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "channel_automation" / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    token = hashlib.sha256(f"{time.time_ns()}:{video.filename}".encode()).hexdigest()[:24]
+    destination = upload_dir / f"{token}{suffix}"
+    written = 0
+    try:
+        with destination.open("wb") as target:
+            while chunk := await video.read(1024 * 1024):
+                written += len(chunk)
+                if written > maximum:
+                    raise HTTPException(413, f"Video exceeds the {maximum // (1024 * 1024)} MB upload limit.")
+                target.write(chunk)
+        if written < 1024:
+            raise HTTPException(422, "The uploaded video is empty or unreadable.")
+        return CHANNEL_AUTOMATION.start_uploaded_video(destination, title=title.strip()[:180], category=category,
+            platform=platform, output_duration=output_duration, language=language.strip()[:80] or "English")
+    except Exception:
+        if destination.is_file():
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await video.close()
+
+
 async def _finish_channel_automation_draft(draft_id: str, project_id: str, job_id: str, narration: str) -> None:
     """Monitor the existing multi-scene generator, then add narration and mandatory Viralizer branding."""
     user_id = "__viralizer_channel_automation__"
