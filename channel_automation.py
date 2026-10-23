@@ -195,10 +195,19 @@ class ViralChannelAutomation:
         return sorted(candidates, key=lambda item: item["metadata_score"], reverse=True)
 
     async def _mcp_score(self, candidate: dict[str, Any]) -> dict[str, Any]:
-        try:
-            insight = await asyncio.wait_for(self.mcp_scorer(candidate["title"]), timeout=90)
-        except Exception as exc:
-            return {"score": 0.0, "status": "unavailable", "detail": str(exc)[:240]}
+        timeout = max(120, min(300, int(os.getenv("CHANNEL_MCP_TIMEOUT_SECONDS", "210"))))
+        insight: dict[str, Any] | None = None
+        last_error = ""
+        for attempt in range(2):
+            try:
+                insight = await asyncio.wait_for(self.mcp_scorer(candidate["title"]), timeout=timeout)
+                break
+            except Exception as exc:
+                last_error = str(exc)[:500]
+                if attempt == 0:
+                    await asyncio.sleep(2)
+        if insight is None:
+            return {"score": 0.0, "status": "unavailable", "detail": last_error or "MCP analysis returned no report."}
         metrics = insight.get("metrics") or {}
         score = max((_number(value) for value in metrics.values()), default=0.0)
         if score > 100:
@@ -207,32 +216,38 @@ class ViralChannelAutomation:
                 "audience_insight": insight.get("audience_insight", ""),
                 "creator_insight": insight.get("creator_insight", "")}
 
-    async def _sample_frames(self, candidate: dict[str, Any]) -> list[str]:
+    async def _sample_frames(self, candidate: dict[str, Any]) -> tuple[list[str], str]:
         """Temporarily download one shortlisted public source and sample frames; always delete it."""
         if os.getenv("CHANNEL_FRAME_ANALYSIS_ENABLED", "true").lower() != "true":
-            return []
+            return [], "Frame analysis is disabled by CHANNEL_FRAME_ANALYSIS_ENABLED."
         try:
             import yt_dlp  # type: ignore
         except ImportError:
-            return []
+            return [], "yt-dlp is not installed in the deployed service."
         temporary = Path(tempfile.mkdtemp(prefix="viralizer-channel-"))
-        video_path = temporary / "source.mp4"
+        video_template = temporary / "source.%(ext)s"
         frame_pattern = temporary / "frame-%02d.jpg"
         try:
             options = {
                 "quiet": True, "no_warnings": True, "noplaylist": True,
                 "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
-                "outtmpl": str(video_path), "socket_timeout": 25,
+                "outtmpl": str(video_template), "socket_timeout": 30,
+                "retries": 3, "fragment_retries": 3, "extractor_retries": 3,
+                "http_headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36"},
             }
             await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(options).download([candidate["url"]]))
-            actual = video_path if video_path.exists() else next(temporary.glob("source.*"), None)
+            actual = next((path for path in temporary.glob("source.*") if path.is_file()), None)
             if not actual:
-                return []
+                return [], "yt-dlp completed without producing a readable video file."
             command = ["ffmpeg", "-y", "-i", str(actual), "-vf", "fps=1/2,scale=512:-2", "-frames:v", "12", str(frame_pattern)]
-            await asyncio.to_thread(subprocess.run, command, capture_output=True, timeout=60, check=False)
-            return [base64.b64encode(path.read_bytes()).decode("ascii") for path in sorted(temporary.glob("frame-*.jpg"))[:12]]
-        except Exception:
-            return []
+            result = await asyncio.to_thread(subprocess.run, command, capture_output=True, timeout=90, check=False)
+            frames = [base64.b64encode(path.read_bytes()).decode("ascii") for path in sorted(temporary.glob("frame-*.jpg"))[:12]]
+            if frames:
+                return frames, ""
+            detail = result.stderr.decode("utf-8", errors="replace")[-500:] if result.stderr else ""
+            return [], detail or f"FFmpeg produced no frames (exit code {result.returncode})."
+        except Exception as exc:
+            return [], str(exc)[:500]
         finally:
             shutil.rmtree(temporary, ignore_errors=True)
 
@@ -240,7 +255,7 @@ class ViralChannelAutomation:
         key = os.getenv("OPENAI_API_KEY", "").strip()
         if not key:
             return {"status": "unavailable", "reason": "OPENAI_API_KEY is not configured"}
-        frames = await self._sample_frames(candidate)
+        frames, frame_detail = await self._sample_frames(candidate)
         images = ([{"type": "input_image", "image_url": f"data:image/jpeg;base64,{value}"} for value in frames]
                   if frames else ([{"type": "input_image", "image_url": candidate["thumbnail_url"]}] if candidate.get("thumbnail_url") else []))
         prompt = f"""Analyze this trending YouTube Short for internal creative research.
@@ -256,10 +271,12 @@ Describe only visible evidence. Do not suggest copying footage, faces, wording, 
                 data = response.json()
             text = _response_text(data)
             result = _json_object(text, purpose="visual analysis")
-            result.update(status="ready", sampled_frames=len(frames), used_thumbnail_fallback=not bool(frames))
+            result.update(status="ready", sampled_frames=len(frames), used_thumbnail_fallback=not bool(frames),
+                          frame_status="ready" if frames else "unavailable", frame_detail=frame_detail)
             return result
         except Exception as exc:
-            return {"status": "failed", "detail": str(exc)[:240], "sampled_frames": len(frames)}
+            return {"status": "failed", "detail": str(exc)[:500], "sampled_frames": len(frames),
+                    "frame_status": "ready" if frames else "unavailable", "frame_detail": frame_detail}
 
     async def _story(self, category: str, ranked: list[dict[str, Any]]) -> dict[str, Any]:
         key = os.getenv("OPENAI_API_KEY", "").strip()
@@ -297,7 +314,14 @@ Use common successful mechanisms, never any source's protected execution. Do not
                         candidate["opportunity_score"] = round(candidate["metadata_score"] * .7 + mcp * .3, 2)
                     shortlist.sort(key=lambda item: item.get("opportunity_score", item["metadata_score"]), reverse=True)
                     if shortlist:
-                        shortlist[0]["visual_analysis"] = await self._visual_analysis(shortlist[0])
+                        # Try the strongest candidates until one yields real sampled frames.
+                        for candidate in shortlist[:3]:
+                            candidate["visual_analysis"] = await self._visual_analysis(candidate)
+                            if int(candidate["visual_analysis"].get("sampled_frames") or 0) > 0:
+                                if candidate is not shortlist[0]:
+                                    shortlist.remove(candidate)
+                                    shortlist.insert(0, candidate)
+                                break
                         story = await self._story(category, shortlist)
                         story["research"] = {"top_candidates": shortlist, "discovered_count": len(candidates)}
                         state.setdefault("drafts", []).insert(0, story)
