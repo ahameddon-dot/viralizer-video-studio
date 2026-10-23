@@ -1323,6 +1323,25 @@ async def creatorthon_admin_page(request: Request):
     )
 
 
+@app.get("/admin/channel-engine")
+async def channel_engine_admin_page(request: Request):
+    """Private, organizer-only home for autonomous channel research."""
+    user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if not user:
+        return RedirectResponse("/creatorthon/login?next=/admin/channel-engine", status_code=303)
+    if not _creatorthon_admin_user(user):
+        raise HTTPException(403, "Viralizer organizer access required.")
+    return FileResponse(
+        ROOT / "static" / "channel-engine-admin.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
+
+
+@app.get("/creatorthon/admin/channel-engine")
+async def legacy_channel_engine_admin_page(request: Request):
+    return RedirectResponse("/admin/channel-engine", status_code=308)
+
+
 @app.get("/health/storage")
 async def storage_health():
     """Secret-free readiness check for the persistent Creatorthon database."""
