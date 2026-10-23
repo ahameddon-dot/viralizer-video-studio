@@ -83,6 +83,7 @@ from article_intelligence import openai_story_analysis_complete, prepare_article
 from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
+from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -92,6 +93,7 @@ CREATORTHON_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 PREDICTION_COVERAGE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+CHANNEL_AUTOMATION_TASK: asyncio.Task | None = None
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -769,10 +771,12 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 @app.on_event("startup")
 async def start_daily_scheduler():
     asyncio.create_task(daily_trends.scheduler())
-    global CREATORTHON_PREFETCH_TASK, PREDICTION_MARKET_PREFETCH_TASK
+    global CREATORTHON_PREFETCH_TASK, PREDICTION_MARKET_PREFETCH_TASK, CHANNEL_AUTOMATION_TASK
     if os.getenv("CREATORTHON_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         CREATORTHON_PREFETCH_TASK = asyncio.create_task(_creatorthon_prefetch_scheduler())
     PREDICTION_MARKET_PREFETCH_TASK = asyncio.create_task(_prefetch_prediction_market_topics())
+    if os.getenv("CHANNEL_AUTOMATION_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        CHANNEL_AUTOMATION_TASK = asyncio.create_task(CHANNEL_AUTOMATION.scheduler())
 
 
 @app.get("/health")
@@ -915,6 +919,19 @@ class CreatorthonAdminFreezeRequest(BaseModel):
 class CreatorthonAdminAllowanceRequest(BaseModel):
     emails: list[str] = Field(min_length=1, max_length=1000)
     total_allowance: int = Field(ge=1, le=1000)
+
+
+class ChannelAutomationSettingsRequest(BaseModel):
+    enabled: bool
+    categories: list[str] = Field(default_factory=list, max_length=40)
+
+
+class ChannelAutomationRunRequest(BaseModel):
+    categories: list[str] = Field(default_factory=list, max_length=40)
+
+
+class ChannelAutomationDraftRequest(BaseModel):
+    status: str = Field(pattern=r"^(approved|rejected|awaiting_approval)$")
 
 
 class CreatorthonInsightsRequest(BaseModel):
@@ -2652,6 +2669,12 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
     }
 
 
+# Private, approval-gated research automation for the central Viralizer channel.
+# Instantiated after the MCP scorer is defined so the agent can reuse the same
+# proprietary trend intelligence as the interactive application.
+CHANNEL_AUTOMATION = ViralChannelAutomation(ROOT, _proprietary_insight_payload)
+
+
 CREATORTHON_PREFETCH_CATEGORIES = (
     "Fashion", "AI", "Technology", "Beauty", "Business", "Gaming",
     "Food", "Sports", "Travel", "Cryptos", "Stocks", "Health",
@@ -2934,6 +2957,133 @@ async def creatorthon_admin_videos(request: Request):
     creatorthon_admin_user(request)
     videos = list_participant_videos(ROOT)
     return {"videos": videos, "count": len(videos)}
+
+
+@app.get("/api/creatorthon/admin/channel-automation")
+async def creatorthon_admin_channel_automation(request: Request):
+    """Inspect private trend-research runs and approval-gated story drafts."""
+    creatorthon_admin_user(request)
+    state = CHANNEL_AUTOMATION.state()
+    state["available_categories"] = list(CHANNEL_AUTOMATION_CATEGORIES)
+    state["youtube_discovery_configured"] = bool(os.getenv("YOUTUBE_DATA_API_KEY", "").strip())
+    state["frame_analysis_enabled"] = os.getenv("CHANNEL_FRAME_ANALYSIS_ENABLED", "true").lower() == "true"
+    state["publishing_mode"] = "approval_required"
+    return state
+
+
+@app.put("/api/creatorthon/admin/channel-automation")
+async def creatorthon_admin_channel_automation_settings(request: Request, payload: ChannelAutomationSettingsRequest):
+    creatorthon_admin_user(request)
+    return CHANNEL_AUTOMATION.update_settings(enabled=payload.enabled, categories=payload.categories or None)
+
+
+@app.post("/api/creatorthon/admin/channel-automation/run")
+async def creatorthon_admin_channel_automation_run(request: Request, payload: ChannelAutomationRunRequest):
+    creatorthon_admin_user(request)
+    try:
+        return CHANNEL_AUTOMATION.start(payload.categories or None)
+    except ChannelAutomationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+async def _finish_channel_automation_draft(draft_id: str, project_id: str, job_id: str, narration: str) -> None:
+    """Monitor the existing multi-scene generator, then add narration and mandatory Viralizer branding."""
+    user_id = "__viralizer_channel_automation__"
+    try:
+        for _ in range(720):
+            await asyncio.sleep(10)
+            result = long_video_status(job_id) or {}
+            if result.get("status") == "failed":
+                raise RuntimeError(str(result.get("error") or "Automated video generation failed."))
+            if result.get("status") != "complete":
+                continue
+            video_url = str(result.get("url") or "")
+            match = re.fullmatch(r"/api/finished-video/(viralizer-[a-f0-9]{32}\.mp4)", video_url)
+            if not match:
+                raise RuntimeError("Automated generation returned an unsupported video path.")
+            source_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
+            logo_path = ROOT / "static" / "viralizer-logo-white.png"
+            logo_bytes = logo_path.read_bytes() if logo_path.is_file() else b""
+            finished = await finish_video("", narration, "coral", logo_bytes, source_path=source_path)
+            finished_url = f"/api/finished-video/{finished.name}"
+            update_project(ROOT, user_id, project_id, {"status": "completed", "video_url": finished_url,
+                "production": {"provider": "pixverse", "long_video_job_id": job_id, "status": "completed",
+                               "approval_required_before_publish": True}})
+            CHANNEL_AUTOMATION.update_draft(draft_id, {"status": "video_ready", "project_id": project_id,
+                "video_url": finished_url, "generation_job_id": job_id})
+            return
+        raise RuntimeError("Automated video generation timed out.")
+    except Exception as exc:
+        update_project(ROOT, user_id, project_id, {"status": "failed", "production": {"status": "failed", "error": str(exc)[:500]}})
+        CHANNEL_AUTOMATION.update_draft(draft_id, {"status": "production_failed", "production_error": str(exc)[:500]})
+
+
+def _start_channel_automation_production(draft: dict[str, Any]) -> dict[str, Any]:
+    user_id = "__viralizer_channel_automation__"
+    duration = max(10, min(30, int(draft.get("duration") or 20)))
+    content = {
+        "title": draft.get("title") or "Viralizer original Short", "topic": draft.get("title") or "Original Short",
+        "category": draft.get("category") or "Entertainment", "summary": draft.get("why_now") or "",
+        "creator_angle": draft.get("originality_angle") or "", "video_idea": draft.get("generation_prompt") or "",
+        "story_understanding": {"hook": draft.get("hook") or "", "payoff": draft.get("loop") or ""},
+        "visual_story_plan": draft.get("story_beats") or [], "source_research": draft.get("research") or {},
+        "unsupported_visuals": ["copied source footage", "copied faces", "copied logos", "copyrighted music"],
+    }
+    project = create_project(ROOT, user_id, content, {"provider": "pixverse", "status": "processing", "aspect_ratio": "9:16",
+        "quality": "720p", "prompt": {"text": draft.get("generation_prompt") or "", "mode": "channel-automation"},
+        "narration": {"text": draft.get("narration") or ""}, "configuration": {"approval_required_before_publish": True}})
+    job_id = start_long_video(content, duration, "720p", False, {"aspect_ratio": "9:16", "prompt": draft.get("generation_prompt") or ""})
+    update_project(ROOT, user_id, project["id"], {"job_id": job_id, "production": {"provider": "pixverse", "long_video_job_id": job_id, "status": "processing"}})
+    CHANNEL_AUTOMATION.update_draft(str(draft["id"]), {"status": "producing", "project_id": project["id"], "generation_job_id": job_id})
+    asyncio.create_task(_finish_channel_automation_draft(str(draft["id"]), project["id"], job_id, str(draft.get("narration") or "")))
+    return {"project_id": project["id"], "generation_job_id": job_id, "status": "producing"}
+
+
+@app.put("/api/creatorthon/admin/channel-automation/drafts/{draft_id}")
+async def creatorthon_admin_channel_automation_review(request: Request, draft_id: str, payload: ChannelAutomationDraftRequest):
+    """Approve the original story for production; publishing remains a separate admin action."""
+    creatorthon_admin_user(request)
+    try:
+        draft = CHANNEL_AUTOMATION.set_draft_status(draft_id, payload.status)
+        production = _start_channel_automation_production(draft) if payload.status == "approved" else None
+        return {"draft": CHANNEL_AUTOMATION.update_draft(draft_id, {"production": production}) if production else draft,
+                "production": production}
+    except ChannelAutomationError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/creatorthon/admin/channel-automation/drafts/{draft_id}/publish")
+async def creatorthon_admin_channel_automation_publish(request: Request, draft_id: str):
+    """Publish only an organizer-reviewed, finished and Viralizer-branded automation video."""
+    creatorthon_admin_user(request)
+    draft = next((item for item in CHANNEL_AUTOMATION.state().get("drafts", []) if item.get("id") == draft_id), None)
+    if not draft:
+        raise HTTPException(404, "Automation draft not found.")
+    if draft.get("status") == "published":
+        return {"result": draft.get("published") or {}, "already_published": True}
+    if draft.get("status") != "video_ready" or not draft.get("video_url"):
+        raise HTTPException(409, "The approved automation video is not ready for publishing.")
+    if not publishing_status().get("youtube", {}).get("configured"):
+        raise HTTPException(409, "The Viralizer YouTube channel is not connected.")
+    match = re.fullmatch(r"/api/finished-video/(viralizer-[a-f0-9]{32}\.mp4)", str(draft.get("video_url") or ""))
+    if not match:
+        raise HTTPException(422, "Only a completed Viralizer-branded automation video can be published.")
+    video_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
+    if not video_path.is_file() and not await restore_object_file(video_path, f"finished_videos/{match.group(1)}"):
+        raise HTTPException(404, "The completed automation video could not be found.")
+    caption = "\n\n".join(value for value in (str(draft.get("title") or ""), str(draft.get("caption") or "")) if value)
+    hashtags = [str(item).lstrip("#") for item in draft.get("hashtags") or [] if str(item).strip()]
+    if MANDATORY_HASHTAG.lstrip("#").casefold() not in {item.casefold() for item in hashtags}:
+        hashtags.insert(0, MANDATORY_HASHTAG.lstrip("#"))
+    try:
+        upload = await publish_all(video_path, str(draft.get("video_url") or ""), caption, hashtags, ["youtube"])
+    except (ObjectStoreError, SocialPublishError, YouTubeOAuthError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    result = dict((upload.get("results") or {}).get("youtube") or {})
+    if result.get("status") != "published":
+        raise HTTPException(422, str(result.get("detail") or "YouTube could not publish this automation video."))
+    CHANNEL_AUTOMATION.update_draft(draft_id, {"status": "published", "published": result, "published_at": time.time()})
+    return {"result": result, "hashtags": hashtags}
 
 
 @app.post("/api/creatorthon/admin/videos/{project_id}/publish-youtube")

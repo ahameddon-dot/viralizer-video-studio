@@ -88,6 +88,8 @@ services:
         sync: false
       - key: YOUTUBE_CLIENT_SECRET
         sync: false
+      - key: YOUTUBE_DATA_API_KEY
+        sync: false
       - key: YOUTUBE_REFRESH_TOKEN
         sync: false
       - key: YOUTUBE_REDIRECT_URI
@@ -96,6 +98,14 @@ services:
         value: public
       - key: DAILY_TRENDS_ENABLED
         value: false
+      - key: CHANNEL_AUTOMATION_SCHEDULER_ENABLED
+        value: true
+      - key: CHANNEL_AUTOMATION_ENABLED
+        value: false
+      - key: CHANNEL_AUTOMATION_INTERVAL_SECONDS
+        value: 14400
+      - key: CHANNEL_FRAME_ANALYSIS_ENABLED
+        value: true
       - key: RUN_MEDIA_WORKER_IN_WEB
         value: false
   - type: worker
