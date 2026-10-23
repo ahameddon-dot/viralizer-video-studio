@@ -90,6 +90,8 @@ services:
         sync: false
       - key: YOUTUBE_DATA_API_KEY
         sync: false
+      - key: YOUTUBE_COOKIES_FILE
+        value: /etc/secrets/youtube-cookies.txt
       - key: YOUTUBE_REFRESH_TOKEN
         sync: false
       - key: YOUTUBE_REDIRECT_URI

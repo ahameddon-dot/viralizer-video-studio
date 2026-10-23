@@ -91,6 +91,19 @@ def _atomic_json(path: Path, data: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def youtube_cookie_source() -> Path | None:
+    """Return a configured Netscape cookie file without exposing its contents."""
+    candidates = [
+        Path(os.getenv("YOUTUBE_COOKIES_FILE", "")) if os.getenv("YOUTUBE_COOKIES_FILE", "").strip() else None,
+        Path("/etc/secrets/youtube-cookies.txt"),
+    ]
+    return next((path for path in candidates if path and path.is_file()), None)
+
+
+def youtube_frame_auth_configured() -> bool:
+    return bool(youtube_cookie_source() or os.getenv("YOUTUBE_COOKIES_BASE64", "").strip())
+
+
 class ViralChannelAutomation:
     def __init__(self, root: Path, mcp_scorer: Callable[[str], Awaitable[dict[str, Any]]]):
         self.root = root
@@ -228,13 +241,28 @@ class ViralChannelAutomation:
         video_template = temporary / "source.%(ext)s"
         frame_pattern = temporary / "frame-%02d.jpg"
         try:
+            cookie_file = youtube_cookie_source()
+            encoded_cookies = os.getenv("YOUTUBE_COOKIES_BASE64", "").strip()
+            if not cookie_file and encoded_cookies:
+                cookie_file = temporary / "youtube-cookies.txt"
+                try:
+                    cookie_bytes = base64.b64decode(encoded_cookies, validate=True)
+                except ValueError as exc:
+                    return [], "YOUTUBE_COOKIES_BASE64 is not valid base64."
+                if b"youtube.com" not in cookie_bytes or b"\t" not in cookie_bytes:
+                    return [], "The configured YouTube cookie secret is not a Netscape-format youtube.com cookie file."
+                cookie_file.write_bytes(cookie_bytes)
+                cookie_file.chmod(0o600)
             options = {
                 "quiet": True, "no_warnings": True, "noplaylist": True,
                 "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
                 "outtmpl": str(video_template), "socket_timeout": 30,
                 "retries": 3, "fragment_retries": 3, "extractor_retries": 3,
+                "sleep_interval_requests": 2, "sleep_interval": 2, "max_sleep_interval": 5,
                 "http_headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36"},
             }
+            if cookie_file:
+                options["cookiefile"] = str(cookie_file)
             await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(options).download([candidate["url"]]))
             actual = next((path for path in temporary.glob("source.*") if path.is_file()), None)
             if not actual:

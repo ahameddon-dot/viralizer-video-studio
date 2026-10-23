@@ -83,7 +83,7 @@ from article_intelligence import openai_story_analysis_complete, prepare_article
 from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
-from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation
+from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -2986,6 +2986,7 @@ async def creatorthon_admin_channel_automation(request: Request):
     state["available_categories"] = list(CHANNEL_AUTOMATION_CATEGORIES)
     state["youtube_discovery_configured"] = bool(os.getenv("YOUTUBE_DATA_API_KEY", "").strip())
     state["frame_analysis_enabled"] = os.getenv("CHANNEL_FRAME_ANALYSIS_ENABLED", "true").lower() == "true"
+    state["youtube_frame_auth_configured"] = youtube_frame_auth_configured()
     state["publishing_mode"] = "approval_required"
     return state
 
