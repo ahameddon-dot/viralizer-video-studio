@@ -45,6 +45,45 @@ def _number(value: Any) -> float:
     return float(match.group(0)) if match else 0.0
 
 
+def _response_text(payload: dict[str, Any]) -> str:
+    """Extract text from both SDK-style and raw Responses API payloads."""
+    direct = str(payload.get("output_text") or "").strip()
+    if direct:
+        return direct
+    parts: list[str] = []
+    for output in payload.get("output") or []:
+        if not isinstance(output, dict):
+            continue
+        for content in output.get("content") or []:
+            if not isinstance(content, dict):
+                continue
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                parts.append(str(content["text"]))
+    return "\n".join(parts).strip()
+
+
+def _json_object(text: str, *, purpose: str) -> dict[str, Any]:
+    """Decode a JSON object while producing an actionable automation error."""
+    value = text.strip()
+    if not value:
+        raise ChannelAutomationError(f"OpenAI returned no text for {purpose}.")
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", value, re.I | re.S)
+    candidate = fenced.group(1) if fenced else value
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        start, end = value.find("{"), value.rfind("}")
+        if start < 0 or end <= start:
+            raise ChannelAutomationError(f"OpenAI returned invalid JSON for {purpose}.")
+        try:
+            parsed = json.loads(value[start:end + 1])
+        except json.JSONDecodeError as exc:
+            raise ChannelAutomationError(f"OpenAI returned invalid JSON for {purpose}.") from exc
+    if not isinstance(parsed, dict):
+        raise ChannelAutomationError(f"OpenAI returned an invalid object for {purpose}.")
+    return parsed
+
+
 def _atomic_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
@@ -215,9 +254,8 @@ Describe only visible evidence. Do not suggest copying footage, faces, wording, 
                 response = await client.post("https://api.openai.com/v1/responses", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=body)
                 response.raise_for_status()
                 data = response.json()
-            text = str(data.get("output_text") or "")
-            match = re.search(r"\{.*\}", text, re.S)
-            result = json.loads(match.group(0) if match else text)
+            text = _response_text(data)
+            result = _json_object(text, purpose="visual analysis")
             result.update(status="ready", sampled_frames=len(frames), used_thumbnail_fallback=not bool(frames))
             return result
         except Exception as exc:
@@ -235,9 +273,8 @@ Use common successful mechanisms, never any source's protected execution. Do not
             response = await client.post("https://api.openai.com/v1/responses", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json=body)
             response.raise_for_status()
             data = response.json()
-        text = str(data.get("output_text") or "")
-        match = re.search(r"\{.*\}", text, re.S)
-        story = json.loads(match.group(0) if match else text)
+        text = _response_text(data)
+        story = _json_object(text, purpose="story synthesis")
         story.update(id=uuid.uuid4().hex, status="awaiting_approval", created_at=_now(), mode="original_synthesis")
         return story
 
