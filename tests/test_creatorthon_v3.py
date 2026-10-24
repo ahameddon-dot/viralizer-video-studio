@@ -314,6 +314,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("const productSteps=['industry','product','type','style','details','campaign','direction','review']", page)
         self.assertIn("sessionStorage.setItem(productStorageKey", page)
         self.assertIn("window.addEventListener('popstate'", page)
+        self.assertIn("function scrollToAdvancedControls", page)
+        self.assertIn("advanced.scrollIntoView", page)
+        self.assertNotIn("window.scrollTo({top:0,behavior:'smooth'})", page)
 
     def test_v3_is_an_isolated_route(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
