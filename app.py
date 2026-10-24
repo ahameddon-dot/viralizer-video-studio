@@ -3830,6 +3830,7 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
             ROOT, user_id, project_id=payload.project_id, provider=provider,
             provider_job_id=provider_job_id, narration=payload.narration if payload.narration else "",
             voice=payload.voice_id or "coral", official_logo_data=payload.official_logo_data,
+            append_outro=not bool(payload.content.get("reference_recreation")),
         )
         update_project(ROOT, user_id, payload.project_id, {
             "job_id": provider_job_id, "provider": provider, "status": "processing",
@@ -3851,6 +3852,16 @@ async def prepare_creatorthon_prompt(request: Request, payload: CreatorthonPrepa
         prepared = {
             "prompt": _creatorthon_prediction_prompt(payload.content, payload.duration, payload.aspect_ratio),
             "narration": _creatorthon_prediction_narration(payload.content, payload.duration),
+            "content": payload.content,
+            "article_intelligence": {},
+        }
+    elif payload.content.get("reference_recreation") and not payload.content.get("commercial_product_present"):
+        exact_prompt = str(payload.prompt or payload.content.get("style_direction") or payload.content.get("video_idea") or "").strip()
+        if not exact_prompt:
+            raise HTTPException(422, "The approved video-recreation prompt is empty.")
+        prepared = {
+            "prompt": exact_prompt[:6000],
+            "narration": str(payload.content.get("approved_narration") or "")[:1200],
             "content": payload.content,
             "article_intelligence": {},
         }
@@ -4002,6 +4013,12 @@ async def analyze_product_video_link(request: Request, payload: VideoReferenceAn
     """Turn a public YouTube reference into an editable, original short-video campaign."""
     creatorthon_user(request)
     source = await _youtube_reference_context(payload.url)
+    sampled_frames, frame_detail = await CHANNEL_AUTOMATION._sample_frames({
+        "url": source["url"],
+        "title": source["title"],
+        "description": source.get("transcript", ""),
+        "thumbnail_url": source.get("thumbnail_url", ""),
+    })
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(503, "Video-reference analysis is not configured.")
@@ -4013,13 +4030,23 @@ async def analyze_product_video_link(request: Request, payload: VideoReferenceAn
         f"Narration language: {payload.language}",
         f"Output: {payload.aspect_ratio}",
     ]))
+    evidence_note = (
+        f"You are receiving {len(sampled_frames)} chronological frames sampled across the complete source video. "
+        "Treat them as the primary evidence and reconstruct the action progression between them."
+        if sampled_frames else
+        "The source video could not be sampled. You have only metadata, captions and one thumbnail; mark confidence low and do not invent unseen actions."
+    )
     prompt = f"""Analyze this public video reference to understand its exact visible subject, premise, hook, pacing, shot progression, emotional beat, and viewer payoff.
 {source_text[:11000]}
-Return only JSON: {{"brand":"","industry":"","summary":"","reference_archetype":"pet moment|skit|reaction|tutorial|recipe|product ad|other","commercial_product_present":false,"product_identity":{{"name":"","category":"","variant":"","materials":"","colors":"","packaging":"","visible_features":[],"reference_roles":["video inspiration"]}},"facts":[],"source_analysis":{{"main_subject":"","supporting_subject":"","relationship":"","premise":"","hook":"","pacing":"","visual_language":"","framing":"","emotional_arc":"","scene_progression":[""],"audio_style":"","viewer_payoff":""}},"auto_prompt":"","negative_prompt":"","recommended_audience":"","recommended_goal":"","concepts":[{{"title":"","hook":"","product":"","visual_direction":"","video_prompt":"","negative_prompt":"","narration":"","music_direction":"","cta":"","duration":15,"aspect_ratio":"{payload.aspect_ratio}"}}]}}.
+Evidence status: {evidence_note}
+Return only JSON: {{"brand":"","industry":"","summary":"","reference_archetype":"pet moment|skit|reaction|tutorial|recipe|product ad|other","commercial_product_present":false,"analysis_confidence":0,"accuracy_review":{{"detected_subjects":[""],"core_action":"","camera_and_framing":"","timing_and_pacing":"","payoff":"","must_preserve":[""],"forbidden_substitutions":[""]}},"product_identity":{{"name":"","category":"","variant":"","materials":"","colors":"","packaging":"","visible_features":[],"reference_roles":["video inspiration"]}},"facts":[],"source_analysis":{{"main_subject":"","supporting_subject":"","relationship":"","premise":"","hook":"","pacing":"","visual_language":"","framing":"","emotional_arc":"","scene_progression":[""],"audio_style":"","viewer_payoff":""}},"auto_prompt":"","negative_prompt":"","recommended_audience":"","recommended_goal":"","concepts":[{{"title":"","hook":"","product":"","visual_direction":"","video_prompt":"","negative_prompt":"","narration":"","music_direction":"","cta":"","duration":15,"aspect_ratio":"{payload.aspect_ratio}"}}]}}.
 First classify the reference. A person, animal, meal, location, joke, or activity is NOT a commercial product unless a product or service is clearly shown or named. If commercial_product_present is false, create an original story/skit/pet/reaction/tutorial in the same genre; never convert it into a product advertisement, never invent packaging, treats, prices, offers, benefits, or a purchase CTA. Preserve the clearly visible subject class and defining traits shown by the thumbnail and title (for example animal species/breed, coat colour, number of people, setting and intimate versus wide framing). Do not replace a Rottweiler with another dog breed or replace a close owner-and-pet interaction with generic lifestyle footage.
 Create up to six distinct, immediately usable concepts. They must be ORIGINAL: do not copy source footage, exact wording, logos, a real person's face, channel identity, copyrighted music, or a shot-for-shot sequence. Preserve the subject identity, premise, emotional mechanism, framing intimacy and high-level storytelling mechanics. Every video_prompt must specify a timed 15-second scene sequence, realistic human/animal actions, camera distance and movement, continuity locks, narration or intentional no-dialogue direction in {payload.language}, sound design, music arc, and a short Viralizer-branded final beat. Do not invent factual claims. No generated paragraph text. Put wrong species/breed, subject replacement, invented products, identity drift, visual glitches, unsafe actions, copied branding, watermarks, distorted anatomy, and generic stock footage in negative_prompt."""
     content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
-    if source.get("thumbnail_url"):
+    for index, frame in enumerate(sampled_frames, 1):
+        content.append({"type": "input_text", "text": f"Chronological source frame {index} of {len(sampled_frames)}"})
+        content.append({"type": "input_image", "image_url": f"data:image/jpeg;base64,{frame}"})
+    if not sampled_frames and source.get("thumbnail_url"):
         content.append({"type": "input_image", "image_url": source["thumbnail_url"]})
     body = {"model": os.getenv("OPENAI_VISION_MODEL", "gpt-4.1-mini"), "input": [{"role": "user", "content": content}], "max_output_tokens": 2800}
     try:
@@ -4042,7 +4069,18 @@ Create up to six distinct, immediately usable concepts. They must be ORIGINAL: d
     result["facts"] = result.get("facts") if isinstance(result.get("facts"), list) else []
     result["auto_prompt"] = str(result.get("auto_prompt") or concepts[0].get("video_prompt") or "")[:6000]
     result["negative_prompt"] = str(result.get("negative_prompt") or concepts[0].get("negative_prompt") or "")[:1800]
-    result.update(source=source, source_count=1, reference_type="youtube", requires_user_verification=True)
+    result.update(
+        source=source,
+        source_count=1,
+        reference_type="youtube",
+        requires_user_verification=True,
+        evidence={
+            "sampled_frames": len(sampled_frames),
+            "frame_status": "ready" if sampled_frames else "unavailable",
+            "frame_detail": frame_detail,
+            "used_thumbnail_fallback": not bool(sampled_frames),
+        },
+    )
     return result
 
 

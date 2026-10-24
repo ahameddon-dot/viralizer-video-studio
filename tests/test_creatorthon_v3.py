@@ -318,6 +318,22 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("advanced.scrollIntoView", page)
         self.assertNotIn("window.scrollTo({top:0,behavior:'smooth'})", page)
 
+    def test_video_link_recreation_preserves_analysis_and_approved_prompt(self):
+        app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+        page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
+        finisher = (ROOT / "media_finisher.py").read_text(encoding="utf-8")
+        durable = (ROOT / "durable_media_pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("sampled_frames, frame_detail = await CHANNEL_AUTOMATION._sample_frames", app_source)
+        self.assertIn('"accuracy_review"', app_source)
+        self.assertIn('payload.content.get("reference_recreation") and not payload.content.get("commercial_product_present")', app_source)
+        self.assertIn('"prompt": exact_prompt[:6000]', app_source)
+        self.assertIn("product_video:isProduct", page)
+        self.assertIn("easyAccuracyConfirm", page)
+        self.assertIn("Verify the accuracy gate before spending a video credit", page)
+        self.assertIn('append_outro=not bool(payload.content.get("reference_recreation"))', app_source)
+        self.assertIn("append_outro=True", durable)
+        self.assertIn("if not already_finished and append_outro", finisher)
+
     def test_v3_is_an_isolated_route(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.assertIn('@app.get("/creatorthon-v3/login"', app_source)

@@ -24,8 +24,8 @@ def _row(row: Any)->dict[str,Any]:
  try:item["payload"]=json.loads(item.pop("payload_json") or "{}")
  except (TypeError,ValueError):item["payload"]={}
  return item
-def enqueue(root:Path,user_id:str,*,project_id="",provider="",provider_job_id="",raw_video_url="",narration="",voice="coral",official_logo_data=""):
- job_id,now=uuid.uuid4().hex,int(time.time());payload={"narration":narration[:4096],"voice":voice[:40],"official_logo_data":official_logo_data}
+def enqueue(root:Path,user_id:str,*,project_id="",provider="",provider_job_id="",raw_video_url="",narration="",voice="coral",official_logo_data="",append_outro=True):
+ job_id,now=uuid.uuid4().hex,int(time.time());payload={"narration":narration[:4096],"voice":voice[:40],"official_logo_data":official_logo_data,"append_outro":bool(append_outro)}
  with _connect(root) as db:
   _ensure(db)
   if provider_job_id:
@@ -127,7 +127,7 @@ async def process_one(root:Path,job:dict):
      raise ObjectStoreError("Permanent media storage is not configured.")
     job=_update(root,job["id"],raw_object_key=raw_key,status="finishing",stage="Adding narration, branding, and final encoding…",lease_until=0) or job
    else:_update(root,job["id"],status="finishing",stage="Resuming narration and final encoding from secured media…",lease_until=0)
-   output=await finish_video(raw,str(payload.get("narration") or ""),str(payload.get("voice") or "coral"),(root/"static"/"viralizer-original-logo.png").read_bytes(),secondary_logo_bytes=_official_logo(str(payload.get("official_logo_data") or "")),source_path=source)
+   output=await finish_video(raw,str(payload.get("narration") or ""),str(payload.get("voice") or "coral"),(root/"static"/"viralizer-original-logo.png").read_bytes(),secondary_logo_bytes=_official_logo(str(payload.get("official_logo_data") or "")),source_path=source,append_outro=bool(payload.get("append_outro",True)))
    if not await upload_file(output,f"finished_videos/{output.name}","video/mp4"):
     raise ObjectStoreError("Permanent media storage is not configured.")
    final=f"/api/finished-video/{output.name}"

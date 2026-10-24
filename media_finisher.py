@@ -204,7 +204,7 @@ def _append_outro(video: Path, outro: Path, output: Path) -> None:
     if completed.returncode: raise MediaFinisherError("Could not append the Viralizer outro to the finished video.")
 
 
-async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None, source_path=None):
+async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="", overlay_position="bottom-center", overlay_color="white", secondary_logo_bytes=None, source_path=None, append_outro=True):
     folder=Path(os.getenv("APP_DATA_DIR",str(Path(__file__).parent/"data")))/"finished_videos"; folder.mkdir(parents=True,exist_ok=True)
     # Viralizer branding is a server-side invariant. Callers cannot omit or
     # replace this primary mark; uploaded/customer logos remain secondary.
@@ -239,9 +239,9 @@ async def finish_video(video_url, narration, voice, logo_bytes, overlay_text="",
             try:
                 with Image.open(io.BytesIO(secondary_logo_bytes)) as source: source.thumbnail((1000,1000),Image.Resampling.LANCZOS); source.convert("RGBA").save(secondary_logo,"PNG")
             except Exception as exc: raise MediaFinisherError("The official logo could not be read as an image.") from exc
-        branded=temp/"branded.mp4" if not already_finished else output
+        branded=temp/"branded.mp4" if not already_finished and append_outro else output
         await asyncio.to_thread(_ffmpeg,video,branded,audio,logo,overlay_text,overlay_position,overlay_color,secondary_logo)
-        if not already_finished:
+        if not already_finished and append_outro:
             configured=os.getenv("VIRALIZER_OUTRO_PATH","").strip()
             outro=Path(configured) if configured else Path(__file__).parent/"static"/"viralizer-outro.mp4"
             await asyncio.to_thread(_append_outro,branded,outro,output)
