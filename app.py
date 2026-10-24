@@ -170,6 +170,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     style_direction = clean(content.get("style_direction"), 50)
     attributes = content.get("product_attributes") if isinstance(content.get("product_attributes"), dict) else {}
     attribute_locks = [f"{clean(key, 8)}: {clean(value, 20)}" for key, value in attributes.items() if clean(value, 20)]
+    custom_requirement = clean(attributes.get("custom"), 60)
     goal = clean(content.get("campaign_goal"), 12)
     audience = clean(content.get("target_audience"), 16)
     mood = clean(content.get("visual_mood"), 12)
@@ -202,6 +203,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         f"Create one coherent {duration}-second {aspect} {style.lower()} commercial for {subtype}, a {industry} product.",
         f"PRODUCT IDENTITY LOCK: {subject}. This exact product is the sole hero subject in every shot and must never be reinterpreted as another object.",
         ("MANDATORY PRODUCT ATTRIBUTES: " + "; ".join(attribute_locks) + ". Preserve every attribute without substitution in all shots.") if attribute_locks else "",
+        (f"MANDATORY CUSTOM REQUIREMENT: {custom_requirement}. This is part of the product identity, not optional styling or background decoration. It must be visibly present in the opening, demonstration and final hero shot.") if custom_requirement else "",
         f"SETTING: {environment}.",
         f"ADVERTISING ART DIRECTION: {style_direction or style}. Make every frame feel intentionally art-directed for a premium paid social campaign, never like generic stock footage.",
         f"CAMPAIGN: objective {goal or 'conversion'}; target audience {audience or 'relevant customers'}; visual mood {mood or 'premium'}; delivery {platform or aspect}.",
@@ -211,6 +213,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         (f"SEQUENCE RULE: {sequence_mode}. Treat the clip as one continuous event with natural temporal and spatial continuity." if sequence_mode else ""),
         f"CATEGORY CONTINUITY LOCK: preserve the {category_continuity}. Do not jump to a second location, replace the subject, change a person's identity or wardrobe, or reset the time of day.",
         "SHOT PROGRESSION: " + " Then, ".join(beats) + ".",
+        (f"FINAL CUSTOM-REQUIREMENT CHECK: every relevant shot must visibly prove '{custom_requirement}'. If it describes colours or layers, show them on the product itself, keep them distinct and never replace them with lighting, scenery, packaging or a muddy blended colour.") if custom_requirement else "",
         f"Maintain identical product shape, scale, material, color and function throughout. Use realistic physics, accurate human interaction, deliberate foreground-background separation, rich but natural color contrast, tactile macro detail, motivated premium camera movement, and commercially polished lighting.",
         ("Campaign context for narration only, not generated typography: " + "; ".join(value for value in campaign if value) + ".") if any(campaign) else "",
         ("ABSOLUTELY DO NOT SHOW: " + ", ".join(avoid) + ".") if avoid else "",

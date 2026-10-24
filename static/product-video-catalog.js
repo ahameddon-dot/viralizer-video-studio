@@ -38,6 +38,18 @@ window.PRODUCT_VIDEO_OPTIONS={
       ['vessel','Cup / glass',['Ceramic cup','Clear glass','Tall takeaway cup','Bottle','Cocktail glass']],
       ['action','Hero action',['Espresso extraction','Pour over ice','Shake and strain','Blend and pour','Garnish close-up','First sip reaction']]
     ],
+    'Food:Beverages:Bubble Tea':[
+      ['base','Drink base',['Classic milk tea','Fresh milk','Fruit tea','Coconut milk','Sparkling fruit tea','Yogurt blend']],
+      ['temperature','Temperature',['Iced','Chilled','Frozen blended']],
+      ['colour_treatment','Colour treatment',['Single colour','Two-tone gradient','Three distinct layers','Six-layer rainbow','Metallic gold shimmer','Crimson red']],
+      ['rainbow_layers','Exact rainbow colours',['Magenta · violet · blue · turquoise · yellow · peach','Red · orange · yellow · green · blue · violet','Pastel pink · lavender · sky blue · mint · lemon · peach','Custom rainbow colours']],
+      ['layer_direction','Layer direction',['Horizontal layers','Diagonal gradient','Vertical colour ribbons','Swirled marble — colours remain identifiable']],
+      ['vessel','Cup / glass',['Crystal-clear tall cup','Clear sealed takeaway cup','Clear glass jar','Transparent dome-lid cup']],
+      ['pearls','Pearls / inclusions',['Glossy black tapioca pearls','Rainbow popping boba','Golden tapioca pearls','Crimson fruit pearls','Mixed jelly and pearls']],
+      ['mixing','Colour behaviour',['Layers remain completely separated','Layers blend only during final stir','Clean gradient without muddy brown','Colours swirl but remain individually visible']],
+      ['action','Hero action',['Pearls drop into cup','Build every colour layer visibly','Ice and liquid pour','Wide straw through sealed lid','Slow cup rotation','Customer first sip']],
+      ['garnish','Garnish',['No garnish','Fresh strawberry','Mango cubes','Mint and citrus','Edible gold shimmer','Rainbow jelly']]
+    ],
     'Real Estate:Property for sale':[
       ['property','Property class',['Apartment','Villa','Independent house','Plot / land','Commercial property']],
       ['configuration','Configuration',['Studio','1 BHK','2 BHK','3 BHK','4+ BHK','Custom']],
