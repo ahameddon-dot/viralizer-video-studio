@@ -115,7 +115,7 @@ services:
       - key: PROTOTYPE_ALLOWED_ORIGIN
         value: https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site
       - key: PROTOTYPE_DAILY_GENERATION_LIMIT
-        value: 3
+        value: 5
   - type: worker
     name: viralizer-video-studio-media-worker
     runtime: docker
