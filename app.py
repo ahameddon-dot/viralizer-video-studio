@@ -3905,7 +3905,8 @@ def _prototype_storyboard_prompt(payload: PrototypeVideoStartRequest) -> str:
         + " ".join(scene_lines)
         + " Preserve the same people, products, colors, wardrobe and environment across every scene. "
           "Use natural motion, realistic anatomy, physically believable lighting and premium commercial composition. "
-          "Do not invent unrelated products, locations, logos, claims or text. Add the official Viralizer logo in finishing."
+          "Do not show or generate any logo, watermark, brand mark, unrelated product, location, claim or text. "
+          "Leave clean corner space for branding that will be applied after generation."
     )[:6000]
 
 
@@ -3972,7 +3973,7 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
     prompt = payload.custom_prompt.strip() or _prototype_storyboard_prompt(payload)
     prompt = (
         prompt
-        + " Add the official Viralizer logo during finishing. Do not add any other watermark or invented logo."
+        + " Do not generate any logo, watermark or brand mark inside the scene. Branding is added separately after generation."
     )[:6000]
     topic = {
         "title": payload.title, "topic": payload.title, "category": payload.category,
