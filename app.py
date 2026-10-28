@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import tempfile
 import time
 import httpx
 import io
@@ -1065,6 +1067,16 @@ class PrototypeVideoStartRequest(BaseModel):
     narration: str = Field(default="", max_length=3000)
     custom_prompt: str = Field(default="", max_length=6000)
     scenes: list[PrototypeStoryboardScene] = Field(min_length=3, max_length=8)
+
+
+class PrototypeVideoRevisionRequest(BaseModel):
+    original_video_url: str = Field(min_length=20, max_length=4000)
+    title: str = Field(min_length=2, max_length=240)
+    scene_index: int = Field(ge=1, le=8)
+    scene_start_seconds: float = Field(ge=0, le=120)
+    scene_duration_seconds: float = Field(gt=0, le=8)
+    revision_prompt: str = Field(min_length=8, max_length=3000)
+    aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|1:1)$")
 
 
 class DailyDiscoveryRequest(BaseModel):
@@ -4045,6 +4057,111 @@ async def prototype_video_status(job_id: str):
         "error": job.get("error", "") if job.get("status") == "failed" else "",
         "video_url": _prototype_video_url(str(job.get("output_url") or "")) if job.get("status") == "completed" else "",
         "updated_at": job.get("updated_at", 0),
+    }
+
+
+@app.post("/api/prototype/video/revision/start")
+async def start_prototype_video_revision(request: Request, payload: PrototypeVideoRevisionRequest):
+    if os.getenv("PROTOTYPE_GENERATION_ENABLED", "false").strip().casefold() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(503, "Prototype video generation is not enabled.")
+    request_id = request.headers.get("x-prototype-request-id", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,80}", request_id):
+        raise HTTPException(422, "A valid prototype request id is required.")
+    parsed = urlparse(payload.original_video_url)
+    allowed_video_host = parsed.hostname == "v3.viralizer.ai" or bool(parsed.hostname and parsed.hostname.endswith(".r2.cloudflarestorage.com"))
+    if parsed.scheme != "https" or not allowed_video_host:
+        raise HTTPException(422, "The original video must be a completed Viralizer video.")
+    project = create_project(ROOT, PROTOTYPE_VIDEO_USER_ID, {
+        "title": payload.title,
+        "topic": payload.title,
+        "category": "Prototype revision",
+        "prototype_request_id": request_id,
+        "prototype": True,
+    }, {
+        "status": "starting",
+        "provider": "pixverse",
+        "aspect_ratio": payload.aspect_ratio,
+        "quality": "720p",
+        "prompt": {"text": payload.revision_prompt, "mode": "scene-revision"},
+        "configuration": {
+            "prototype": True,
+            "revision": True,
+            "scene_index": payload.scene_index,
+            "scene_start_seconds": payload.scene_start_seconds,
+            "scene_duration_seconds": payload.scene_duration_seconds,
+        },
+    })
+    try:
+        with tempfile.TemporaryDirectory(prefix="viralizer-revision-frame-") as folder:
+            original = Path(folder) / "original.mp4"
+            frame = Path(folder) / "scene-start.jpg"
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+                response = await client.get(payload.original_video_url)
+            if response.is_error or len(response.content) > 100 * 1024 * 1024:
+                raise HTTPException(422, "The original Viralizer video could not be loaded for revision.")
+            original.write_bytes(response.content)
+            completed = subprocess.run([
+                "ffmpeg", "-y", "-ss", f"{payload.scene_start_seconds:.3f}", "-i", str(original),
+                "-frames:v", "1", "-q:v", "2", str(frame),
+            ], capture_output=True, text=True)
+            if completed.returncode or not frame.is_file():
+                raise HTTPException(422, "The selected scene frame could not be extracted.")
+            pixverse = PixVerseClient()
+            image_id = await pixverse.upload_image(
+                image_bytes=frame.read_bytes(), filename="scene-start.jpg", content_type="image/jpeg"
+            )
+        locked_prompt = (
+            f"Revise only Scene {payload.scene_index} of an existing video. {payload.revision_prompt.strip()} "
+            "Use the supplied first frame as a strict continuity reference. Keep the exact same subject identity, face, "
+            "wardrobe, objects, architecture, background, camera height, color grade, lighting direction and visual style. "
+            "Do not introduce a new location, background, logo, watermark, text, person or product. End with framing that "
+            "can cut naturally back into the unchanged original video."
+        )[:6000]
+        provider_job_id = str(await pixverse.generate_from_image(
+            image_id,
+            locked_prompt,
+            duration=5,
+            quality="720p",
+            negative_prompt="new background, new location, different subject, different face, different lighting, logo, watermark, text, extra limbs, duplicate subject",
+            motion_mode="normal",
+        ))
+        job = enqueue_durable_media_job(
+            ROOT,
+            PROTOTYPE_VIDEO_USER_ID,
+            project_id=project["id"],
+            provider="pixverse",
+            provider_job_id=provider_job_id,
+            append_outro=False,
+            revision_original_url=payload.original_video_url,
+            revision_start=payload.scene_start_seconds,
+            revision_duration=payload.scene_duration_seconds,
+        )
+        update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
+            "job_id": provider_job_id,
+            "provider": "pixverse",
+            "status": "processing",
+            "production": {
+                "provider": "pixverse",
+                "provider_job_id": provider_job_id,
+                "media_job_id": job["id"],
+                "status": "processing",
+                "generation_mode": "scene_replacement",
+            },
+        })
+    except HTTPException:
+        raise
+    except (PixVerseError, httpx.HTTPError, OSError) as exc:
+        update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
+            "status": "failed", "production": {"status": "failed", "error": str(exc)[:500]},
+        })
+        raise HTTPException(502, str(exc)) from exc
+    return {
+        "project_id": project["id"],
+        "media_job_id": job["id"],
+        "provider_job_id": provider_job_id,
+        "status": job["status"],
+        "stage": "Regenerating only the selected scene…",
+        "revision": True,
     }
 
 

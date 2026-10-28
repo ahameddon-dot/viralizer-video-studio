@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, base64, json, re, tempfile, time, uuid, threading
+import asyncio, base64, json, re, subprocess, tempfile, time, uuid, threading
 from pathlib import Path
 from typing import Any
 from creatorthon_store import _connect, update_project
@@ -24,8 +24,8 @@ def _row(row: Any)->dict[str,Any]:
  try:item["payload"]=json.loads(item.pop("payload_json") or "{}")
  except (TypeError,ValueError):item["payload"]={}
  return item
-def enqueue(root:Path,user_id:str,*,project_id="",provider="",provider_job_id="",raw_video_url="",narration="",voice="coral",official_logo_data="",append_outro=True):
- job_id,now=uuid.uuid4().hex,int(time.time());payload={"narration":narration[:4096],"voice":voice[:40],"official_logo_data":official_logo_data,"append_outro":bool(append_outro)}
+def enqueue(root:Path,user_id:str,*,project_id="",provider="",provider_job_id="",raw_video_url="",narration="",voice="coral",official_logo_data="",append_outro=True,revision_original_url="",revision_start=0.0,revision_duration=0.0):
+ job_id,now=uuid.uuid4().hex,int(time.time());payload={"narration":narration[:4096],"voice":voice[:40],"official_logo_data":official_logo_data,"append_outro":bool(append_outro),"revision_original_url":str(revision_original_url or "")[:4000],"revision_start":max(0.0,float(revision_start or 0)),"revision_duration":max(0.0,float(revision_duration or 0))}
  with _connect(root) as db:
   _ensure(db)
   if provider_job_id:
@@ -103,6 +103,25 @@ def _official_logo(data: str) -> bytes | None:
  if not match:return None
  try:return base64.b64decode(match.group(1),validate=True)
  except Exception:return None
+
+def _video_size(path:Path)->tuple[int,int]:
+ completed=subprocess.run(["ffprobe","-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","csv=s=x:p=0",str(path)],capture_output=True,text=True)
+ if completed.returncode:raise MediaFinisherError("Could not inspect the original video for scene replacement.")
+ match=re.fullmatch(r"(\d+)x(\d+)",completed.stdout.strip())
+ if not match:raise MediaFinisherError("The original video dimensions could not be read.")
+ return int(match.group(1)),int(match.group(2))
+
+def _splice_revision(original:Path,replacement:Path,output:Path,start:float,duration:float)->None:
+ width,height=_video_size(original);end=max(start,start+duration)
+ filters=(
+  f"[0:v]split=2[before_src][after_src];"
+  f"[before_src]trim=start=0:end={start:.3f},setpts=PTS-STARTPTS,fps=30,format=yuv420p[before];"
+  f"[1:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,trim=start=0:end={duration:.3f},setpts=PTS-STARTPTS,fps=30,format=yuv420p[replacement];"
+  f"[after_src]trim=start={end:.3f},setpts=PTS-STARTPTS,fps=30,format=yuv420p[after];"
+  f"[before][replacement][after]concat=n=3:v=1:a=0[outv]"
+ )
+ completed=subprocess.run(["ffmpeg","-y","-i",str(original),"-i",str(replacement),"-filter_complex",filters,"-map","[outv]","-an","-c:v","libx264","-preset","veryfast","-crf","20","-pix_fmt","yuv420p","-movflags","+faststart",str(output)],capture_output=True,text=True)
+ if completed.returncode:raise MediaFinisherError("Could not replace the selected scene while preserving the original video.")
 async def process_one(root:Path,job:dict):
  try:
   raw=str(job.get("raw_video_url") or "")
@@ -127,6 +146,12 @@ async def process_one(root:Path,job:dict):
      raise ObjectStoreError("Permanent media storage is not configured.")
     job=_update(root,job["id"],raw_object_key=raw_key,status="finishing",stage="Adding narration, branding, and final encoding…",lease_until=0) or job
    else:_update(root,job["id"],status="finishing",stage="Resuming narration and final encoding from secured media…",lease_until=0)
+   revision_url=str(payload.get("revision_original_url") or "")
+   if revision_url:
+    original=Path(folder)/"original.mp4";revised=Path(folder)/"revised.mp4"
+    await _download(revision_url,original)
+    await asyncio.to_thread(_splice_revision,original,source,revised,float(payload.get("revision_start") or 0),float(payload.get("revision_duration") or 0))
+    source=revised
    output=await finish_video(raw,str(payload.get("narration") or ""),str(payload.get("voice") or "coral"),(root/"static"/"viralizer-original-logo.png").read_bytes(),secondary_logo_bytes=_official_logo(str(payload.get("official_logo_data") or "")),source_path=source,append_outro=bool(payload.get("append_outro",True)))
    if not await upload_file(output,f"finished_videos/{output.name}","video/mp4"):
     raise ObjectStoreError("Permanent media storage is not configured.")
