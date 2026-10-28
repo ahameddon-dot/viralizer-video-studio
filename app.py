@@ -472,6 +472,28 @@ def _creatorthon_frozen_response(request: Request, signed_in: bool = False) -> H
 
 @app.middleware("http")
 async def require_password(request: Request, call_next):
+    if request.url.path.startswith("/api/prototype/video"):
+        allowed_origin = os.getenv(
+            "PROTOTYPE_ALLOWED_ORIGIN",
+            "https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site",
+        ).strip().rstrip("/")
+        origin = request.headers.get("origin", "").strip().rstrip("/")
+        if not allowed_origin or origin != allowed_origin:
+            return JSONResponse({"detail": "Prototype origin is not allowed."}, status_code=403)
+        cors_headers = {
+            "Access-Control-Allow-Origin": allowed_origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, X-Prototype-Request-Id",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+            "Cache-Control": "no-store",
+        }
+        if request.method == "OPTIONS":
+            return Response(status_code=204, headers=cors_headers)
+        response = await call_next(request)
+        for key, value in cors_headers.items():
+            response.headers[key] = value
+        return response
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     public_login_assets = {
         "/static/viralizer-intro.css",
@@ -1024,6 +1046,25 @@ class CreatorthonPublishRequest(BaseModel):
     hashtags: list[str] = Field(default_factory=list, max_length=30)
     platforms: list[str] = Field(default_factory=list, max_length=4)
     viralizer_youtube_consent: bool = False
+
+
+class PrototypeStoryboardScene(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    visual: str = Field(min_length=3, max_length=1200)
+    camera: str = Field(default="Smooth cinematic movement", max_length=300)
+    on_screen_text: str = Field(default="", max_length=300)
+    duration_seconds: int = Field(default=3, ge=1, le=8)
+
+
+class PrototypeVideoStartRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=240)
+    category: str = Field(default="General", max_length=120)
+    creative_style: str = Field(default="Premium cinematic", max_length=160)
+    source_description: str = Field(default="", max_length=1200)
+    aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|1:1)$")
+    narration: str = Field(default="", max_length=3000)
+    custom_prompt: str = Field(default="", max_length=6000)
+    scenes: list[PrototypeStoryboardScene] = Field(min_length=3, max_length=8)
 
 
 class DailyDiscoveryRequest(BaseModel):
@@ -3844,6 +3885,131 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
         raise HTTPException(503, f"Video was accepted, but Viralizer could not secure its completion job: {type(exc).__name__}: {str(exc)[:240]}") from exc
     return {"job_id": provider_job_id, "provider": provider, "media_job_id": job["id"],
             "status": job["status"], "stage": job["stage"], "durable": True}
+
+
+PROTOTYPE_VIDEO_USER_ID = "prototype-onboarding-demo"
+
+
+def _prototype_storyboard_prompt(payload: PrototypeVideoStartRequest) -> str:
+    scene_lines = []
+    for index, scene in enumerate(payload.scenes, 1):
+        text_note = f' On-screen text: "{scene.on_screen_text}".' if scene.on_screen_text else " No on-screen text."
+        scene_lines.append(
+            f"Scene {index} ({scene.duration_seconds}s) — {scene.title}: {scene.visual} "
+            f"Camera: {scene.camera}.{text_note}"
+        )
+    source = f" Source/reference: {payload.source_description}." if payload.source_description else ""
+    return (
+        f"Create a conversion-focused {payload.aspect_ratio} {payload.creative_style} video titled "
+        f'"{payload.title}" for the {payload.category} category.{source} '
+        + " ".join(scene_lines)
+        + " Preserve the same people, products, colors, wardrobe and environment across every scene. "
+          "Use natural motion, realistic anatomy, physically believable lighting and premium commercial composition. "
+          "Do not invent unrelated products, locations, logos, claims or text. Add the official Viralizer logo in finishing."
+    )[:6000]
+
+
+def _prototype_project_for_request(request_id: str) -> dict[str, Any] | None:
+    for project in list_projects(ROOT, PROTOTYPE_VIDEO_USER_ID, limit=100):
+        if str((project.get("topic") or {}).get("prototype_request_id") or "") == request_id:
+            return project
+    return None
+
+
+def _prototype_video_url(output_url: str) -> str:
+    value = str(output_url or "").strip()
+    if value.startswith("https://"):
+        return value
+    match = re.fullmatch(r"/api/finished-video/([A-Za-z0-9._-]+\.mp4)", value)
+    if not match:
+        return ""
+    return object_share_url(f"finished_videos/{match.group(1)}", expires_in=3600)
+
+
+@app.post("/api/prototype/video/start")
+async def start_prototype_video(request: Request, payload: PrototypeVideoStartRequest):
+    if os.getenv("PROTOTYPE_GENERATION_ENABLED", "false").strip().casefold() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(503, "Prototype video generation is not enabled.")
+    request_id = request.headers.get("x-prototype-request-id", "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,80}", request_id):
+        raise HTTPException(422, "A valid prototype request id is required.")
+    existing = _prototype_project_for_request(request_id)
+    if existing:
+        production = existing.get("production") or {}
+        return {
+            "project_id": existing["id"], "media_job_id": production.get("media_job_id", ""),
+            "provider_job_id": production.get("provider_job_id", ""), "status": existing.get("status", "processing"),
+            "reused": True,
+        }
+    now = int(time.time())
+    day_start = now - (now % 86400)
+    daily_limit = max(1, min(int(os.getenv("PROTOTYPE_DAILY_GENERATION_LIMIT", "3")), 25))
+    todays_projects = [
+        item for item in list_projects(ROOT, PROTOTYPE_VIDEO_USER_ID, limit=100)
+        if int(item.get("created_at") or 0) >= day_start
+    ]
+    if len(todays_projects) >= daily_limit:
+        raise HTTPException(429, "The prototype has reached today's real-video demo limit.")
+    prompt = payload.custom_prompt.strip() or _prototype_storyboard_prompt(payload)
+    prompt = (
+        prompt
+        + " Add the official Viralizer logo during finishing. Do not add any other watermark or invented logo."
+    )[:6000]
+    topic = {
+        "title": payload.title, "topic": payload.title, "category": payload.category,
+        "video_idea": payload.title, "creator_angle": payload.creative_style,
+        "prototype_request_id": request_id, "prototype": True,
+    }
+    project = create_project(ROOT, PROTOTYPE_VIDEO_USER_ID, topic, {
+        "status": "starting", "provider": "pixverse", "aspect_ratio": payload.aspect_ratio, "quality": "720p",
+        "prompt": {"text": prompt, "mode": "approved-storyboard"},
+        "narration": {"text": payload.narration},
+        "configuration": {"storyboard": [scene.model_dump() for scene in payload.scenes], "prototype": True},
+    })
+    try:
+        started = await generate_video(GenerateRequest(
+            content=topic, provider="pixverse", prompt=prompt,
+            duration=min(10, max(5, sum(scene.duration_seconds for scene in payload.scenes))),
+            quality="720p", quality_mode=False, allow_standard_fallback=True,
+            aspect_ratio=payload.aspect_ratio, narration=payload.narration,
+            creator_concept=True,
+        ))
+        provider = str(started.get("provider") or "pixverse")
+        provider_job_id = str(started.get("job_id") or "")
+        if not provider_job_id:
+            raise HTTPException(502, "The video provider did not return a job reference.")
+        job = enqueue_durable_media_job(
+            ROOT, PROTOTYPE_VIDEO_USER_ID, project_id=project["id"], provider=provider,
+            provider_job_id=provider_job_id, narration=payload.narration, voice="coral",
+            append_outro=True,
+        )
+        update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
+            "job_id": provider_job_id, "provider": provider, "status": "processing",
+            "production": {"provider": provider, "provider_job_id": provider_job_id,
+                           "media_job_id": job["id"], "status": "processing"},
+        })
+    except Exception as exc:
+        update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
+            "status": "failed", "production": {"status": "failed", "error": str(exc)[:500]},
+        })
+        raise
+    return {"project_id": project["id"], "media_job_id": job["id"], "provider_job_id": provider_job_id,
+            "status": job["status"], "stage": job["stage"], "reused": False}
+
+
+@app.get("/api/prototype/video/status/{job_id}")
+async def prototype_video_status(job_id: str):
+    if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+        raise HTTPException(404, "Video job not found.")
+    job = get_durable_media_job(ROOT, PROTOTYPE_VIDEO_USER_ID, job_id)
+    if not job:
+        raise HTTPException(404, "Video job not found.")
+    return {
+        "id": job["id"], "status": job.get("status", ""), "stage": job.get("stage", ""),
+        "error": job.get("error", "") if job.get("status") == "failed" else "",
+        "video_url": _prototype_video_url(str(job.get("output_url") or "")) if job.get("status") == "completed" else "",
+        "updated_at": job.get("updated_at", 0),
+    }
 
 
 @app.post("/api/creatorthon/prepare-prompt")

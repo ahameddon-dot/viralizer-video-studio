@@ -110,6 +110,12 @@ services:
         value: true
       - key: RUN_MEDIA_WORKER_IN_WEB
         value: false
+      - key: PROTOTYPE_GENERATION_ENABLED
+        value: true
+      - key: PROTOTYPE_ALLOWED_ORIGIN
+        value: https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site
+      - key: PROTOTYPE_DAILY_GENERATION_LIMIT
+        value: 3
   - type: worker
     name: viralizer-video-studio-media-worker
     runtime: docker
