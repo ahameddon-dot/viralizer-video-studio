@@ -3909,6 +3909,23 @@ def _prototype_storyboard_prompt(payload: PrototypeVideoStartRequest) -> str:
     )[:6000]
 
 
+def _prototype_reference_image_prompt(payload: PrototypeVideoStartRequest, video_prompt: str) -> str:
+    """Build one clean hero frame that PixVerse can animate without changing the subject."""
+    scene = payload.scenes[0] if payload.scenes else None
+    scene_direction = scene.visual if scene else payload.title
+    return (
+        f"Create one ultra-photorealistic vertical 9:16 cinematic keyframe for a premium short video titled "
+        f'"{payload.title}". Category: {payload.category}. Creative style: {payload.creative_style}. '
+        f"The exact visible action and subject must be: {scene_direction}. "
+        f"Use the literal subject named in the title; do not replace an animal with a person or lifestyle model. "
+        f"Show the requested product or food clearly and accurately. Compose a single coherent scene with natural anatomy, "
+        f"realistic materials, believable scale, cinematic lighting, shallow depth of field and clean commercial framing. "
+        f"No words, captions, logos, borders, collage, split screen or watermark. "
+        f"This frame will be animated, so keep limbs, faces, paws, containers and objects unobstructed. "
+        f"Approved motion direction for context only: {video_prompt[:1800]}"
+    )[:4000]
+
+
 def _prototype_project_for_request(request_id: str) -> dict[str, Any] | None:
     for project in list_projects(ROOT, PROTOTYPE_VIDEO_USER_ID, limit=100):
         if str((project.get("topic") or {}).get("prototype_request_id") or "") == request_id:
@@ -3969,15 +3986,27 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         "configuration": {"storyboard": [scene.model_dump() for scene in payload.scenes], "prototype": True},
     })
     try:
-        started = await generate_video(GenerateRequest(
-            content=topic, provider="pixverse", prompt=prompt,
-            duration=min(10, max(5, sum(scene.duration_seconds for scene in payload.scenes))),
-            quality="720p", quality_mode=False, allow_standard_fallback=True,
-            aspect_ratio=payload.aspect_ratio, narration=payload.narration,
-            creator_concept=True,
+        duration = min(10, max(5, sum(scene.duration_seconds for scene in payload.scenes)))
+        reference_prompt = _prototype_reference_image_prompt(payload, prompt)
+        reference_bytes = await generate_instagram_image(topic, reference_prompt, purpose="pixverse")
+        pixverse = PixVerseClient()
+        reference_id = await pixverse.upload_image(
+            image_bytes=reference_bytes,
+            filename="prototype-reference.png",
+            content_type="image/png",
+        )
+        provider_job_id = str(await pixverse.generate_from_image(
+            reference_id,
+            prompt,
+            duration=duration,
+            quality="720p",
+            negative_prompt=(
+                "unrelated person, lifestyle model, wrong animal, wrong product, duplicate subject, extra limbs, "
+                "deformed anatomy, text, captions, watermark, collage, split screen, cartoon"
+            ),
+            motion_mode="normal",
         ))
-        provider = str(started.get("provider") or "pixverse")
-        provider_job_id = str(started.get("job_id") or "")
+        provider = "pixverse"
         if not provider_job_id:
             raise HTTPException(502, "The video provider did not return a job reference.")
         job = enqueue_durable_media_job(
@@ -3987,8 +4016,10 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         )
         update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
             "job_id": provider_job_id, "provider": provider, "status": "processing",
+            "reference_image": {"mode": "openai-generated", "prompt": reference_prompt},
             "production": {"provider": provider, "provider_job_id": provider_job_id,
-                           "media_job_id": job["id"], "status": "processing"},
+                           "media_job_id": job["id"], "status": "processing",
+                           "generation_mode": "image_to_video"},
         })
     except Exception as exc:
         update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
