@@ -4012,7 +4012,9 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         job = enqueue_durable_media_job(
             ROOT, PROTOTYPE_VIDEO_USER_ID, project_id=project["id"], provider=provider,
             provider_job_id=provider_job_id, narration=payload.narration, voice="coral",
-            append_outro=True,
+            # Preserve the duration approved in the storyboard. The finisher still
+            # overlays the mandatory Viralizer logo when no outro is appended.
+            append_outro=False,
         )
         update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
             "job_id": provider_job_id, "provider": provider, "status": "processing",
