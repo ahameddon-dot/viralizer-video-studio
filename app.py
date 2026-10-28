@@ -3943,7 +3943,9 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         }
     now = int(time.time())
     day_start = now - (now % 86400)
-    daily_limit = max(1, min(int(os.getenv("PROTOTYPE_DAILY_GENERATION_LIMIT", "3")), 25))
+    # The private prototype intentionally permits five real demos per UTC day.
+    # Keep an older Render value from silently lowering the published contract.
+    daily_limit = max(5, min(int(os.getenv("PROTOTYPE_DAILY_GENERATION_LIMIT", "5")), 25))
     todays_projects = [
         item for item in list_projects(ROOT, PROTOTYPE_VIDEO_USER_ID, limit=100)
         if int(item.get("created_at") or 0) >= day_start
