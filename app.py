@@ -475,15 +475,20 @@ def _creatorthon_frozen_response(request: Request, signed_in: bool = False) -> H
 @app.middleware("http")
 async def require_password(request: Request, call_next):
     if request.url.path.startswith("/api/prototype/video"):
-        allowed_origin = os.getenv(
+        configured_origins = os.getenv(
             "PROTOTYPE_ALLOWED_ORIGIN",
             "https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site",
-        ).strip().rstrip("/")
+        )
+        allowed_origins = {
+            value.strip().rstrip("/")
+            for value in configured_origins.split(",")
+            if value.strip()
+        }
         origin = request.headers.get("origin", "").strip().rstrip("/")
-        if not allowed_origin or origin != allowed_origin:
+        if not origin or origin not in allowed_origins:
             return JSONResponse({"detail": "Prototype origin is not allowed."}, status_code=403)
         cors_headers = {
-            "Access-Control-Allow-Origin": allowed_origin,
+            "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, X-Prototype-Request-Id",
             "Access-Control-Max-Age": "600",

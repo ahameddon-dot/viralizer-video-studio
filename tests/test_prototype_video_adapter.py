@@ -54,6 +54,20 @@ class PrototypeVideoAdapterTests(unittest.TestCase):
     self.assertIn("X-Prototype-Request-Id", response.headers["access-control-allow-headers"])
 
 
+ def test_prototype_middleware_allows_configured_comparison_origin(self):
+    original = "https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site"
+    comparison = "https://viralizer-concept-b.intuition-in-7630.chatgpt.site"
+    configured = f"{original},{comparison}"
+
+    async def downstream(_request):
+        return JSONResponse({"ok": True})
+
+    with patch.dict(os.environ, {"PROTOTYPE_ALLOWED_ORIGIN": configured}):
+        response = asyncio.run(app.require_password(_request(origin=comparison), downstream))
+    self.assertEqual(response.status_code, 200)
+    self.assertEqual(response.headers["access-control-allow-origin"], comparison)
+
+
  def test_start_is_durable_and_idempotent(self):
     projects = []
     provider_calls = []
