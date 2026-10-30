@@ -1071,6 +1071,8 @@ class PrototypeVideoStartRequest(BaseModel):
     aspect_ratio: str = Field(default="9:16", pattern=r"^(9:16|16:9|1:1)$")
     narration: str = Field(default="", max_length=3000)
     custom_prompt: str = Field(default="", max_length=6000)
+    reference_image_data_url: str = Field(default="", max_length=8_500_000)
+    reference_image_filename: str = Field(default="", max_length=240)
     scenes: list[PrototypeStoryboardScene] = Field(min_length=3, max_length=8)
 
 
@@ -3944,6 +3946,24 @@ def _prototype_reference_image_prompt(payload: PrototypeVideoStartRequest, video
     )[:4000]
 
 
+def _prototype_uploaded_reference(payload: PrototypeVideoStartRequest) -> tuple[bytes, str, str] | None:
+    value = payload.reference_image_data_url.strip()
+    if not value:
+        return None
+    match = re.fullmatch(r"data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\r\n]+)", value)
+    if not match:
+        raise HTTPException(422, "The uploaded reference image is invalid. Upload a JPG, PNG or WEBP image again.")
+    try:
+        raw = base64.b64decode(match.group(2), validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(422, "The uploaded reference image could not be decoded.") from exc
+    if not raw or len(raw) > 6 * 1024 * 1024:
+        raise HTTPException(422, "The uploaded reference image must be smaller than 6 MB.")
+    content_type = match.group(1)
+    extension = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type]
+    return raw, content_type, f"uploaded-reference{extension}"
+
+
 def _prototype_project_for_request(request_id: str) -> dict[str, Any] | None:
     for project in list_projects(ROOT, PROTOTYPE_VIDEO_USER_ID, limit=100):
         if str((project.get("topic") or {}).get("prototype_request_id") or "") == request_id:
@@ -4006,12 +4026,20 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
     try:
         duration = min(10, max(5, sum(scene.duration_seconds for scene in payload.scenes)))
         reference_prompt = _prototype_reference_image_prompt(payload, prompt)
-        reference_bytes = await generate_instagram_image(topic, reference_prompt, purpose="pixverse")
+        uploaded_reference = _prototype_uploaded_reference(payload)
+        if uploaded_reference:
+            reference_bytes, reference_content_type, reference_filename = uploaded_reference
+            reference_mode = "uploaded-source"
+        else:
+            reference_bytes = await generate_instagram_image(topic, reference_prompt, purpose="pixverse")
+            reference_content_type = "image/png"
+            reference_filename = "prototype-reference.png"
+            reference_mode = "openai-generated"
         pixverse = PixVerseClient()
         reference_id = await pixverse.upload_image(
             image_bytes=reference_bytes,
-            filename="prototype-reference.png",
-            content_type="image/png",
+            filename=reference_filename,
+            content_type=reference_content_type,
         )
         provider_job_id = str(await pixverse.generate_from_image(
             reference_id,
@@ -4036,7 +4064,8 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         )
         update_project(ROOT, PROTOTYPE_VIDEO_USER_ID, project["id"], {
             "job_id": provider_job_id, "provider": provider, "status": "processing",
-            "reference_image": {"mode": "openai-generated", "prompt": reference_prompt},
+            "reference_image": {"mode": reference_mode, "filename": payload.reference_image_filename,
+                                "prompt": reference_prompt if reference_mode == "openai-generated" else ""},
             "production": {"provider": provider, "provider_job_id": provider_job_id,
                            "media_job_id": job["id"], "status": "processing",
                            "generation_mode": "image_to_video"},
