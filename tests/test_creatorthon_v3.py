@@ -10,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CreatorthonV3Tests(unittest.TestCase):
+    def test_product_service_video_is_mandatory_for_every_dashboard(self):
+        page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+
+        self.assertIn("function addMandatoryProductServiceCard()", page)
+        self.assertIn("Product / Service Video", page)
+        self.assertIn("Available to everyone", page)
+        self.assertIn("location.href='/product/industry'", page)
+        self.assertIn("baseRenderDashboard();addMandatoryProductServiceCard()", page)
+
     def test_product_video_builder_uses_secured_creatorthon_pipeline(self):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
