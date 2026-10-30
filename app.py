@@ -4012,6 +4012,9 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
         prompt
         + " Do not generate any logo, watermark or brand mark inside the scene. Branding is added separately after generation."
     )[:6000]
+    # Validate a client-supplied image before creating a durable project or
+    # consuming a prototype slot. The decoded bytes are used unchanged below.
+    uploaded_reference = _prototype_uploaded_reference(payload)
     topic = {
         "title": payload.title, "topic": payload.title, "category": payload.category,
         "video_idea": payload.title, "creator_angle": payload.creative_style,
@@ -4026,7 +4029,6 @@ async def start_prototype_video(request: Request, payload: PrototypeVideoStartRe
     try:
         duration = min(10, max(5, sum(scene.duration_seconds for scene in payload.scenes)))
         reference_prompt = _prototype_reference_image_prompt(payload, prompt)
-        uploaded_reference = _prototype_uploaded_reference(payload)
         if uploaded_reference:
             reference_bytes, reference_content_type, reference_filename = uploaded_reference
             reference_mode = "uploaded-source"
