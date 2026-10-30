@@ -10,6 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CreatorthonV3Tests(unittest.TestCase):
+    def test_product_studio_offers_instant_and_step_by_step_modes(self):
+        page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
+
+        self.assertIn("Instant Viral Video / Step by Step Video Creation.", page)
+        self.assertIn('id="instantMode"', page)
+        self.assertIn('id="stepMode"', page)
+        self.assertIn('id="instantUploadNext"', page)
+        self.assertIn('id="instantPromptNext"', page)
+        self.assertIn("Analyze images &amp; create prompt", page)
+        self.assertIn("How creative?", page)
+        self.assertIn("Narration language", page)
+        self.assertIn("Create video →", page)
+        self.assertIn("$('#advancedWrap').classList.remove('hidden-advanced')", page)
+
     def test_product_service_video_is_mandatory_for_every_dashboard(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
 
