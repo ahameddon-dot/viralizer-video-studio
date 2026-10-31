@@ -11,6 +11,7 @@ import re
 import subprocess
 import tempfile
 import time
+import uuid
 import httpx
 import io
 from datetime import datetime, timedelta, timezone
