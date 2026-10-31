@@ -3086,7 +3086,46 @@ async def creatorthon_admin_videos(request: Request):
 
 @app.get("/api/creatorthon/demos")
 async def creatorthon_public_demos():
-    demos = []
+    concept_b_base = "https://viralizer-concept-b.intuition-in-7630.chatgpt.site/assets/"
+    concept_b_specs = [
+        ("signature-dosa", "Signature Dosa", "Food", "dosa-animation.mp4", True),
+        ("luxury-perfume", "Luxury Perfume", "Beauty", "perfume-animation.mp4", True),
+        ("restaurant-experience", "Restaurant Experience", "Restaurant", "restaurant-animation.mp4", True),
+        ("property-walkthrough", "Property Walk-through", "Real Estate", "real-estate-animation.mp4", True),
+        ("dental-smile", "Dental Smile Story", "Dental", "dental-animation.mp4", True),
+        ("tricolour-bubble-tea", "Tricolour Bubble Tea", "Beverage", "bubble-tea-animation.mp4", True),
+        ("bubble-tea-test", "Bubble Tea Product Test", "Beverage", "bubble-tea-test.mp4", False),
+        ("featured-campaign", "Featured Product Campaign", "Product", "featured-campaign-animation.mp4", False),
+        ("featured-campaign-2", "Featured Campaign · Edition 2", "Product", "featured-campaign-2-animation.mp4", False),
+        ("featured-campaign-3", "Featured Campaign · Edition 3", "Product", "featured-campaign-3-animation.mp4", False),
+        ("featured-campaign-4", "Featured Campaign · Edition 4", "Product", "featured-campaign-4-animation.mp4", False),
+        ("fourth-animation", "Creative Product Showcase", "Product", "fourth-animation.mp4", False),
+        ("fish-biryani", "Fish Biryani AI Short", "Food", "fish-biryani-ai-short.mp4", False),
+        ("puppy-imitation", "Puppy Imitation", "Character", "puppy-imitation.mp4", False),
+        ("viralizer-showcase", "Viralizer Generated Showcase", "Product", "viralizer-showcase-9d9787.mp4", False),
+        ("gemini-food-cc6", "Gemini Food Film · CC6B9D75", "Food", "gemini-food-cc6b9d75.mp4", False),
+        ("gemini-food-a08", "Gemini Food Film · A0809A93", "Food", "gemini-food-a0809a93.mp4", False),
+        ("tiger-dosa-clean", "Tiger Dosa · Clean Brand Cut", "Food", "tiger-dosa-clean-logo.mp4", False),
+        ("tiger-dosa-image", "Tiger Dosa · Image-led Cut", "Food", "tiger-dosa-image-first.mp4", False),
+        ("tiger-dosa-revised", "Tiger Dosa · Revised Scene", "Food", "tiger-dosa-revised.mp4", False),
+        ("surguru-all-day", "Surguru · All-Day Delights", "Restaurant", "surguru-all-day.mp4", False),
+        ("surguru-dosa", "Surguru · Dosa Collection", "Restaurant", "surguru-dosa-collection.mp4", False),
+        ("surguru-north-indian", "Surguru · North Indian Dinner", "Restaurant", "surguru-north-indian-dinner.mp4", False),
+        ("surguru-breakfast", "Surguru · South Indian Breakfast", "Restaurant", "surguru-south-indian-breakfast.mp4", False),
+        ("surguru-snacks", "Surguru · Sunset Snacks", "Restaurant", "surguru-sunset-snacks.mp4", False),
+        ("surguru-sweets", "Surguru · Sweets & Drinks", "Restaurant", "surguru-sweets-and-drinks.mp4", False),
+        ("xtasi-pizza", "Giant Pizza Experience", "Restaurant", "xtasi-giant-pizza.mp4", False),
+        ("xtasi-personalities", "Pizza Personalities", "Restaurant", "xtasi-pizza-personalities.mp4", False),
+        ("xtasi-wings", "Premium Wings", "Restaurant", "xtasi-wings.mp4", False),
+        ("xtasi-mocktail", "Mocktail Lab", "Beverage", "xtasi-mocktail-lab.mp4", False),
+        ("xtasi-desserts", "Dessert Finale", "Restaurant", "xtasi-desserts.mp4", False),
+        ("xtasi-night", "Xtasi After Dark", "Restaurant", "xtasi-night.mp4", False),
+    ]
+    demos = [{
+        "id": f"concept-b-{slug}", "title": title, "category": category, "featured": featured,
+        "video_url": concept_b_base + filename, "thumbnail_url": "", "provider": "Concept B",
+        "aspect_ratio": "9:16", "quality": "Curated demo", "approved_at": 1,
+    } for slug, title, category, filename, featured in concept_b_specs]
     for video in list_participant_videos(ROOT, limit=1000):
         demo = video.get("demo") or {}
         if not demo.get("approved"):
