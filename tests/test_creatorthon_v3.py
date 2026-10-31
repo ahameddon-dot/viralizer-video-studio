@@ -312,8 +312,17 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertNotIn("Muslim", retry)
         self.assertNotIn("Beef", retry)
 
+        self.assertTrue(app._is_sensitive_provider_rejection(
+            RuntimeError("The text you entered contains sensitive information. Please re-enter.")
+        ))
+        self.assertFalse(app._is_sensitive_provider_rejection(RuntimeError("Provider temporarily unavailable")))
+        minimal_retry = app._minimal_grounded_retry_prompt(10, "9:16")
+        self.assertIn("uploaded reference", minimal_retry)
+        self.assertIn("exact main subject", minimal_retry)
+
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-        self.assertIn('"sensitive information" in str(exc).casefold()', app_source)
+        self.assertIn("provider_safe_retry", app_source)
+        self.assertIn("_minimal_grounded_retry_prompt", app_source)
         self.assertIn("Generating video with provider-safe direction", app_source)
 
     def test_v3_custom_domain_serves_v3_from_root(self):

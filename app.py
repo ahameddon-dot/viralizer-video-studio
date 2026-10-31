@@ -163,6 +163,23 @@ def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, 
     )
 
 
+def _is_sensitive_provider_rejection(exc: Exception) -> bool:
+    """Recognize PixVerse moderation responses without coupling callers to one exact sentence."""
+    message = str(exc or "").casefold()
+    return "sensitive information" in message or ("sensitive" in message and "re-enter" in message)
+
+
+def _minimal_grounded_retry_prompt(duration: int, aspect_ratio: str) -> str:
+    """Last-resort visual-only direction; the uploaded reference remains the source of truth."""
+    aspect = {"9:16": "vertical", "16:9": "landscape", "1:1": "square"}.get(aspect_ratio, "vertical")
+    return (
+        f"Animate the uploaded reference as a {duration}-second {aspect} premium commercial. "
+        "Preserve the exact main subject, appearance, colours, materials and setting from the reference. "
+        "Use a gentle cinematic push-in, subtle natural motion, realistic lighting and a polished final close-up. "
+        "Do not add people, labels, captions, logos, claims, extra products or unrelated objects."
+    )
+
+
 def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
     """Compile a literal product commercial without editorial-topic reinterpretation."""
     clean = lambda value, limit=120: " ".join(str(value or "").split()[:limit])
@@ -3809,17 +3826,41 @@ async def generate_video(request: GenerateRequest):
             pixverse = PixVerseClient()
             reference_id = await pixverse.upload_image(image_bytes=reference_bytes, filename=reference_filename, content_type=reference_content_type)
             avoid = content.get("product_visual_spec", {}).get("avoid", []) if isinstance(content.get("product_visual_spec"), dict) else []
-            job_id = str(await pixverse.generate_from_image(
-                reference_id, prompt, duration=request.duration, quality=request.quality,
-                negative_prompt=", ".join(str(value) for value in avoid if value)[:1800], motion_mode="normal",
-            ))
+            negative_prompt = ", ".join(str(value) for value in avoid if value)[:1800]
+            provider_safe_retry = False
+            try:
+                job_id = str(await pixverse.generate_from_image(
+                    reference_id, prompt, duration=request.duration, quality=request.quality,
+                    negative_prompt=negative_prompt, motion_mode="normal",
+                ))
+            except PixVerseError as exc:
+                if not _is_sensitive_provider_rejection(exc):
+                    raise
+                provider_safe_retry = True
+                retry_prompt = _provider_safe_product_retry_prompt(content, request.duration, request.aspect_ratio)
+                try:
+                    job_id = str(await pixverse.generate_from_image(
+                        reference_id, retry_prompt, duration=request.duration, quality=request.quality,
+                        negative_prompt=negative_prompt, motion_mode="normal",
+                    ))
+                except PixVerseError as retry_exc:
+                    if not _is_sensitive_provider_rejection(retry_exc):
+                        raise
+                    retry_prompt = _minimal_grounded_retry_prompt(request.duration, request.aspect_ratio)
+                    job_id = str(await pixverse.generate_from_image(
+                        reference_id, retry_prompt, duration=request.duration, quality=request.quality,
+                        negative_prompt="text, captions, watermark, logo, extra objects, distorted details", motion_mode="normal",
+                    ))
+                prompt = retry_prompt
+                reference_mode = f"{reference_mode}-provider-safe"
         except (PixVerseError, OpenAIImageError, OSError) as exc:
             raise HTTPException(502, f"Viralizer could not create the grounded product video: {exc}") from exc
         production.update(job_id=job_id, provider="pixverse", status="processing", generation_mode="image_to_video", reference_mode=reference_mode)
         record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
         return {"job_id": job_id, "provider": "pixverse", "status": "processing", "prompt": prompt,
                 "quality_mode": effective_quality_mode, "openai_story_analysis": True,
-                "grounded_reference": True, "stage": "Animating the verified product reference"}
+                "grounded_reference": True, "provider_safe_retry": provider_safe_retry,
+                "stage": "Animating the verified product reference"}
     if selected_provider == "hybrid":
         script = request.narration or build_heygen_script(content, request.duration)
         job_id = start_hybrid_video(content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, effective_quality_mode)
@@ -3857,7 +3898,7 @@ async def generate_video(request: GenerateRequest):
         if (
             selected_provider == "pixverse"
             and content.get("product_video")
-            and "sensitive information" in str(exc).casefold()
+            and _is_sensitive_provider_rejection(exc)
         ):
             retry_prompt = _provider_safe_product_retry_prompt(content, request.duration, request.aspect_ratio)
             try:
