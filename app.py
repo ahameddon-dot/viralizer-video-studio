@@ -3775,6 +3775,50 @@ async def generate_video(request: GenerateRequest):
         production["prompt"] = prompt
     if not prompt:
         raise HTTPException(422, "The selected content did not produce a usable video direction.")
+    instant_source_token = str(content.get("instant_source_token") or "").strip()
+    if selected_provider == "pixverse" and instant_source_token:
+        if not re.fullmatch(r"[a-f0-9]{32}", instant_source_token):
+            raise HTTPException(422, "The uploaded product reference is invalid. Analyze the material again.")
+        reference_dir = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "instant_product_sources"
+        matches = list(reference_dir.glob(f"{instant_source_token}.*"))
+        if len(matches) != 1 or not matches[0].is_file():
+            raise HTTPException(410, "The uploaded product reference has expired. Analyze the material again.")
+        source_path = matches[0]
+        source_role = str(content.get("instant_source_role") or "product").casefold()
+        try:
+            if any(value in source_role for value in ("menu", "brochure", "document", "price list")):
+                reference_prompt = (
+                    "Create one ultra-photorealistic vertical 9:16 premium commercial hero frame that can be animated into "
+                    "the approved food advertisement below. Show only the exact verified menu items explicitly named in the "
+                    "approved prompt, plated separately and recognizably in an authentic Indian restaurant setting. Preserve "
+                    "their correct food identity and appearance. Do not show salad bowls, generic meal-prep boxes, invented "
+                    "dishes, unrelated people, readable menu text, prices, logos, captions, collage layouts or watermarks. "
+                    "Use warm cinematic restaurant lighting, natural food textures and clean foreground space for motion. "
+                    f"APPROVED VIDEO DIRECTION: {prompt[:3500]}"
+                )
+                reference_bytes = await generate_instagram_image(content, reference_prompt, purpose="pixverse")
+                reference_filename = "verified-menu-hero.png"
+                reference_content_type = "image/png"
+                reference_mode = "verified-menu-render"
+            else:
+                reference_bytes = source_path.read_bytes()
+                reference_filename = source_path.name
+                reference_content_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(source_path.suffix.lower(), "image/png")
+                reference_mode = "uploaded-product"
+            pixverse = PixVerseClient()
+            reference_id = await pixverse.upload_image(image_bytes=reference_bytes, filename=reference_filename, content_type=reference_content_type)
+            avoid = content.get("product_visual_spec", {}).get("avoid", []) if isinstance(content.get("product_visual_spec"), dict) else []
+            job_id = str(await pixverse.generate_from_image(
+                reference_id, prompt, duration=request.duration, quality=request.quality,
+                negative_prompt=", ".join(str(value) for value in avoid if value)[:1800], motion_mode="normal",
+            ))
+        except (PixVerseError, OpenAIImageError, OSError) as exc:
+            raise HTTPException(502, f"Viralizer could not create the grounded product video: {exc}") from exc
+        production.update(job_id=job_id, provider="pixverse", status="processing", generation_mode="image_to_video", reference_mode=reference_mode)
+        record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+        return {"job_id": job_id, "provider": "pixverse", "status": "processing", "prompt": prompt,
+                "quality_mode": effective_quality_mode, "openai_story_analysis": True,
+                "grounded_reference": True, "stage": "Animating the verified product reference"}
     if selected_provider == "hybrid":
         script = request.narration or build_heygen_script(content, request.duration)
         job_id = start_hybrid_video(content, request.duration, request.quality, script, request.avatar_id, request.voice_id, request.background, effective_quality_mode)
@@ -3893,7 +3937,7 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
             ROOT, user_id, project_id=payload.project_id, provider=provider,
             provider_job_id=provider_job_id, narration=payload.narration if payload.narration else "",
             voice=payload.voice_id or "coral", official_logo_data=payload.official_logo_data,
-            append_outro=not bool(payload.content.get("reference_recreation")),
+            append_outro=not bool(payload.content.get("reference_recreation") or payload.content.get("instant_product_video")),
         )
         update_project(ROOT, user_id, payload.project_id, {
             "job_id": provider_job_id, "provider": provider, "status": "processing",
@@ -4273,6 +4317,7 @@ async def analyze_product_materials(request: Request, instruction: str = Form("C
     if not 1 <= len(materials) <= 8:
         raise HTTPException(422, "Upload between one and eight images.")
     image_parts: list[dict[str, Any]] = []
+    first_material: tuple[bytes, str] | None = None
     for upload in materials:
         content_type = (upload.content_type or "").lower()
         if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
@@ -4281,6 +4326,8 @@ async def analyze_product_materials(request: Request, instruction: str = Form("C
         if len(raw) > 15 * 1024 * 1024:
             raise HTTPException(413, "Each image must be 15 MiB or smaller.")
         image_parts.append({"type": "input_image", "image_url": f"data:{content_type};base64,{base64.b64encode(raw).decode('ascii')}"})
+        if first_material is None:
+            first_material = (raw, content_type)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(503, "Product-material analysis is not configured.")
@@ -4310,6 +4357,16 @@ Transcribe only clearly visible names and prices. Never invent products, prices,
     result.update(instruction=instruction[:1200], source_count=len(materials), requires_user_verification=True)
     result["auto_prompt"] = str(result.get("auto_prompt") or result["concepts"][0].get("video_prompt") or result["concepts"][0].get("visual_direction") or "")[:5000]
     result["negative_prompt"] = str(result.get("negative_prompt") or result["concepts"][0].get("negative_prompt") or "")[:1800]
+    if first_material:
+        raw, content_type = first_material
+        token = uuid.uuid4().hex
+        extension = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[content_type]
+        reference_dir = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "instant_product_sources"
+        reference_dir.mkdir(parents=True, exist_ok=True)
+        (reference_dir / f"{token}{extension}").write_bytes(raw)
+        roles = result.get("product_identity", {}).get("reference_roles", []) if isinstance(result.get("product_identity"), dict) else []
+        result["instant_source_token"] = token
+        result["instant_source_role"] = " ".join(str(value) for value in roles if value)[:200] or "product"
     return result
 
 

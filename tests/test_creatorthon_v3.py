@@ -23,6 +23,9 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("Narration language", page)
         self.assertIn("Create video →", page)
         self.assertIn("$('#advancedWrap').classList.remove('hidden-advanced')", page)
+        self.assertIn("instant_source_token:easyAnalysis.instant_source_token", page)
+        self.assertIn("duration=Math.max(5,Math.min(15,+c.duration||10))", page)
+        self.assertIn("generic salad or meal-prep box", page)
 
     def test_product_service_video_is_mandatory_for_every_dashboard(self):
         page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
