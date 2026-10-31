@@ -91,8 +91,8 @@ function renderParticipantVideos(){
     const title=document.createElement('h3');title.textContent=video.title||video.topic||'Untitled video';
     const owner=document.createElement('div');owner.className='video-owner';owner.textContent=(video.full_name||'Name unavailable')+' · '+(video.email||'Email unavailable');
     const meta=document.createElement('div');meta.className='video-meta';
-    [video.provider==='heygen'?'Presenter video':'AI video',video.status||'completed',when(video.updated_at)].forEach(value=>{const pill=document.createElement('span');pill.className='pill';pill.textContent=value;meta.append(pill)});
-    copy.append(title,owner,meta);if(videoUrl){const actions=document.createElement('div');actions.className='video-actions';const link=document.createElement('a');link.className='video-link';link.href=videoUrl;link.target='_blank';link.rel='noopener';link.textContent='Open video ↗';const publish=document.createElement('button');publish.type='button';publish.className='video-publish';publish.textContent='Publish to Viralizer YouTube';publish.onclick=()=>publishParticipantVideo(video,publish,actions);actions.append(link,publish);copy.append(actions)}card.append(copy);host.append(card);
+    [video.provider==='heygen'?'Presenter video':'AI video',video.status||'completed',video.demo?.approved?'Public demo':'Private',when(video.updated_at)].forEach(value=>{const pill=document.createElement('span');pill.className='pill';pill.textContent=value;meta.append(pill)});
+    copy.append(title,owner,meta);if(videoUrl){const actions=document.createElement('div');actions.className='video-actions';const link=document.createElement('a');link.className='video-link';link.href=videoUrl;link.target='_blank';link.rel='noopener';link.textContent='Open video ↗';const demo=document.createElement('button');demo.type='button';demo.className='video-demo'+(video.demo?.approved?' remove-demo':'');demo.textContent=video.demo?.approved?'Remove from demos':'Approve as demo';demo.onclick=()=>setDemoApproval(video,demo);const publish=document.createElement('button');publish.type='button';publish.className='video-publish';publish.textContent='Publish to Viralizer YouTube';publish.onclick=()=>publishParticipantVideo(video,publish,actions);actions.append(link,demo,publish);copy.append(actions)}card.append(copy);host.append(card);
   });
 }
 async function publishParticipantVideo(video,button,actions){
@@ -103,9 +103,16 @@ async function publishParticipantVideo(video,button,actions){
   result.className='video-result';result.textContent='Uploading to Viralizer YouTube…';
   try{const data=await api('/api/creatorthon/admin/videos/'+encodeURIComponent(video.id)+'/publish-youtube',{method:'POST'}),published=data.result||{},url=published.url||(published.id?'https://youtu.be/'+encodeURIComponent(published.id):'');button.textContent=published.already_published?'Already published ✓':'Published ✓';result.replaceChildren(document.createTextNode(published.already_published?'This video was already published.':'Published successfully.'));if(url){const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';link.textContent=' View on YouTube ↗';result.append(link)}}catch(error){button.disabled=false;button.textContent='Publish to Viralizer YouTube';result.className='video-result fail';result.textContent=error.message}
 }
+async function setDemoApproval(video,button){
+  const approved=!Boolean(video.demo?.approved);let title=video.demo?.title||video.title||video.topic||'Viralizer demo',category=video.demo?.category||video.category||'Other',featured=false;
+  if(approved){title=prompt('Public demo title',title)||title;category=prompt('Demo category (Food, Fashion, Real Estate, Dental, etc.)',category)||category;featured=confirm('Feature this demo at the top of the gallery?');if(!confirm('Approve “'+title+'” as a public demo? Participant name and email will not be shown.'))return}else if(!confirm('Remove “'+title+'” from the public demo gallery?'))return;
+  button.disabled=true;button.textContent=approved?'Approving…':'Removing…';
+  try{await api('/api/creatorthon/admin/videos/'+encodeURIComponent(video.id)+'/demo',{method:'PUT',body:JSON.stringify({approved,featured,title,category})});await loadParticipantVideos()}catch(error){alert(error.message);button.disabled=false;button.textContent=approved?'Approve as demo':'Remove from demos'}
+}
 async function loadParticipantVideos(){const result=await api('/api/creatorthon/admin/videos');participantVideos=result.videos||[];renderParticipantVideos()}
 $('#videoSearch').oninput=renderParticipantVideos;
 loadParticipantVideos().catch(error=>{const empty=document.createElement('div');empty.className='empty';empty.textContent=error.message;$('#participantVideos').replaceChildren(empty);$('#videoSummary').textContent='Could not load videos';$('#videoCount').textContent='—'});
 </script>
+<style>.video-demo{display:inline-flex;min-height:34px;align-items:center;padding:8px 11px;border:0;border-radius:9px;background:#087f68;color:#fff;font-size:10px;font-weight:850;cursor:pointer}.video-demo.remove-demo{background:#71334d}.video-demo:disabled{opacity:.55;cursor:wait}</style>
 </body>
 </html>

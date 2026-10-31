@@ -531,6 +531,7 @@ async def require_password(request: Request, call_next):
             response.headers[key] = value
         return response
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
+    is_public_demo = request.url.path in {"/demos", "/creatorthon/demos", "/api/creatorthon/demos"} or request.url.path.startswith("/api/creatorthon/demos/")
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -548,7 +549,7 @@ async def require_password(request: Request, call_next):
         or request.url.path.startswith("/auth/youtube")
         or (request.url.path == "/" and _is_creatorthon_v3_host(request))
     )
-    if creatorthon_request and event_is_frozen(ROOT):
+    if creatorthon_request and not is_public_demo and event_is_frozen(ROOT):
         google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
         if not google_user or not _creatorthon_admin_user(google_user):
             if request.url.path.startswith("/api/"):
@@ -560,17 +561,17 @@ async def require_password(request: Request, call_next):
     # The V3 custom domain is the product itself. Every clean browser route must
     # use the Google session (rather than falling through to the legacy password
     # middleware), otherwise refreshing a nested URL sends users to the wrong app.
-    v3_clean_roots = {"/", "/profile", "/product", "/prediction-video", "/workspace", "/concept", "/admin"}
+    v3_clean_roots = {"/", "/profile", "/product", "/prediction-video", "/workspace", "/concept", "/admin", "/demos"}
     v3_clean_prefixes = ("/topics/", "/markets/", "/create/", "/review/", "/generating/", "/result/", "/project/", "/product/", "/prediction-video/", "/workspace/")
     is_v3_clean_route = request.url.path in v3_clean_roots or request.url.path.startswith(v3_clean_prefixes)
     if _is_creatorthon_v3_host(request) and is_v3_clean_route:
-        if request.url.path != "/" and not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
+        if request.url.path != "/" and not is_public_demo and not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
             destination = request.url.path + (f"?{request.url.query}" if request.url.query else "")
             return RedirectResponse("/creatorthon-v3/login?next=" + quote(destination, safe="/?=&%"), status_code=303)
         return await call_next(request)
     if request.url.path.startswith("/creatorthon") or request.url.path.startswith("/api/creatorthon"):
         google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
-        if request.url.path not in public_paths and not google_user:
+        if request.url.path not in public_paths and not is_public_demo and not google_user:
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "Google sign-in required"}, status_code=401)
             if request.url.path.startswith("/creatorthon-v3"):
@@ -580,7 +581,7 @@ async def require_password(request: Request, call_next):
             else:
                 login_path = "/creatorthon/login?next=" + quote(request.url.path + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&%")
             return RedirectResponse(login_path, status_code=303)
-    if request.url.path not in public_paths and request.url.path not in public_login_assets and not is_authenticated(request):
+    if request.url.path not in public_paths and not is_public_demo and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
@@ -1037,6 +1038,13 @@ class CreatorthonProjectUpdateRequest(BaseModel):
     qc: dict[str, Any] | None = None
 
 
+class CreatorthonDemoApprovalRequest(BaseModel):
+    approved: bool
+    featured: bool = False
+    title: str = Field(default="", max_length=500)
+    category: str = Field(default="Other", max_length=80)
+
+
 class CreatorthonReportRequest(BaseModel):
     id: str = Field(default="", max_length=64)
     project_id: str = Field(default="", max_length=64)
@@ -1376,6 +1384,12 @@ async def creatorthon_concept_clean(request: Request):
         return RedirectResponse("/creatorthon-v3/login?next=/concept", status_code=303)
     creatorthon_user(request)
     return FileResponse(ROOT / "static" / "creatorthon-concept.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/demos")
+@app.get("/creatorthon/demos")
+async def creatorthon_demos_page():
+    return FileResponse(ROOT / "static" / "creatorthon-demos.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/workspace")
@@ -3068,6 +3082,70 @@ async def creatorthon_admin_videos(request: Request):
     creatorthon_admin_user(request)
     videos = list_participant_videos(ROOT)
     return {"videos": videos, "count": len(videos)}
+
+
+@app.get("/api/creatorthon/demos")
+async def creatorthon_public_demos():
+    demos = []
+    for video in list_participant_videos(ROOT, limit=1000):
+        demo = video.get("demo") or {}
+        if not demo.get("approved"):
+            continue
+        demos.append({
+            "id": video.get("id"),
+            "title": demo.get("title") or video.get("title") or video.get("topic") or "Viralizer demo",
+            "category": demo.get("category") or video.get("category") or "Other",
+            "featured": bool(demo.get("featured")),
+            "video_url": f"/api/creatorthon/demos/{video.get('id')}/video",
+            "thumbnail_url": video.get("thumbnail_url"),
+            "provider": video.get("provider"),
+            "aspect_ratio": video.get("aspect_ratio"),
+            "quality": video.get("quality"),
+            "approved_at": demo.get("approved_at"),
+        })
+    demos.sort(key=lambda item: (not item["featured"], -(int(item.get("approved_at") or 0))))
+    return {"demos": demos, "count": len(demos)}
+
+
+@app.get("/api/creatorthon/demos/{project_id}/video")
+async def creatorthon_public_demo_video(request: Request, project_id: str):
+    video = next((item for item in list_participant_videos(ROOT, limit=1000) if item.get("id") == project_id), None)
+    if not video or not (video.get("demo") or {}).get("approved"):
+        raise HTTPException(404, "Approved demo video not found")
+    match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", str(video.get("video_url") or ""))
+    if not match:
+        raise HTTPException(404, "Finished demo video not found")
+    filename = match.group(1)
+    try:
+        return RedirectResponse(object_share_url(f"finished_videos/{filename}", expires_in=3600, disposition="inline", filename=filename), status_code=307, headers={"Cache-Control": "public, max-age=300"})
+    except ObjectStoreError:
+        pass
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+    if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
+        raise HTTPException(404, "Finished demo video not found")
+    return _video_file_response(request, path, filename)
+
+
+@app.put("/api/creatorthon/admin/videos/{project_id}/demo")
+async def creatorthon_admin_video_demo(request: Request, project_id: str, payload: CreatorthonDemoApprovalRequest):
+    admin = creatorthon_admin_user(request)
+    video = next((item for item in list_participant_videos(ROOT, limit=1000) if item.get("id") == project_id), None)
+    if not video:
+        raise HTTPException(404, "Completed video not found")
+    current = update_project(ROOT, str(video.get("user_id") or ""), project_id, {})
+    if not current:
+        raise HTTPException(404, "Project not found")
+    configuration = dict(current.get("configuration") or {})
+    configuration["demo"] = {
+        "approved": payload.approved,
+        "featured": bool(payload.featured and payload.approved),
+        "title": (payload.title or video.get("title") or video.get("topic") or "Viralizer demo").strip(),
+        "category": (payload.category or video.get("category") or "Other").strip(),
+        "approved_at": int(time.time()) if payload.approved else 0,
+        "approved_by": str(admin.get("email") or admin.get("sub") or "admin"),
+    }
+    updated = update_project(ROOT, str(video.get("user_id") or ""), project_id, {"configuration": configuration})
+    return {"ok": True, "demo": configuration["demo"], "project_id": project_id, "updated_at": updated.get("updated_at")}
 
 
 @app.get("/api/creatorthon/admin/channel-automation")

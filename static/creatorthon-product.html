@@ -188,6 +188,7 @@
     $('#back').onclick=()=>history.state?.productStep!=null?history.back():go(state.step-1);$('#next').onclick=()=>state.step<6?go(state.step+1):state.step===6?prepare():generate();$$('[data-custom]').forEach(b=>b.onclick=()=>useCustom(b.dataset.custom));$$('#brand,#offer,#location,#cta,#notes,#duration,#format,#language,#urgency').forEach(x=>x.addEventListener('input',()=>{updateSummary();persistProductState()}));window.addEventListener('popstate',()=>go(routeStep(),false));restoreProductForm();go(routeStep(),'replace');
     const runInstantAnalysis=$('#analyzeMaterial').onclick;
     $('#analyzeMaterial').onclick=async()=>{const description=$('#easyInstruction').value.trim();if(!description){$('#easyInstruction').focus();return alert('Please describe the video you want to create.')}easyMessage('Analyzing the uploaded images and your description…');await runInstantAnalysis();if(!easyAnalysis&&$('#easyStatus').textContent)alert($('#easyStatus').textContent)};
+    try{const demo=JSON.parse(sessionStorage.getItem('viralizerDemoStyle')||'null');if(demo?.id){$('#instantMode').click();$('#easyInstruction').value='Create an original video for my uploaded product inspired by the creative pacing and presentation of the approved “'+(demo.title||'Viralizer demo')+'” example in the '+(demo.category||'selected')+' category. Preserve only my uploaded product identity and facts; do not copy the demo product, people, brand or location.';sessionStorage.removeItem('viralizerDemoStyle')}}catch{}
   </script>
 </body>
 </html>

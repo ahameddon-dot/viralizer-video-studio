@@ -1034,8 +1034,8 @@ def list_participant_videos(root: Path, limit: int = 500) -> list[dict[str, Any]
     """Return completed participant videos with owner identity for organizer review."""
     with _connect(root) as db:
         rows = db.execute(
-            """SELECT p.id,p.user_id,p.title,p.topic_json,p.provider,p.video_url,p.thumbnail_url,
-            p.status,p.created_at,p.updated_at,COALESCE(profile.full_name,'') AS full_name,
+            """SELECT p.id,p.user_id,p.title,p.topic_json,p.configuration_json,p.provider,p.video_url,p.thumbnail_url,
+            p.status,p.aspect_ratio,p.quality,p.created_at,p.updated_at,COALESCE(profile.full_name,'') AS full_name,
             COALESCE(NULLIF(profile.email,''),NULLIF(account.email,''),'') AS email
             FROM creatorthon_projects p
             LEFT JOIN creatorthon_profiles profile ON profile.user_id=p.user_id
@@ -1048,9 +1048,15 @@ def list_participant_videos(root: Path, limit: int = 500) -> list[dict[str, Any]
     for row in rows:
         item = dict(row)
         topic = _json_load(item.pop("topic_json", "{}"), {})
+        configuration = _json_load(item.pop("configuration_json", "{}"), {})
+        demo = configuration.get("demo") if isinstance(configuration, dict) else {}
+        if not isinstance(demo, dict):
+            demo = {}
         videos.append({
             **item,
             "topic": str(topic.get("role_focused_title") or topic.get("topic") or topic.get("title") or item.get("title") or "Untitled video"),
+            "category": str(topic.get("category") or topic.get("industry") or topic.get("product_category") or "Other"),
+            "demo": demo,
         })
     return videos
 
