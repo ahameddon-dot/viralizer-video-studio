@@ -286,6 +286,17 @@ def _creatorthon_product_narration(content: dict[str, Any], duration: int) -> st
     return text + ("" if not text or text[-1] in ".!?" else ".")
 
 
+def _creatorthon_final_narration(
+    project: dict[str, Any], content: dict[str, Any], duration: int, client_narration: str = ""
+) -> str:
+    """Use the narration prepared for the selected language, never a stale browser concept script."""
+    narration_data = project.get("narration") if isinstance(project.get("narration"), dict) else {}
+    prepared = str(narration_data.get("text") or "").strip()
+    if content.get("product_video"):
+        return prepared or _creatorthon_product_narration(content, duration)
+    return str(client_narration or prepared).strip()
+
+
 def _creatorthon_prediction_prompt(content: dict[str, Any], duration: int, aspect_ratio: str) -> str:
     """Build a factual, source-aware prediction promo with a coherent visual story."""
     clean = lambda value, limit=80: " ".join(str(value or "").split()[:limit])
@@ -3952,6 +3963,9 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
         })
     payload.prompt = private_prompt
     payload.content = project.get("topic") or payload.content
+    payload.narration = _creatorthon_final_narration(
+        project, payload.content, payload.duration, payload.narration
+    )
     unlimited = _unlimited_creatorthon_user(user)
     if not unlimited:
         reservation = reserve_event_generation(ROOT, user_id, payload.project_id, payload.provider, str(user.get("email") or ""))

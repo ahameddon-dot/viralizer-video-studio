@@ -90,7 +90,7 @@
         easyMessage('Locking the verified items and approved duration…');
         const p=await api('/api/creatorthon/prepare-prompt',{method:'POST',body:JSON.stringify({content,provider:'pixverse',duration,quality:'720p',quality_mode:false,allow_standard_fallback:true,aspect_ratio:$('#easyFormat').value,target_platform:content.target_platform,prompt:autoPrompt,prompt_mode:'custom'}),timeoutMs:90000});
         easyMessage('Building and animating a verified visual reference for the approved items…');
-        const g=await api('/api/creatorthon/concept/generate',{method:'POST',body:JSON.stringify({project_id:p.project_id,content,creator_concept:true,provider:'pixverse',prompt:'',duration,quality:'720p',quality_mode:false,allow_standard_fallback:true,aspect_ratio:$('#easyFormat').value,narration:c.narration||p.narration||'',voice_id:'coral'}),timeoutMs:180000});
+        const g=await api('/api/creatorthon/concept/generate',{method:'POST',body:JSON.stringify({project_id:p.project_id,content,creator_concept:true,provider:'pixverse',prompt:'',duration,quality:'720p',quality_mode:false,allow_standard_fallback:true,aspect_ratio:$('#easyFormat').value,narration:p.narration||'',voice_id:'coral'}),timeoutMs:180000});
         for(let i=0;i<360;i++){
           await new Promise(r=>setTimeout(r,10000));
           const q=await api('/api/creatorthon/finish-async/'+encodeURIComponent(g.media_job_id),{timeoutMs:30000});

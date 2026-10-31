@@ -250,6 +250,20 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("பயணத்தை முன்பதிவு", narration)
         self.assertNotIn("Your next unforgettable experience", narration)
 
+        stored_tamil = app._creatorthon_final_narration({
+            "narration": {"text": narration},
+        }, {
+            "product_video": True,
+            "category": "Travel",
+            "product_subtype": "Mountain Escape",
+            "narration_language": "Tamil",
+        }, 15, "Your next unforgettable experience starts here.")
+        self.assertEqual(stored_tamil, narration)
+        self.assertNotIn("Your next unforgettable experience", stored_tamil)
+
+        page = (ROOT / "static" / "creatorthon-product.html").read_text(encoding="utf-8")
+        self.assertIn("narration:p.narration||''", page)
+
     def test_product_prompt_locks_dental_aligner_identity(self):
         prompt = app._creatorthon_product_prompt({
             "topic": "Clear Aligners",
