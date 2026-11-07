@@ -155,6 +155,17 @@ def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, 
             "finish on an appetising close-up with visible steam and separate rice grains. Natural food physics, "
             "accurate hands, hygienic service, warm documentary lighting, no text, no logos, no unrelated food."
         )
+    category = str(content.get("category") or content.get("industry") or "").strip().casefold()
+    fashion_terms = {"fashion", "apparel", "clothing", "activewear", "sportswear"}
+    if category in fashion_terms or product in fashion_terms:
+        return (
+            f"Create a {duration}-second {aspect} premium retail apparel commercial using the supplied reference. "
+            "Show one adult professional model wearing fully opaque, fully covered athletic clothing in a clean studio. "
+            "Begin with the complete outfit, show one natural walking movement, and finish with a polished full-body hero view. "
+            "Preserve the exact garment colours, cut, fabric and branding visible in the reference. Professional catalogue posing, "
+            "neutral framing, realistic fabric movement, premium commercial lighting, no transparency, no exposed anatomy, "
+            "no suggestive posing, no minors, no captions and no unrelated products."
+        )
     subtype = _provider_safe_product_prompt(str(content.get("product_subtype") or content.get("topic") or "product"))
     return (
         f"Create a {duration}-second {aspect} commercial for one consistent {subtype}. Show a clear product reveal, "
@@ -166,7 +177,13 @@ def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, 
 def _is_sensitive_provider_rejection(exc: Exception) -> bool:
     """Recognize PixVerse moderation responses without coupling callers to one exact sentence."""
     message = str(exc or "").casefold()
-    return "sensitive information" in message or ("sensitive" in message and "re-enter" in message)
+    return (
+        "sensitive information" in message
+        or ("sensitive" in message and "re-enter" in message)
+        or "did not pass content moderation" in message
+        or "sexual content" in message
+        or ("moderation" in message and "revise" in message)
+    )
 
 
 def _minimal_grounded_retry_prompt(duration: int, aspect_ratio: str) -> str:
@@ -4050,7 +4067,31 @@ async def generate_video(request: GenerateRequest):
                 record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
                 return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": retry_prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video with provider-safe direction"}
             except VideoProviderError as retry_exc:
-                raise HTTPException(502, str(retry_exc)) from retry_exc
+                if not _is_sensitive_provider_rejection(retry_exc):
+                    raise HTTPException(502, str(retry_exc)) from retry_exc
+                minimal_prompt = _minimal_grounded_retry_prompt(request.duration, request.aspect_ratio)
+                try:
+                    job_id = await generate_with_provider(
+                        selected_provider,
+                        minimal_prompt,
+                        content=content,
+                        duration=request.duration,
+                        quality=request.quality,
+                        narration="",
+                        avatar_id=request.avatar_id,
+                        voice_id=request.voice_id,
+                        background=request.background,
+                        aspect_ratio=request.aspect_ratio,
+                        visual_mode=request.visual_mode,
+                        captions=False,
+                        style_id=request.heygen_style_id,
+                        brand_kit_id=request.brand_kit_id,
+                    )
+                    production.update(job_id=job_id, provider=selected_provider, status="processing", prompt=minimal_prompt)
+                    record_production(production, Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))))
+                    return {"job_id": job_id, "provider": selected_provider, "status": "processing", "prompt": minimal_prompt, "quality_mode": effective_quality_mode, "openai_story_analysis": True, "stage": "Generating video from the reference image"}
+                except VideoProviderError as minimal_exc:
+                    raise HTTPException(502, str(minimal_exc)) from minimal_exc
         raise HTTPException(502, str(exc)) from exc
 
 

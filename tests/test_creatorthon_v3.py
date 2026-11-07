@@ -329,7 +329,17 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertTrue(app._is_sensitive_provider_rejection(
             RuntimeError("The text you entered contains sensitive information. Please re-enter.")
         ))
+        self.assertTrue(app._is_sensitive_provider_rejection(
+            RuntimeError("Field 'prompt' did not pass content moderation. Moderation reason: 'Sexual content'. Revise the text and try again.")
+        ))
         self.assertFalse(app._is_sensitive_provider_rejection(RuntimeError("Provider temporarily unavailable")))
+        apparel_retry = app._provider_safe_product_retry_prompt({
+            "category": "Fashion",
+            "product": "Activewear",
+            "product_subtype": "Women's activewear",
+        }, 10, "9:16")
+        self.assertIn("fully opaque, fully covered athletic clothing", apparel_retry)
+        self.assertNotIn("Women's", apparel_retry)
         minimal_retry = app._minimal_grounded_retry_prompt(10, "9:16")
         self.assertIn("uploaded reference", minimal_retry)
         self.assertIn("exact main subject", minimal_retry)
