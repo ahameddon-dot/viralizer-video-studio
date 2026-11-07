@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import uuid
@@ -12,7 +13,21 @@ PIXVERSE_BASE_URL = "https://app-api.pixverse.ai/openapi/v2"
 
 
 class PixVerseError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_type: str = "",
+        allowed_values: list[str] | None = None,
+        trace_id: str = "",
+    ):
+        super().__init__(message)
+        self.error_type = error_type
+        self.allowed_values = allowed_values or []
+        self.trace_id = trace_id
+
+
+LOGGER = logging.getLogger("uvicorn.error")
 
 
 def _clean_content(value: Any, limit: int = 80) -> str:
@@ -208,15 +223,47 @@ class PixVerseClient:
         return headers
 
     @staticmethod
-    def _unwrap(response: httpx.Response) -> dict[str, Any]:
+    def _unwrap(response: httpx.Response, *, trace_id: str = "") -> dict[str, Any]:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise PixVerseError("PixVerse returned an invalid response.") from exc
+            raise PixVerseError("PixVerse returned an invalid response.", trace_id=trace_id) from exc
         if response.is_error or payload.get("ErrCode") != 0:
-            message = payload.get("ErrMsg") or f"PixVerse request failed ({response.status_code})."
-            raise PixVerseError(str(message))
+            detail = payload.get("Error") if isinstance(payload.get("Error"), dict) else {}
+            params = detail.get("Param") if isinstance(detail.get("Param"), dict) else {}
+            error_type = str(detail.get("Type") or "").strip()
+            message = (
+                detail.get("Message")
+                or payload.get("ErrMsg")
+                or f"PixVerse request failed ({response.status_code})."
+            )
+            allowed = params.get("AllowedValues") if isinstance(params.get("AllowedValues"), list) else []
+            LOGGER.warning(
+                "PixVerse rejected request trace_id=%s status=%s err_code=%s error_type=%s message=%s",
+                trace_id,
+                response.status_code,
+                payload.get("ErrCode"),
+                error_type or "unknown",
+                str(message)[:500],
+            )
+            raise PixVerseError(
+                str(message), error_type=error_type,
+                allowed_values=[str(value) for value in allowed], trace_id=trace_id,
+            )
         return payload.get("Resp") or {}
+
+    async def _post_generation(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        trace_id = str(uuid.uuid4())
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{PIXVERSE_BASE_URL}/{endpoint}",
+                    headers={"API-KEY": self.api_key, "Ai-trace-id": trace_id},
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PixVerseError(f"Could not connect to PixVerse: {exc}", trace_id=trace_id) from exc
+        return self._unwrap(response, trace_id=trace_id)
 
     async def generate(
         self,
@@ -228,11 +275,16 @@ class PixVerseClient:
         model: str = "v6",
         negative_prompt: str | None = None,
     ) -> int:
+        cleaned_prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()
+        # PixVerse rejects oversized direction text before creating a job. The
+        # storyboard remains stored in Viralizer; the provider only needs the
+        # compact, filmable direction.
+        cleaned_prompt = cleaned_prompt[:1800]
         payload = {
             "aspect_ratio": aspect_ratio,
             "duration": duration,
             "model": model,
-            "prompt": prompt,
+            "prompt": cleaned_prompt,
             "negative_prompt": negative_prompt or (
                 "text, words, letters, typography, captions, subtitles, title cards, headlines, "
                 "numbers, random symbols, malformed glyphs, signs, labels, fake logos, misspelled brands, "
@@ -244,15 +296,29 @@ class PixVerseClient:
             "water_mark": False,
         }
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{PIXVERSE_BASE_URL}/video/text/generate",
-                    headers=self._headers(unique_request=True),
-                    json=payload,
-                )
-        except httpx.HTTPError as exc:
-            raise PixVerseError(f"Could not connect to PixVerse: {exc}") from exc
-        result = self._unwrap(response)
+            result = await self._post_generation("video/text/generate", payload)
+        except PixVerseError as exc:
+            retry_payload = dict(payload)
+            if exc.error_type == "TEXT_LENGTH_EXCEEDS_THRESHOLD":
+                retry_payload["prompt"] = cleaned_prompt[:1000]
+            elif exc.error_type in {
+                "QUALITY_DURATION_EXCEEDS_THRESHOLD",
+                "QUALITY_DURATION_MODEL_UNSUPPORTED",
+                "QUALITY_UNSUPPORTED",
+                "PLAN_RESOLUTION_RESTRICTED",
+            }:
+                retry_payload["quality"] = "540p"
+                retry_payload["duration"] = min(int(duration), 10)
+            elif exc.error_type in {"FIELD_VALUE_INVALID", "PARAMETER_COMBINATION_UNSUPPORTED"}:
+                retry_payload.pop("water_mark", None)
+            else:
+                raise
+            LOGGER.info(
+                "Retrying PixVerse generation after recoverable error trace_id=%s error_type=%s quality=%s duration=%s prompt_chars=%s",
+                exc.trace_id, exc.error_type, retry_payload.get("quality"),
+                retry_payload.get("duration"), len(str(retry_payload.get("prompt") or "")),
+            )
+            result = await self._post_generation("video/text/generate", retry_payload)
         video_id = result.get("video_id")
         if video_id is None:
             raise PixVerseError("PixVerse did not return a video id.")

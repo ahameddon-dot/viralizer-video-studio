@@ -4093,7 +4093,20 @@ async def generate_creatorthon_concept(request: Request, payload: CreatorthonCon
             raise HTTPException(409, detail)
     try:
         started = await generate_video(payload)
+    except HTTPException as exc:
+        LOGGER.error(
+            "Creatorthon video start failed project_id=%s provider=%s duration=%s quality=%s status=%s detail=%s",
+            payload.project_id, payload.provider, payload.duration, payload.quality,
+            exc.status_code, str(exc.detail)[:800],
+        )
+        if not unlimited:
+            release_event_generation(ROOT, user_id, payload.project_id)
+        raise
     except Exception:
+        LOGGER.exception(
+            "Unexpected Creatorthon video start failure project_id=%s provider=%s duration=%s quality=%s",
+            payload.project_id, payload.provider, payload.duration, payload.quality,
+        )
         if not unlimited:
             release_event_generation(ROOT, user_id, payload.project_id)
         raise
