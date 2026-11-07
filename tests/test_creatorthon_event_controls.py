@@ -217,6 +217,23 @@ class CreatorthonLLMQueryRefinerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(videos[0]["full_name"], "Test Person")
             self.assertEqual(videos[0]["topic"], "Creator technology update")
 
+    def test_admin_project_inventory_can_include_drafts(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"APP_DATA_DIR": directory, "DATABASE_URL": "", "CREATORTHON_EVENT_KEY": "project-admin-test"}, clear=False
+        ):
+            root = Path(directory)
+            save_profile(root, {"sub": "participant-draft", "email": "arif@example.com", "name": "Arif Ansari"}, {
+                "full_name": "Arif Ansari", "company": "", "role": "Educator", "socials": {},
+                "interests": ["Food"], "onboarding_complete": True,
+            })
+            create_project(root, "participant-draft", {"topic": "Margherita Pizza"})
+            self.assertEqual(list_participant_videos(root), [])
+            projects = list_participant_videos(root, include_all=True)
+            self.assertEqual(len(projects), 1)
+            self.assertEqual(projects[0]["full_name"], "Arif Ansari")
+            self.assertEqual(projects[0]["topic"], "Margherita Pizza")
+            self.assertFalse(projects[0]["video_url"])
+
     def test_dual_youtube_destinations_and_consent_are_present(self):
         source = Path(app.__file__).read_text(encoding="utf-8")
         page = (Path(app.__file__).parent / "static" / "creatorthon.html").read_text(encoding="utf-8")

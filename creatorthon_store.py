@@ -1030,17 +1030,23 @@ def list_projects(root: Path, user_id: str, limit: int = 50, status: str = "") -
     return [_project(row) for row in rows]
 
 
-def list_participant_videos(root: Path, limit: int = 500) -> list[dict[str, Any]]:
-    """Return completed participant videos with owner identity for organizer review."""
+def list_participant_videos(root: Path, limit: int = 500, include_all: bool = False) -> list[dict[str, Any]]:
+    """Return participant projects with owner identity for organizer review.
+
+    The public/demo callers keep the historical completed-video-only behaviour.
+    Admin inventory callers can request every project so drafts and failed or
+    in-progress generations do not disappear from the organizer view.
+    """
+    completion_filter = "" if include_all else "WHERE trim(COALESCE(p.video_url,''))<>''"
     with _connect(root) as db:
         rows = db.execute(
-            """SELECT p.id,p.user_id,p.title,p.topic_json,p.configuration_json,p.provider,p.video_url,p.thumbnail_url,
+            f"""SELECT p.id,p.user_id,p.title,p.topic_json,p.configuration_json,p.provider,p.video_url,p.thumbnail_url,
             p.status,p.aspect_ratio,p.quality,p.created_at,p.updated_at,COALESCE(profile.full_name,'') AS full_name,
             COALESCE(NULLIF(profile.email,''),NULLIF(account.email,''),'') AS email
             FROM creatorthon_projects p
             LEFT JOIN creatorthon_profiles profile ON profile.user_id=p.user_id
             LEFT JOIN creatorthon_event_accounts account ON account.user_id=p.user_id AND account.event_key=?
-            WHERE trim(COALESCE(p.video_url,''))<>''
+            {completion_filter}
             ORDER BY p.updated_at DESC LIMIT ?""",
             (event_key(), max(1, min(int(limit), 1000))),
         ).fetchall()

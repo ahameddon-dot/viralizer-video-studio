@@ -3080,7 +3080,7 @@ async def creatorthon_admin_state(request: Request):
 @app.get("/api/creatorthon/admin/videos")
 async def creatorthon_admin_videos(request: Request):
     creatorthon_admin_user(request)
-    videos = list_participant_videos(ROOT)
+    videos = list_participant_videos(ROOT, include_all=True)
     return {"videos": videos, "count": len(videos)}
 
 
