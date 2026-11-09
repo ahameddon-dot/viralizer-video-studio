@@ -116,6 +116,18 @@ services:
         value: https://viralizer-onboarding-demo.intuition-in-7630.chatgpt.site,https://viralizer-concept-b.intuition-in-7630.chatgpt.site
       - key: PROTOTYPE_DAILY_GENERATION_LIMIT
         value: 15
+      - key: AUTOPILOT_PROVIDER_MODE
+        value: disabled
+      - key: AUTOPILOT_PROVIDER_CALLS_ENABLED
+        value: false
+      - key: POST_FOR_ME_API_KEY
+        sync: false
+      - key: POST_FOR_ME_WEBHOOK_SECRET
+        sync: false
+      - key: SHOPIFY_CLIENT_ID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
   - type: worker
     name: viralizer-video-studio-media-worker
     runtime: docker
@@ -186,3 +198,29 @@ services:
         value: viralizer-media
       - key: DAILY_TRENDS_ENABLED
         value: false
+  - type: worker
+    name: viralizer-growth-autopilot-worker
+    runtime: docker
+    dockerCommand: python autopilot_worker.py
+    maxShutdownDelaySeconds: 60
+    plan: 0.5c-512mb
+    branch: ui-preview
+    envVars:
+      - key: APP_ENVIRONMENT
+        value: ui-preview
+      - key: APP_VERSION
+        value: ui-preview-1
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_DATA_DIR
+        value: /tmp/viralizer-autopilot-data
+      - key: AUTOPILOT_PROVIDER_MODE
+        value: disabled
+      - key: AUTOPILOT_PROVIDER_CALLS_ENABLED
+        value: false
+      - key: AUTOPILOT_WORKER_INTERVAL_SECONDS
+        value: 10
+      - key: POST_FOR_ME_API_KEY
+        sync: false
+      - key: POST_FOR_ME_WEBHOOK_SECRET
+        sync: false

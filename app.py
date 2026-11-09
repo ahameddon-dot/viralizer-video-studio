@@ -87,6 +87,14 @@ from object_store import ObjectStoreError, delete_file as delete_object_file, re
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
+from autopilot_store import get_workflow_run, ingest_webhook_event
+from autopilot_contracts import AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, ConceptGenerateRequest, DestructiveConfirmation, MetricSnapshotCreate, OpportunityRankRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
+from autopilot_intelligence import generate_concepts, get_brand_profile, list_concepts, list_opportunities, rank_opportunities, save_brand_profile
+from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
+from autopilot_growth import growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
+from autopilot_providers import provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick
+from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -791,6 +799,82 @@ async def admin_releases(request: Request):
         return {"environment": environment_snapshot(), **load_catalog()}
     except ReleaseDashboardError as exc:
         raise HTTPException(500, str(exc)) from exc
+
+
+@app.get("/api/admin/autopilot/workflows/{run_id}")
+async def admin_autopilot_workflow(request: Request, run_id: str, customer_id: str):
+    """Read-only foundation status endpoint; it never advances or retries work."""
+    require_admin(request)
+    workflow = get_workflow_run(ROOT, customer_id, run_id)
+    if not workflow:
+        raise HTTPException(404, "Autopilot workflow was not found for this customer.")
+    return workflow
+
+
+@app.get("/api/admin/autopilot/operations")
+async def admin_autopilot_operations(request: Request):
+    require_admin(request)
+    return operations_status(ROOT)
+
+
+@app.get("/admin/autopilot-operations")
+async def admin_autopilot_operations_page(request: Request):
+    require_admin(request)
+    return FileResponse(ROOT / "static" / "autopilot-admin.html", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/admin/autopilot/tick")
+async def admin_autopilot_tick(request: Request):
+    require_admin(request)
+    return {"scheduler": scheduler_tick(ROOT), "webhooks": process_webhook_inbox(ROOT)}
+
+
+@app.get("/api/admin/autopilot/action-required")
+async def admin_autopilot_action_required(request: Request, limit: int = 100):
+    require_admin(request)
+    return list_action_required(ROOT, limit)
+
+
+@app.post("/api/admin/autopilot/retry/{entity_type}/{entity_id}")
+async def admin_retry_autopilot_action(request: Request, entity_type: str, entity_id: str):
+    require_admin(request)
+    try:
+        retried = retry_action(ROOT, entity_type, entity_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not retried:
+        raise HTTPException(409, "Item is not retryable.")
+    return {"retried": True}
+
+
+@app.get("/api/admin/autopilot/retention-preview")
+async def admin_autopilot_retention_preview(request: Request):
+    require_admin(request)
+    return retention_preview(ROOT)
+
+
+@app.post("/api/admin/autopilot/retention-apply")
+async def admin_autopilot_retention_apply(request: Request, payload: DestructiveConfirmation):
+    require_admin(request)
+    try:
+        return {"deleted": apply_retention(ROOT, payload.confirmation)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+
+
+@app.get("/api/admin/autopilot/customers/{customer_id}/deletion-preview")
+async def admin_autopilot_customer_deletion_preview(request: Request, customer_id: str):
+    require_admin(request)
+    return deletion_preview(ROOT, customer_id)
+
+
+@app.post("/api/admin/autopilot/customers/{customer_id}/delete")
+async def admin_autopilot_customer_delete(request: Request, customer_id: str, payload: DestructiveConfirmation):
+    require_admin(request)
+    try:
+        return {"deleted": delete_customer_data(ROOT, customer_id, payload.confirmation)}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 @app.get("/api/admin/compare")
@@ -1996,6 +2080,262 @@ async def update_creatorthon_profile(request: Request, payload: CreatorthonProfi
     if payload.onboarding_complete and not payload.interests:
         raise HTTPException(422, "Select at least one interest.")
     return {"profile": save_profile(ROOT, user, payload.model_dump())}
+
+
+@app.get("/api/autopilot/brand-profile")
+async def autopilot_brand_profile(request: Request):
+    user = creatorthon_user(request)
+    return {"brand_profile": get_brand_profile(ROOT, str(user.get("sub", "")))}
+
+
+@app.put("/api/autopilot/brand-profile")
+async def update_autopilot_brand_profile(request: Request, payload: BrandProfileUpsert):
+    user = creatorthon_user(request)
+    try:
+        profile = save_brand_profile(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"brand_profile": profile}
+
+
+@app.get("/api/autopilot/opportunities")
+async def autopilot_opportunities(request: Request, limit: int = 5):
+    user = creatorthon_user(request)
+    return {"opportunities": list_opportunities(ROOT, str(user.get("sub", "")), limit)}
+
+
+@app.post("/api/autopilot/opportunities/rank")
+async def rank_autopilot_opportunities(request: Request, payload: OpportunityRankRequest):
+    user = creatorthon_user(request)
+    try:
+        opportunities = rank_opportunities(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"opportunities": opportunities, "count": len(opportunities)}
+
+
+@app.get("/api/autopilot/opportunities/{opportunity_id}/concepts")
+async def autopilot_concepts(request: Request, opportunity_id: str):
+    user = creatorthon_user(request)
+    return {"concepts": list_concepts(ROOT, str(user.get("sub", "")), opportunity_id)}
+
+
+@app.post("/api/autopilot/concepts/generate")
+async def generate_autopilot_concepts(request: Request, payload: ConceptGenerateRequest):
+    user = creatorthon_user(request)
+    try:
+        concepts = generate_concepts(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"concepts": concepts, "count": len(concepts)}
+
+
+@app.post("/api/autopilot/workflows/start/{concept_id}")
+async def start_autopilot_workflow(request: Request, concept_id: str):
+    user = creatorthon_user(request)
+    try:
+        run = start_content_workflow(ROOT, str(user.get("sub", "")), concept_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"workflow": run}
+
+
+@app.get("/api/autopilot/assets")
+async def autopilot_assets(request: Request, workflow_run_id: str = ""):
+    user = creatorthon_user(request)
+    return {"assets": list_asset_versions(ROOT, str(user.get("sub", "")), workflow_run_id)}
+
+
+@app.post("/api/autopilot/assets")
+async def register_autopilot_asset(request: Request, payload: AssetVersionCreate):
+    user = creatorthon_user(request)
+    try:
+        asset = create_asset_version(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"asset": asset}
+
+
+@app.post("/api/autopilot/assets/from-project")
+async def register_autopilot_project_asset(request: Request, payload: ProjectAssetRegistration):
+    """Hash and inspect a completed, customer-owned video before approval."""
+    user = creatorthon_user(request)
+    customer_id = str(user.get("sub", ""))
+    project = update_project(ROOT, customer_id, payload.project_id, {})
+    if not project:
+        raise HTTPException(404, "Creatorthon project not found.")
+    video_url = str(project.get("video_url") or "")
+    match = re.fullmatch(r"/api/finished-video/(viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4)", video_url)
+    if not match:
+        raise HTTPException(409, "The project does not have a permanent finished video.")
+    filename = match.group(1)
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
+    if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
+        raise HTTPException(404, "Finished video not found.")
+    completed = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", str(path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    if completed.returncode:
+        raise HTTPException(422, "The finished video could not be inspected.")
+    try:
+        media = json.loads(completed.stdout or "{}")
+        stream = next(item for item in media.get("streams", []) if item.get("codec_type") == "video")
+        duration = float((media.get("format") or {}).get("duration") or 0)
+        width, height = int(stream.get("width") or 0), int(stream.get("height") or 0)
+    except (ValueError, TypeError, StopIteration, KeyError) as exc:
+        raise HTTPException(422, "The finished video metadata is invalid.") from exc
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    try:
+        asset = create_asset_version(ROOT, customer_id, {
+            "workflow_run_id": payload.workflow_run_id, "concept_id": payload.concept_id,
+            "media_url": video_url, "media_sha256": digest.hexdigest(), "duration_seconds": duration,
+            "aspect_ratio": "9:16" if height > width and abs((width / height) - (9 / 16)) < .03 else f"{width}:{height}",
+            "caption": payload.caption, "title": payload.title or str(project.get("title") or ""),
+            "hashtags": payload.hashtags,
+            "qc": {"duration_valid": 14 <= duration <= 16, "aspect_ratio_valid": height > width and abs((width / height) - (9 / 16)) < .03, "media_available": True, "width": width, "height": height},
+        })
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"asset": asset}
+
+
+@app.post("/api/autopilot/publications/approve")
+async def approve_autopilot_publication(request: Request, payload: PublicationApprovalRequest):
+    user = creatorthon_user(request)
+    customer_id = str(user.get("sub", ""))
+    approved_by = str(user.get("email") or user.get("sub") or "")
+    try:
+        result = approve_and_queue_publication(ROOT, customer_id, approved_by, payload)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return result
+
+
+@app.get("/api/autopilot/publications")
+async def autopilot_publications(request: Request):
+    user = creatorthon_user(request)
+    return {"publications": list_publications(ROOT, str(user.get("sub", "")))}
+
+
+@app.post("/api/autopilot/metrics/snapshots")
+async def create_autopilot_metric_snapshot(request: Request, payload: MetricSnapshotCreate):
+    user = creatorthon_user(request)
+    try:
+        snapshot = record_metric_snapshot(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"snapshot": snapshot}
+
+
+@app.get("/api/autopilot/connections")
+async def autopilot_connections(request: Request):
+    user = creatorthon_user(request)
+    return {"connections": list_connections(ROOT, str(user.get("sub", "")))}
+
+
+@app.put("/api/autopilot/connections")
+async def update_autopilot_connection(request: Request, payload: ProviderConnectionUpsert):
+    user = creatorthon_user(request)
+    try:
+        connection = save_connection(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"connection": connection}
+
+
+@app.post("/api/autopilot/attribution/events")
+async def create_autopilot_attribution_event(request: Request, payload: AttributionEventCreate):
+    user = creatorthon_user(request)
+    try:
+        event, created = save_attribution_event(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"event": event, "created": created}
+
+
+@app.get("/api/autopilot/growth-dashboard")
+async def autopilot_growth_dashboard(request: Request):
+    user = creatorthon_user(request)
+    return growth_dashboard(ROOT, str(user.get("sub", "")))
+
+
+@app.post("/api/autopilot/recommendations/{recommendation_id}/{status}")
+async def update_autopilot_recommendation(request: Request, recommendation_id: str, status: str):
+    user = creatorthon_user(request)
+    try:
+        recommendation = update_recommendation(ROOT, str(user.get("sub", "")), recommendation_id, status)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"recommendation": recommendation}
+
+
+@app.get("/api/autopilot/notifications")
+async def autopilot_notifications(request: Request, limit: int = 50):
+    user = creatorthon_user(request)
+    return {"notifications": list_notifications(ROOT, str(user.get("sub", "")), limit)}
+
+
+@app.get("/api/autopilot/export")
+async def export_autopilot_customer_data(request: Request):
+    user = creatorthon_user(request)
+    return export_customer_data(ROOT, str(user.get("sub", "")))
+
+
+@app.post("/api/autopilot/notifications/{notification_id}/read")
+async def read_autopilot_notification(request: Request, notification_id: str, dismiss: bool = False):
+    user = creatorthon_user(request)
+    if not mark_notification(ROOT, str(user.get("sub", "")), notification_id, dismiss=dismiss):
+        raise HTTPException(404, "Notification was not found.")
+    return {"updated": True, "dismissed": dismiss}
+
+
+@app.get("/api/autopilot/provider-readiness")
+async def autopilot_provider_readiness(request: Request):
+    creatorthon_user(request)
+    return provider_readiness()
+
+
+@app.post("/api/autopilot/webhooks/post-for-me")
+async def autopilot_post_for_me_webhook(request: Request):
+    raw = await request.body()
+    if len(raw) > 2 * 1024 * 1024:
+        raise HTTPException(413, "Webhook payload is too large.")
+    expected = os.getenv("POST_FOR_ME_WEBHOOK_SECRET", "")
+    valid = verify_post_for_me_webhook(request.headers.get("Post-For-Me-Webhook-Secret", ""), expected)
+    try:
+        payload = json.loads(raw or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "Webhook payload is not valid JSON.") from exc
+    event_id = str(payload.get("id") or payload.get("event_id") or request.headers.get("x-request-id") or "")
+    event, created = ingest_webhook_event(ROOT, {"provider": "post_for_me", "provider_event_id": event_id,
+                                                  "signature_valid": valid, "payload": payload})
+    if not valid:
+        raise HTTPException(401, "Invalid webhook secret.")
+    return {"received": True, "created": created, "event_id": event["id"]}
+
+
+@app.post("/api/autopilot/webhooks/shopify")
+async def autopilot_shopify_webhook(request: Request):
+    raw = await request.body()
+    if len(raw) > 2 * 1024 * 1024:
+        raise HTTPException(413, "Webhook payload is too large.")
+    valid = verify_shopify_webhook(raw, request.headers.get("X-Shopify-Hmac-SHA256", ""), os.getenv("SHOPIFY_CLIENT_SECRET", ""))
+    try:
+        payload = json.loads(raw or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "Webhook payload is not valid JSON.") from exc
+    event_id = request.headers.get("X-Shopify-Event-Id") or request.headers.get("X-Shopify-Webhook-Id") or ""
+    event, created = ingest_webhook_event(ROOT, {"provider": "shopify", "provider_event_id": event_id,
+                                                  "signature_valid": valid, "payload": payload})
+    if not valid:
+        raise HTTPException(401, "Invalid Shopify webhook signature.")
+    return {"received": True, "created": created, "event_id": event["id"]}
 
 
 @app.get("/api/creatorthon/workflow")

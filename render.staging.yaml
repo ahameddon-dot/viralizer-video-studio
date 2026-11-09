@@ -1,0 +1,68 @@
+databases:
+  - name: viralizer-autopilot-staging-db
+    plan: free
+    region: singapore
+
+services:
+  - type: web
+    name: viralizer-autopilot-staging-web
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: autopilot-staging
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: APP_ENVIRONMENT
+        value: staging
+      - key: APP_VERSION
+        value: autopilot-staging-1
+      - key: APP_PASSWORD
+        sync: false
+      - key: GOOGLE_SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralizer-autopilot-staging-db
+          property: connectionString
+      - key: APP_DATA_DIR
+        value: /tmp/viralizer-staging-data
+      - key: RUN_MEDIA_WORKER_IN_WEB
+        value: false
+      - key: DAILY_TRENDS_ENABLED
+        value: false
+      - key: CHANNEL_AUTOMATION_SCHEDULER_ENABLED
+        value: false
+      - key: CREATORTHON_PREFETCH_ENABLED
+        value: false
+      - key: AUTOPILOT_PROVIDER_MODE
+        value: fake
+      - key: AUTOPILOT_PROVIDER_CALLS_ENABLED
+        value: false
+
+  - type: worker
+    name: viralizer-autopilot-staging-worker
+    runtime: docker
+    dockerCommand: python autopilot_worker.py
+    maxShutdownDelaySeconds: 60
+    plan: 0.5c-512mb
+    region: singapore
+    branch: autopilot-staging
+    autoDeploy: false
+    envVars:
+      - key: APP_ENVIRONMENT
+        value: staging
+      - key: APP_VERSION
+        value: autopilot-staging-1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralizer-autopilot-staging-db
+          property: connectionString
+      - key: APP_DATA_DIR
+        value: /tmp/viralizer-staging-worker-data
+      - key: AUTOPILOT_PROVIDER_MODE
+        value: fake
+      - key: AUTOPILOT_PROVIDER_CALLS_ENABLED
+        value: false
+      - key: AUTOPILOT_WORKER_INTERVAL_SECONDS
+        value: 10

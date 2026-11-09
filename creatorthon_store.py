@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from db_migrations import apply_migrations
+
 _POSTGRES_READY = False
 _POSTGRES_POOL = None
 _POSTGRES_POOL_DSN = ""
@@ -196,6 +198,7 @@ def _connect(root: Path) -> Iterator[Any]:
                     for name, declaration in _project_columns():
                         _ensure_column(db, "creatorthon_projects", name, declaration)
                     _ensure_event_account_schema(db)
+                    apply_migrations(db, Path(__file__).resolve().parent / "migrations")
                     connection.commit()
                     _POSTGRES_READY = True
                 yield db
@@ -296,6 +299,7 @@ def _connect(root: Path) -> Iterator[Any]:
     for name, declaration in _project_columns():
         _ensure_column(db, "creatorthon_projects", name, declaration)
     _ensure_event_account_schema(db)
+    apply_migrations(db, Path(__file__).resolve().parent / "migrations")
     db.commit()
     try:
         yield db
