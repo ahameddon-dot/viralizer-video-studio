@@ -107,6 +107,7 @@ def verify_shopify_webhook(raw_body: bytes, signature: str, client_secret: str) 
 
 def provider_readiness() -> dict[str, Any]:
     return {
+        "pixverse": {"configured": bool(os.getenv("PIXVERSE_GROWTH_API_KEY") or os.getenv("PIXVERSE_API_KEY")), "capabilities": ["video", "image"]},
         "post_for_me": {"configured": bool(os.getenv("POST_FOR_ME_API_KEY")), "webhook_configured": bool(os.getenv("POST_FOR_ME_WEBHOOK_SECRET")), "mode": "quickstart"},
         "ga4": {"configured": bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")), "scope": "analytics.readonly"},
         "shopify": {"configured": bool(os.getenv("SHOPIFY_CLIENT_ID") and os.getenv("SHOPIFY_CLIENT_SECRET")), "scopes": ["read_products", "read_orders"]},

@@ -2159,13 +2159,27 @@ async def update_autopilot_brand_profile(request: Request, payload: BrandProfile
 
 @app.get("/api/autopilot/opportunities")
 async def autopilot_opportunities(request: Request, limit: int = 5):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"opportunities": list_opportunities(ROOT, str(user.get("sub", "")), limit)}
+
+
+@app.post("/api/autopilot/topics/refresh")
+async def refresh_autopilot_topics(request: Request):
+    """Pull the existing Viralizer MCP feed and personalize it against the confirmed brand profile."""
+    user = autopilot_user(request)
+    try:
+        topics = await get_hot_topics_from_mcp()
+        opportunities = rank_opportunities(ROOT, str(user.get("sub", "")), {"topics": topics[:50], "limit": 5})
+    except MCPOutlineError as exc:
+        raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"opportunities": opportunities, "count": len(opportunities), "source": "Viralizer V3 + MCP Hot Topic Engine"}
 
 
 @app.post("/api/autopilot/opportunities/rank")
 async def rank_autopilot_opportunities(request: Request, payload: OpportunityRankRequest):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     try:
         opportunities = rank_opportunities(ROOT, str(user.get("sub", "")), payload)
     except ValueError as exc:
@@ -2175,13 +2189,13 @@ async def rank_autopilot_opportunities(request: Request, payload: OpportunityRan
 
 @app.get("/api/autopilot/opportunities/{opportunity_id}/concepts")
 async def autopilot_concepts(request: Request, opportunity_id: str):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"concepts": list_concepts(ROOT, str(user.get("sub", "")), opportunity_id)}
 
 
 @app.post("/api/autopilot/concepts/generate")
 async def generate_autopilot_concepts(request: Request, payload: ConceptGenerateRequest):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     try:
         concepts = generate_concepts(ROOT, str(user.get("sub", "")), payload)
     except ValueError as exc:
@@ -2191,7 +2205,7 @@ async def generate_autopilot_concepts(request: Request, payload: ConceptGenerate
 
 @app.post("/api/autopilot/workflows/start/{concept_id}")
 async def start_autopilot_workflow(request: Request, concept_id: str):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     try:
         run = start_content_workflow(ROOT, str(user.get("sub", "")), concept_id)
     except ValueError as exc:
@@ -2201,7 +2215,7 @@ async def start_autopilot_workflow(request: Request, concept_id: str):
 
 @app.get("/api/autopilot/assets")
 async def autopilot_assets(request: Request, workflow_run_id: str = ""):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"assets": list_asset_versions(ROOT, str(user.get("sub", "")), workflow_run_id)}
 
 
@@ -2264,7 +2278,7 @@ async def register_autopilot_project_asset(request: Request, payload: ProjectAss
 
 @app.post("/api/autopilot/publications/approve")
 async def approve_autopilot_publication(request: Request, payload: PublicationApprovalRequest):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     customer_id = str(user.get("sub", ""))
     approved_by = str(user.get("email") or user.get("sub") or "")
     try:
@@ -2278,7 +2292,7 @@ async def approve_autopilot_publication(request: Request, payload: PublicationAp
 
 @app.get("/api/autopilot/publications")
 async def autopilot_publications(request: Request):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"publications": list_publications(ROOT, str(user.get("sub", "")))}
 
 
@@ -2294,7 +2308,7 @@ async def create_autopilot_metric_snapshot(request: Request, payload: MetricSnap
 
 @app.get("/api/autopilot/connections")
 async def autopilot_connections(request: Request):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"connections": list_connections(ROOT, str(user.get("sub", "")))}
 
 
@@ -2320,7 +2334,7 @@ async def create_autopilot_attribution_event(request: Request, payload: Attribut
 
 @app.get("/api/autopilot/growth-dashboard")
 async def autopilot_growth_dashboard(request: Request):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return growth_dashboard(ROOT, str(user.get("sub", "")))
 
 
@@ -2356,7 +2370,7 @@ async def read_autopilot_notification(request: Request, notification_id: str, di
 
 @app.get("/api/autopilot/provider-readiness")
 async def autopilot_provider_readiness(request: Request):
-    creatorthon_user(request)
+    autopilot_user(request)
     return provider_readiness()
 
 
