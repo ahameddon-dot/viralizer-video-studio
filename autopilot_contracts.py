@@ -153,6 +153,17 @@ class DestructiveConfirmation(BaseModel):
     confirmation: str = Field(min_length=1, max_length=500)
 
 
+class AgentObjectiveCreate(BaseModel):
+    objective: str = Field(min_length=3, max_length=2_000)
+    seed_topics: list[str] = Field(default_factory=list, max_length=20)
+    platform: Literal["youtube_shorts", "instagram", "tiktok", "linkedin"] = "youtube_shorts"
+    goal: str = Field(default="", max_length=500)
+
+
+class AgentSelection(BaseModel):
+    entity_id: str = Field(min_length=1, max_length=64)
+
+
 StepStatus = Literal[
     "queued", "running", "waiting_user", "retry_wait", "succeeded", "failed", "cancelled", "dead_letter"
 ]

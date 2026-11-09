@@ -52,6 +52,18 @@ def get_workflow_run(root: Path, customer_id: str, run_id: str) -> dict[str, Any
     return {"run": dict(run), "steps": [dict(step) for step in steps]}
 
 
+def list_workflow_runs(root: Path, customer_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    with _connect(root) as db:
+        rows = db.execute(
+            """SELECT runs.*,
+            (SELECT COUNT(*) FROM autopilot_workflow_steps steps WHERE steps.run_id=runs.id) AS step_count,
+            (SELECT COUNT(*) FROM autopilot_workflow_steps steps WHERE steps.run_id=runs.id AND steps.status='waiting_user') AS waiting_count
+            FROM autopilot_workflow_runs runs WHERE runs.customer_id=? ORDER BY runs.updated_at DESC LIMIT ?""",
+            (customer_id, max(1, min(100, int(limit)))),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def enqueue_workflow_step(root: Path, request: WorkflowStepCreate | dict[str, Any]) -> tuple[dict[str, Any], bool]:
     model = request if isinstance(request, WorkflowStepCreate) else WorkflowStepCreate.model_validate(request)
     step_id, now = uuid.uuid4().hex, int(time.time())
@@ -78,33 +90,34 @@ def enqueue_workflow_step(root: Path, request: WorkflowStepCreate | dict[str, An
     return dict(existing), False
 
 
-def claim_due_steps(root: Path, worker_id: str, limit: int = 1, lease_seconds: int = 300) -> list[dict[str, Any]]:
+def claim_due_steps(root: Path, worker_id: str, limit: int = 1, lease_seconds: int = 300, customer_id: str = "") -> list[dict[str, Any]]:
     if not worker_id.strip():
         raise ValueError("worker_id is required")
     now, limit = int(time.time()), max(1, min(100, int(limit)))
+    customer_filter = " AND customer_id=?" if customer_id else ""
     with _connect(root) as db:
         if getattr(db, "dialect", "sqlite") == "postgres":
             rows = db.execute(
-                """WITH candidates AS (
+                f"""WITH candidates AS (
                   SELECT id FROM autopilot_workflow_steps
-                  WHERE status IN ('queued','retry_wait') AND next_attempt_at<=? AND lease_until<=?
+                  WHERE status IN ('queued','retry_wait') AND next_attempt_at<=? AND lease_until<=?{customer_filter}
                   ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT ?
                 )
                 UPDATE autopilot_workflow_steps AS steps
                 SET status='running',worker_id=?,lease_until=?,attempt=attempt+1,updated_at=?
                 FROM candidates WHERE steps.id=candidates.id RETURNING steps.*""",
-                (now, now, limit, worker_id, now + lease_seconds, now),
+                (now, now, *([customer_id] if customer_id else []), limit, worker_id, now + lease_seconds, now),
             ).fetchall()
         else:
             rows = db.execute(
-                """UPDATE autopilot_workflow_steps
+                f"""UPDATE autopilot_workflow_steps
                 SET status='running',worker_id=?,lease_until=?,attempt=attempt+1,updated_at=?
                 WHERE id IN (
                   SELECT id FROM autopilot_workflow_steps
-                  WHERE status IN ('queued','retry_wait') AND next_attempt_at<=? AND lease_until<=?
+                  WHERE status IN ('queued','retry_wait') AND next_attempt_at<=? AND lease_until<=?{customer_filter}
                   ORDER BY created_at,id LIMIT ?
                 ) RETURNING *""",
-                (worker_id, now + lease_seconds, now, now, now, limit),
+                (worker_id, now + lease_seconds, now, now, now, *([customer_id] if customer_id else []), limit),
             ).fetchall()
     return [dict(row) for row in rows]
 

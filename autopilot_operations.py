@@ -109,6 +109,30 @@ def process_webhook_inbox(root: Path, limit: int = 100) -> dict[str, int]:
 async def execute_step(root: Path, step: dict[str, Any], mode: str = "disabled") -> dict[str, Any]:
     customer_id, agent_type = step["customer_id"], step["agent_type"]
     inputs = json.loads(step.get("input_json") or "{}")
+    if agent_type == "trend_discovery":
+        objective = " ".join(str(inputs.get("objective") or "").split())
+        supplied = [" ".join(str(item).split()) for item in inputs.get("seed_topics", []) if str(item).strip()]
+        titles = supplied or [objective, f"How {objective} changes customer decisions", f"Common mistakes with {objective}", f"A practical guide to {objective}", f"What leaders misunderstand about {objective}"]
+        topics = [{"title": title, "category": "customer_signal", "discovery_heat": "WATCH", "recommended_format": "15-second vertical explainer", "source_type": "customer_supplied" if supplied else "local_hypothesis"} for title in titles[:10]]
+        enqueue_workflow_step(root, {"customer_id": customer_id, "run_id": step["run_id"], "agent_type": "opportunity_ranking", "idempotency_key": f"{step['run_id']}:opportunity_ranking", "input": {**inputs, "topics": topics}})
+        return {"topics": topics, "count": len(topics), "provenance": "customer_supplied" if supplied else "local_hypothesis", "external_calls": 0}
+    if agent_type == "opportunity_ranking":
+        from autopilot_intelligence import rank_opportunities
+        from autopilot_orchestrator import wait_for_user
+        opportunities = rank_opportunities(root, customer_id, {"topics": inputs.get("topics") or [], "limit": 5})
+        wait_for_user(root, customer_id, step["run_id"], "opportunity_selection", {"opportunity_ids": [item["id"] for item in opportunities]})
+        return {"opportunities": opportunities, "count": len(opportunities), "model": "autopilot-opportunity-v1"}
+    if agent_type == "creative_direction":
+        from autopilot_intelligence import generate_concepts
+        from autopilot_orchestrator import wait_for_user
+        concepts = generate_concepts(root, customer_id, {"opportunity_id": inputs["opportunity_id"], "platform": inputs.get("platform", "youtube_shorts"), "goal": inputs.get("goal", "")})
+        wait_for_user(root, customer_id, step["run_id"], "concept_selection", {"concept_ids": [item["id"] for item in concepts]})
+        return {"concepts": concepts, "count": len(concepts), "version": "autopilot-concept-v1"}
+    if agent_type == "production_planning":
+        from autopilot_orchestrator import wait_for_user
+        plan = {"concept_id": inputs["concept_id"], "provider": "pixverse", "duration_seconds": 15, "aspect_ratio": "9:16", "provider_calls_enabled": False, "next_action": "Connect PixVerse or attach an approved local asset."}
+        wait_for_user(root, customer_id, step["run_id"], "production_provider", plan)
+        return plan
     if agent_type == "publishing":
         with _connect(root) as db:
             publication = db.execute("SELECT id FROM autopilot_publications WHERE approval_id=? AND customer_id=?", (inputs.get("approval_id"), customer_id)).fetchone()
@@ -138,8 +162,8 @@ async def execute_step(root: Path, step: dict[str, Any], mode: str = "disabled")
     raise ValueError(f"Unsupported workflow agent type: {agent_type}")
 
 
-async def worker_tick(root: Path, worker_id: str, mode: str = "disabled", limit: int = 10) -> dict[str, int]:
-    claimed = claim_due_steps(root, worker_id, limit=limit, lease_seconds=300)
+async def worker_tick(root: Path, worker_id: str, mode: str = "disabled", limit: int = 10, customer_id: str = "") -> dict[str, int]:
+    claimed = claim_due_steps(root, worker_id, limit=limit, lease_seconds=300, customer_id=customer_id)
     succeeded, failed = 0, 0
     for step in claimed:
         try:

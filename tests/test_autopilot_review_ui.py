@@ -16,20 +16,21 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('"autopilot-review.html"', self.app)
         self.assertIn("Growth Autopilot", self.page)
 
-    def test_presents_all_eight_agents(self):
-        for agent in range(1, 9):
-            self.assertIn(f"'A{agent}'", self.page)
+    def test_is_an_agent_control_center_not_a_marketing_dashboard(self):
+        self.assertIn("Agent Control Center", self.page)
+        self.assertIn("Workflow runs", self.page)
+        self.assertIn("Run queued work", self.page)
+        self.assertNotIn("Revenue influenced", self.page)
 
     def test_is_clearly_a_safe_review_build(self):
-        self.assertIn("Stakeholder review build", self.page)
-        self.assertIn("Demo data", self.page)
-        self.assertIn("API integrations off", self.page)
-        self.assertIn("No automated spending", self.page)
+        self.assertIn("SAFE / PROVIDER-FREE", self.page)
+        self.assertIn("Provider calls disabled", self.page)
+        self.assertIn("external_calls", (ROOT / "autopilot_operations.py").read_text(encoding="utf-8"))
 
-    def test_exact_content_approval_is_explicit(self):
-        self.assertIn('id="exactCheck"', self.page)
-        self.assertIn("I approve this exact asset, caption, hashtags, destination, and schedule.", self.page)
-        self.assertIn("This approval will be invalidated", self.page)
+    def test_human_decision_gates_are_connected_to_real_endpoints(self):
+        self.assertIn("Human decision required", self.page)
+        self.assertIn("/api/autopilot/control/runs/${state.selected}/select/${type}", self.page)
+        self.assertIn("/api/autopilot/control/tick", self.page)
 
     def test_does_not_embed_the_legacy_or_v3_ui(self):
         self.assertNotIn("creatorthon-v3", self.page)

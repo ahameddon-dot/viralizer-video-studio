@@ -87,13 +87,14 @@ from object_store import ObjectStoreError, delete_file as delete_object_file, re
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
-from autopilot_store import get_workflow_run, ingest_webhook_event
-from autopilot_contracts import AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, ConceptGenerateRequest, DestructiveConfirmation, MetricSnapshotCreate, OpportunityRankRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
+from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflow_runs
+from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, ConceptGenerateRequest, DestructiveConfirmation, MetricSnapshotCreate, OpportunityRankRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
+from autopilot_orchestrator import create_objective, make_selection
 from autopilot_intelligence import generate_concepts, get_brand_profile, list_concepts, list_opportunities, rank_opportunities, save_brand_profile
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
 from autopilot_growth import growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_providers import provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
-from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick
+from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
@@ -1629,6 +1630,16 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
     return user
 
 
+def autopilot_user(request: Request) -> dict[str, Any]:
+    """Authenticate the standalone product independently of Creatorthon enrollment."""
+    google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if google_user:
+        return google_user
+    if is_authenticated(request):
+        return {"sub": "workspace-owner", "email": "workspace-owner", "name": "Workspace owner"}
+    raise HTTPException(401, "Sign in to use Growth Autopilot.")
+
+
 def _english_topic(item: dict[str, Any]) -> bool:
     language = str(item.get("language") or item.get("lang") or "").strip().lower()
     if language and language not in {"en", "en-us", "en-gb", "english"}:
@@ -2091,13 +2102,54 @@ async def update_creatorthon_profile(request: Request, payload: CreatorthonProfi
 
 @app.get("/api/autopilot/brand-profile")
 async def autopilot_brand_profile(request: Request):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     return {"brand_profile": get_brand_profile(ROOT, str(user.get("sub", "")))}
+
+
+@app.get("/api/autopilot/control/runs")
+async def autopilot_control_runs(request: Request, limit: int = 50):
+    user = autopilot_user(request)
+    return {"runs": list_workflow_runs(ROOT, str(user.get("sub", "")), limit)}
+
+
+@app.get("/api/autopilot/control/runs/{run_id}")
+async def autopilot_control_run(request: Request, run_id: str):
+    user = autopilot_user(request)
+    result = get_workflow_run(ROOT, str(user.get("sub", "")), run_id)
+    if not result:
+        raise HTTPException(404, "Workflow run was not found.")
+    return result
+
+
+@app.post("/api/autopilot/control/objectives")
+async def autopilot_control_objective(request: Request, payload: AgentObjectiveCreate):
+    user = autopilot_user(request)
+    try:
+        return create_objective(ROOT, str(user.get("sub", "")), payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/autopilot/control/runs/{run_id}/select/{selection_type}")
+async def autopilot_control_selection(request: Request, run_id: str, selection_type: str, payload: AgentSelection):
+    user = autopilot_user(request)
+    try:
+        return make_selection(ROOT, str(user.get("sub", "")), run_id, selection_type, payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/autopilot/control/tick")
+async def autopilot_control_tick(request: Request):
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    result = await worker_tick(ROOT, f"review:{customer_id[:16]}", mode="fake", limit=10, customer_id=customer_id)
+    return result
 
 
 @app.put("/api/autopilot/brand-profile")
 async def update_autopilot_brand_profile(request: Request, payload: BrandProfileUpsert):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     try:
         profile = save_brand_profile(ROOT, str(user.get("sub", "")), payload)
     except ValueError as exc:
