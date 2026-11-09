@@ -823,6 +823,12 @@ async def admin_autopilot_operations_page(request: Request):
     return FileResponse(ROOT / "static" / "autopilot-admin.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/autopilot-review")
+async def autopilot_review_page(request: Request):
+    """Standalone stakeholder review experience; intentionally separate from legacy and V3 UI."""
+    return FileResponse(ROOT / "static" / "autopilot-review.html", headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/admin/autopilot/tick")
 async def admin_autopilot_tick(request: Request):
     require_admin(request)
