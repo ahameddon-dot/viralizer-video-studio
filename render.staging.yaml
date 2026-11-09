@@ -35,6 +35,8 @@ services:
         value: false
       - key: CREATORTHON_PREFETCH_ENABLED
         value: false
+      - key: PREDICTION_MARKET_PREFETCH_ENABLED
+        value: false
       - key: AUTOPILOT_PROVIDER_MODE
         value: fake
       - key: AUTOPILOT_PROVIDER_CALLS_ENABLED

@@ -937,7 +937,8 @@ async def start_daily_scheduler():
     global CREATORTHON_PREFETCH_TASK, PREDICTION_MARKET_PREFETCH_TASK, CHANNEL_AUTOMATION_TASK
     if os.getenv("CREATORTHON_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         CREATORTHON_PREFETCH_TASK = asyncio.create_task(_creatorthon_prefetch_scheduler())
-    PREDICTION_MARKET_PREFETCH_TASK = asyncio.create_task(_prefetch_prediction_market_topics())
+    if os.getenv("PREDICTION_MARKET_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        PREDICTION_MARKET_PREFETCH_TASK = asyncio.create_task(_prefetch_prediction_market_topics())
     if os.getenv("CHANNEL_AUTOMATION_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         CHANNEL_AUTOMATION_TASK = asyncio.create_task(CHANNEL_AUTOMATION.scheduler())
 
