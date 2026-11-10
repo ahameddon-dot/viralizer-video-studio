@@ -14,17 +14,21 @@ class AutopilotReviewUiTests(unittest.TestCase):
     def test_has_a_dedicated_route_and_file(self):
         self.assertIn('@app.get("/autopilot-review")', self.app)
         self.assertIn('"autopilot-review.html"', self.app)
-        self.assertIn("Growth Autopilot", self.page)
+        self.assertIn("AI Growth Assistant", self.page)
 
-    def test_exposes_the_customer_flywheel_not_agent_internals(self):
-        for label in ("Brand Profile", "Topics for You", "Creative Options", "AI Production", "Review & Approve", "Published Content", "Performance Reports"):
+    def test_exposes_a_simple_customer_experience_not_agent_internals(self):
+        for label in ("Today", "Content", "Results", "Brand", "Connections"):
             self.assertIn(label, self.page)
+        for agent in ("Trend Scout", "Opportunity Analyst", "Creative Director", "Video Producer"):
+            self.assertIn(agent, self.page)
+        self.assertIn("Create this video", self.page)
+        self.assertIn("See 2 other ideas", self.page)
         self.assertNotIn("Workflow runs", self.page)
         self.assertNotIn("Run queued work", self.page)
 
     def test_is_clearly_a_safe_review_build(self):
-        self.assertIn("Actual generation remains disabled until PixVerse is connected and live calls are approved.", self.page)
-        self.assertIn("No approval-ready video yet", self.page)
+        self.assertIn("Provider calls are disabled. Connect APIs after this experience is approved.", self.page)
+        self.assertIn("Exact-content approval is always required before publishing.", self.page)
 
     def test_flywheel_uses_existing_topic_and_autopilot_endpoints(self):
         self.assertIn("/api/autopilot/topics/refresh", self.page)
