@@ -26,6 +26,12 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertNotIn("Workflow runs", self.page)
         self.assertNotIn("Run queued work", self.page)
 
+    def test_first_time_onboarding_builds_the_personalization_profile(self):
+        for copy in ("Step 1 of 3", "Individual business", "Creator", "Teach the AI about your brand", "Your AI team is ready to learn", "Find my topics"):
+            self.assertIn(copy, self.page)
+        self.assertIn("/api/autopilot/brand-profile", self.page)
+        self.assertIn("Never publish without exact-content approval.", self.page)
+
     def test_is_clearly_a_safe_review_build(self):
         self.assertIn("PixVerse is not called", self.page)
         self.assertIn("Exact-content approval is always required before publishing.", self.page)
