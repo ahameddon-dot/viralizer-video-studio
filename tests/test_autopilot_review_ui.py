@@ -27,13 +27,18 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertNotIn("Run queued work", self.page)
 
     def test_is_clearly_a_safe_review_build(self):
-        self.assertIn("Provider calls are disabled. Connect APIs after this experience is approved.", self.page)
+        self.assertIn("PixVerse is not called", self.page)
         self.assertIn("Exact-content approval is always required before publishing.", self.page)
+        self.assertIn("I approve this exact content", self.page)
+        self.assertIn("Simulated 3-hour report", self.page)
+        self.assertIn("It will not contact a social network", self.page)
 
     def test_flywheel_uses_existing_topic_and_autopilot_endpoints(self):
         self.assertIn("/api/autopilot/topics/refresh", self.page)
         self.assertIn("/api/autopilot/concepts/generate", self.page)
         self.assertIn("/api/autopilot/workflows/start/", self.page)
+        self.assertIn("/api/autopilot/publications/approve", self.page)
+        self.assertIn("/api/autopilot/demo/publications/", self.page)
         self.assertIn("/api/autopilot/growth-dashboard", self.page)
 
     def test_does_not_embed_the_legacy_or_v3_ui(self):

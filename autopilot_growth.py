@@ -154,6 +154,7 @@ def growth_dashboard(root: Path, customer_id: str) -> dict[str, Any]:
     with _connect(root) as db:
         publications = [dict(row) for row in db.execute("SELECT * FROM autopilot_publications WHERE customer_id=? ORDER BY created_at DESC LIMIT 50", (customer_id,)).fetchall()]
         recommendations = [dict(row) for row in db.execute("SELECT * FROM autopilot_recommendations WHERE customer_id=? ORDER BY created_at DESC LIMIT 50", (customer_id,)).fetchall()]
+        metrics = [dict(row) for row in db.execute("SELECT * FROM autopilot_metric_snapshots WHERE customer_id=? ORDER BY captured_at DESC LIMIT 100", (customer_id,)).fetchall()]
         attribution = [dict(row) for row in db.execute("SELECT * FROM autopilot_attribution_events WHERE customer_id=? ORDER BY occurred_at DESC LIMIT 200", (customer_id,)).fetchall()]
     ga4 = {"sessions": 0.0, "conversions": 0.0, "reported_revenue": 0.0}
     shopify = {"orders": 0.0, "order_revenue": 0.0}
@@ -164,7 +165,7 @@ def growth_dashboard(root: Path, customer_id: str) -> dict[str, Any]:
         else:
             shopify["orders"] += float(event["conversions"]); shopify["order_revenue"] += float(event["revenue"])
             if event["attribution_status"] != "attributed": unattributed_shopify += float(event["revenue"])
-    return {"connections": list_connections(root, customer_id), "publications": publications, "recommendations": recommendations,
+    return {"connections": list_connections(root, customer_id), "publications": publications, "recommendations": recommendations, "metrics": metrics,
             "commerce": {"ga4": ga4, "shopify": shopify, "unattributed_shopify_revenue": unattributed_shopify,
                          "disclosure": "GA4 reported revenue and Shopify order revenue are shown separately and are never added together."}}
 

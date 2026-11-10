@@ -92,7 +92,8 @@ from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersi
 from autopilot_orchestrator import create_objective, make_selection
 from autopilot_intelligence import generate_concepts, get_brand_profile, list_concepts, list_opportunities, rank_opportunities, save_brand_profile
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
-from autopilot_growth import growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
+from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
+from autopilot_publishing import FakePublishingAdapter, submit_publication
 from autopilot_providers import provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
 from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
@@ -1243,6 +1244,14 @@ class GrowthEditRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=500)
 
 
+class AutopilotDemoAssetRequest(BaseModel):
+    workflow_run_id: str = Field(min_length=1, max_length=64)
+    concept_id: str = Field(min_length=1, max_length=64)
+    caption: str = Field(default="", max_length=20_000)
+    title: str = Field(default="", max_length=500)
+    hashtags: list[str] = Field(default_factory=list, max_length=100)
+
+
 @app.get("/api/betting/topics")
 async def betting_topics(query: str = ""):
     try:
@@ -2221,12 +2230,34 @@ async def autopilot_assets(request: Request, workflow_run_id: str = ""):
 
 @app.post("/api/autopilot/assets")
 async def register_autopilot_asset(request: Request, payload: AssetVersionCreate):
-    user = creatorthon_user(request)
+    user = autopilot_user(request)
     try:
         asset = create_asset_version(ROOT, str(user.get("sub", "")), payload)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"asset": asset}
+
+
+@app.post("/api/autopilot/demo/assets")
+async def register_autopilot_demo_asset(request: Request, payload: AutopilotDemoAssetRequest):
+    """Create an explicitly labelled local preview asset without calling a media provider."""
+    if os.getenv("AUTOPILOT_DEMO_MODE", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(404, "Local demo mode is disabled.")
+    user = autopilot_user(request)
+    exact = payload.model_dump()
+    digest = hashlib.sha256(json.dumps(exact, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    try:
+        asset = create_asset_version(ROOT, str(user.get("sub", "")), {
+            **exact,
+            "media_url": "/autopilot-review#demo-preview",
+            "media_sha256": digest,
+            "duration_seconds": 15,
+            "aspect_ratio": "9:16",
+            "qc": {"duration_valid": True, "aspect_ratio_valid": True, "media_available": True, "demo": True},
+        })
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"asset": asset, "demo": True}
 
 
 @app.post("/api/autopilot/assets/from-project")
@@ -2294,6 +2325,30 @@ async def approve_autopilot_publication(request: Request, payload: PublicationAp
 async def autopilot_publications(request: Request):
     user = autopilot_user(request)
     return {"publications": list_publications(ROOT, str(user.get("sub", "")))}
+
+
+@app.post("/api/autopilot/demo/publications/{publication_id}/complete")
+async def complete_autopilot_demo_publication(request: Request, publication_id: str):
+    """Run the approved local flywheel with a fake publisher and labelled demo metrics."""
+    if os.getenv("AUTOPILOT_DEMO_MODE", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(404, "Local demo mode is disabled.")
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    try:
+        publication = await submit_publication(ROOT, customer_id, publication_id, FakePublishingAdapter())
+        snapshot = record_metric_snapshot(ROOT, customer_id, {
+            "publication_id": publication_id,
+            "captured_at": int(time.time()) + 10_800,
+            "metrics": {"views": 1240, "likes": 96, "comments": 18, "shares": 22},
+            "unavailable": ["watch_time", "revenue"],
+            "raw": {"demo": True, "label": "Simulated three-hour performance snapshot"},
+        })
+        recommendation = create_recommendation(ROOT, customer_id, publication_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"publication": publication, "snapshot": snapshot, "recommendation": recommendation, "demo": True}
 
 
 @app.post("/api/autopilot/metrics/snapshots")
