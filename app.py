@@ -70,6 +70,7 @@ from release_dashboard import (
 )
 from release_actions import ReleaseActionError, publish_beta, rollback_production
 from creatorthon_store import (
+    _connect,
     accept_event_generation, add_asset, claim_event_seat, create_project, delete_project, delete_project_video,
     delete_youtube_connection, generation_entitlement, get_profile, get_youtube_connection,
     event_admin_state, event_capacity, event_is_frozen, grant_event_admission, grant_extra_generation, remove_event_user,
