@@ -6222,6 +6222,11 @@ async def finished_video(request: Request, filename: str):
                 animations.append((versions[-1].get("animation") or {}) if versions else {})
             job_ids = [str(item.get("job_id") or "") for item in animations]
             expected = f"viralizer-autopilot-{hashlib.sha256('|'.join(job_ids).encode()).hexdigest()[:32]}.mp4"
+            logging.getLogger(__name__).warning(
+                "Autopilot video recovery eligibility filename=%s storyboard=%s signature_match=%s statuses=%s",
+                filename, len(storyboard), filename == expected,
+                [str(item.get("status") or "") for item in animations],
+            )
             if len(storyboard) == 3 and filename == expected and all(
                 item.get("status") == "complete" and str(item.get("provider_video_url") or "").startswith("https://")
                 for item in animations
@@ -6252,6 +6257,8 @@ async def finished_video(request: Request, filename: str):
                     )
                     path.unlink(missing_ok=True)
                     restored = False
+        else:
+            logging.getLogger(__name__).warning("Autopilot video recovery asset lookup missed filename=%s", filename)
     if not restored:
         raise HTTPException(404, "Finished video not found.")
     return _video_file_response(request, path, filename)
