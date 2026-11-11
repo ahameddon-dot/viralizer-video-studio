@@ -6185,7 +6185,7 @@ async def creatorthon_finish_job_status(request: Request, job_id: str):
     if not legacy or legacy.get("user_id") != str(user.get("sub", "")):
         raise HTTPException(404, "Video finishing job not found.")
     return {key: value for key, value in legacy.items() if key != "user_id"}
-@app.get("/api/finished-video/{filename}")
+@app.api_route("/api/finished-video/{filename}", methods=["GET", "HEAD"])
 async def finished_video(request: Request, filename: str):
     if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")

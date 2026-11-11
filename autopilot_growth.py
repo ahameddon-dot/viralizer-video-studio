@@ -68,7 +68,15 @@ def due_publications(root: Path, now: int | None = None, limit: int = 100) -> li
 
 def reconcile_publication(root: Path, customer_id: str, provider_post_id: str, result: dict[str, Any]) -> dict[str, Any]:
     status = str(result.get("status") or "processing").lower()
+    if result.get("success") is False or result.get("error"):
+        status = "failed"
+    elif result.get("success") is True:
+        status = "published"
     normalized = {"published": "published", "failed": "failed", "cancelled": "cancelled"}.get(status, "processing")
+    platform_data = result.get("platform_data") if isinstance(result.get("platform_data"), dict) else {}
+    native_post_id = str(result.get("native_post_id") or platform_data.get("id") or "")
+    native_url = str(result.get("native_url") or platform_data.get("url") or "")
+    error = str(result.get("error") or "")
     now = int(time.time())
     with _connect(root) as db:
         row = db.execute(
@@ -81,9 +89,10 @@ def reconcile_publication(root: Path, customer_id: str, provider_post_id: str, r
             """UPDATE autopilot_publications SET status=?,native_post_id=?,native_url=?,result_json=?,
             published_at=CASE WHEN ?='published' AND published_at=0 THEN ? ELSE published_at END,
             next_metrics_at=CASE WHEN ?='published' AND next_metrics_at=0 THEN ? ELSE next_metrics_at END,
-            updated_at=? WHERE id=? AND customer_id=? RETURNING *""",
-            (normalized, str(result.get("native_post_id") or ""), str(result.get("native_url") or ""), _json(result),
-             normalized, now, normalized, now + 10_800, now, dict(row)["id"], customer_id),
+            error_json=?,updated_at=? WHERE id=? AND customer_id=? RETURNING *""",
+            (normalized, native_post_id, native_url, _json(result),
+             normalized, now, normalized, now + 10_800, _json({"message": error}) if error else "{}",
+             now, dict(row)["id"], customer_id),
         ).fetchone()
     return dict(updated)
 

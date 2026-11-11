@@ -15,6 +15,7 @@ from autopilot_lifecycle import (
     start_content_workflow,
 )
 from autopilot_publishing import FakePublishingAdapter, submit_publication
+from autopilot_growth import reconcile_publication
 from creatorthon_store import _connect
 
 
@@ -114,6 +115,25 @@ class AutopilotLifecycleTests(unittest.TestCase):
         self.assertEqual(published["id"], replay["id"])
         self.assertEqual(1, len(adapter.calls))
         self.assertGreater(published["next_metrics_at"], published["published_at"])
+
+    def test_provider_account_failure_is_not_reported_as_published(self):
+        asset = self.asset()
+        approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "instagram-1", "caption": "Caption",
+        })
+        publication_id = approved["publication"]["id"]
+        with _connect(self.root) as db:
+            db.execute(
+                "UPDATE autopilot_publications SET status='processing',provider_post_id='post-1' WHERE id=?",
+                (publication_id,),
+            )
+        failed = reconcile_publication(self.root, "customer-1", "post-1", {
+            "success": False, "error": "All media failed to process",
+            "platform_data": {"id": None, "url": None},
+        })
+        self.assertEqual("failed", failed["status"])
+        self.assertIn("All media failed", failed["error_json"])
 
 
 if __name__ == "__main__":
