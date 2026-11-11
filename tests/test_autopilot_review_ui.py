@@ -75,6 +75,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('f"/api/finished-video/{filename}"', self.app)
         self.assertIn('methods=["GET", "HEAD"]', self.app)
         self.assertIn('(?:hybrid|autopilot)', self.app)
+        self.assertIn('autopilot_recovery', self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
 

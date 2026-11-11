@@ -6203,7 +6203,52 @@ async def finished_video(request: Request, filename: str):
     except ObjectStoreError:
         pass
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / filename
-    if not path.is_file() and not await restore_object_file(path, f"finished_videos/{filename}"):
+    restored = path.is_file() or await restore_object_file(path, f"finished_videos/{filename}")
+    if not restored and filename.startswith("viralizer-autopilot-"):
+        with _connect(ROOT) as db:
+            row = db.execute(
+                """SELECT customer_id,concept_id FROM autopilot_asset_versions
+                WHERE media_url LIKE ? ORDER BY created_at DESC,version DESC LIMIT 1""",
+                (f"%/api/finished-video/{filename}",),
+            ).fetchone()
+        if row:
+            owner = dict(row)
+            concept = get_concept(ROOT, owner["customer_id"], owner["concept_id"])
+            storyboard = (concept or {}).get("content", {}).get("storyboard") or []
+            keyframes = (concept or {}).get("content", {}).get("keyframes") or {}
+            animations = []
+            for scene_index in range(3):
+                versions = keyframes.get(str(scene_index)) or []
+                animations.append((versions[-1].get("animation") or {}) if versions else {})
+            job_ids = [str(item.get("job_id") or "") for item in animations]
+            expected = f"viralizer-autopilot-{hashlib.sha256('|'.join(job_ids).encode()).hexdigest()[:32]}.mp4"
+            if len(storyboard) == 3 and filename == expected and all(
+                item.get("status") == "complete" and str(item.get("provider_video_url") or "").startswith("https://")
+                for item in animations
+            ):
+                clip_root = path.parent / "autopilot_recovery" / owner["concept_id"]
+                clip_root.mkdir(parents=True, exist_ok=True)
+                clips = []
+                try:
+                    for scene_index, item in enumerate(animations):
+                        clip = clip_root / f"scene-{scene_index}-{job_ids[scene_index]}.mp4"
+                        if not clip.is_file():
+                            temporary = clip.with_suffix(".part")
+                            await download_provider_media(str(item["provider_video_url"]), temporary)
+                            temporary.replace(clip)
+                        clips.append(clip)
+                    concat_file = clip_root / "concat.txt"
+                    concat_file.write_text("".join(f"file '{clip.as_posix()}'\n" for clip in clips), encoding="utf-8")
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    completed = subprocess.run(
+                        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(path)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                    restored = completed.returncode == 0 and path.is_file()
+                except (MediaFinisherError, OSError, subprocess.SubprocessError):
+                    path.unlink(missing_ok=True)
+                    restored = False
+    if not restored:
         raise HTTPException(404, "Finished video not found.")
     return _video_file_response(request, path, filename)
 
