@@ -6245,7 +6245,11 @@ async def finished_video(request: Request, filename: str):
                         capture_output=True, text=True, timeout=120,
                     )
                     restored = completed.returncode == 0 and path.is_file()
-                except (MediaFinisherError, OSError, subprocess.SubprocessError):
+                except Exception as exc:
+                    logging.getLogger(__name__).warning(
+                        "Autopilot video recovery failed filename=%s error_type=%s error=%s",
+                        filename, type(exc).__name__, str(exc)[:300],
+                    )
                     path.unlink(missing_ok=True)
                     restored = False
     if not restored:
