@@ -2476,6 +2476,74 @@ async def autopilot_keyframe_animation_video(request: Request, concept_id: str, 
     return FileResponse(clip_path, media_type="video/mp4", filename=f"viralizer-scene-{scene_index + 1}.mp4", content_disposition_type="inline", headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"})
 
 
+@app.post("/api/autopilot/concepts/{concept_id}/finalize")
+async def finalize_autopilot_concept(request: Request, concept_id: str, payload: AutopilotDemoAssetRequest):
+    """Assemble the three approved PixVerse clips into the immutable review asset."""
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    if not concept or concept_id != payload.concept_id:
+        raise HTTPException(404, "Creative concept was not found.")
+    storyboard = concept["content"].get("storyboard") or []
+    if len(storyboard) != 3:
+        raise HTTPException(409, "The approved 15-second storyboard must contain exactly three scenes.")
+    clip_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_clips" / customer_id / concept_id
+    clip_root.mkdir(parents=True, exist_ok=True)
+    clips: list[Path] = []
+    job_ids: list[str] = []
+    for scene_index in range(3):
+        versions = (concept["content"].get("keyframes") or {}).get(str(scene_index)) or []
+        animation = (versions[-1].get("animation") or {}) if versions else {}
+        job_id = str(animation.get("job_id") or "")
+        provider_url = str(animation.get("provider_video_url") or "")
+        if str(animation.get("status") or "") != "complete" or not job_id or not provider_url.startswith("https://"):
+            raise HTTPException(409, f"Scene {scene_index + 1} is not a completed PixVerse clip.")
+        clip_path = clip_root / f"scene-{scene_index}-{job_id}.mp4"
+        if not clip_path.is_file():
+            temporary = clip_path.with_suffix(".part")
+            try:
+                await download_provider_media(provider_url, temporary)
+                temporary.replace(clip_path)
+            except MediaFinisherError as exc:
+                temporary.unlink(missing_ok=True)
+                raise HTTPException(502, str(exc)) from exc
+        clips.append(clip_path)
+        job_ids.append(job_id)
+    signature = hashlib.sha256("|".join(job_ids).encode()).hexdigest()[:32]
+    filename = f"viralizer-autopilot-{signature}.mp4"
+    output_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos"
+    output_root.mkdir(parents=True, exist_ok=True)
+    output = output_root / filename
+    if not output.is_file():
+        concat_file = clip_root / f"concat-{signature}.txt"
+        concat_file.write_text("".join(f"file '{path.as_posix()}'\n" for path in clips), encoding="utf-8")
+        completed = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(output)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if completed.returncode or not output.is_file():
+            output.unlink(missing_ok=True)
+            raise HTTPException(502, "The three PixVerse clips could not be assembled.")
+        try:
+            await upload_object_file(output, f"finished_videos/{filename}", "video/mp4")
+        except ObjectStoreError:
+            logging.getLogger(__name__).warning("Autopilot final video was stored locally because object storage was unavailable.")
+    digest = hashlib.sha256()
+    with output.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    media_url = str(request.base_url).rstrip("/") + f"/api/finished-video/{filename}"
+    try:
+        asset = create_asset_version(ROOT, customer_id, {
+            **payload.model_dump(), "media_url": media_url, "media_sha256": digest.hexdigest(),
+            "duration_seconds": 15, "aspect_ratio": "9:16",
+            "qc": {"duration_valid": True, "aspect_ratio_valid": True, "media_available": True,
+                   "provider": "pixverse", "scene_job_ids": job_ids},
+        })
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"asset": asset, "video_url": media_url, "provider": "pixverse", "scene_job_ids": job_ids}
+
+
 @app.post("/api/autopilot/workflows/start/{concept_id}")
 async def start_autopilot_workflow(request: Request, concept_id: str):
     user = autopilot_user(request)

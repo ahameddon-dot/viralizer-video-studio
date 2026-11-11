@@ -9,6 +9,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.page = (ROOT / "static" / "autopilot-review.html").read_text(encoding="utf-8")
+        cls.product = (ROOT / "static" / "autopilot-product.js").read_text(encoding="utf-8")
         cls.app = (ROOT / "app.py").read_text(encoding="utf-8")
 
     def test_has_a_dedicated_route_and_file(self):
@@ -56,6 +57,22 @@ class AutopilotReviewUiTests(unittest.TestCase):
     def test_does_not_embed_the_legacy_or_v3_ui(self):
         self.assertNotIn("creatorthon-v3", self.page)
         self.assertNotIn("Turn hot topics into", self.page)
+
+    def test_boss_demo_assembles_real_pixverse_video_before_approval(self):
+        self.assertIn("Create final 15-second video", self.product)
+        self.assertIn("/finalize", self.product)
+        self.assertIn("REAL PIXVERSE VIDEO", self.product)
+        self.assertIn("I approve this exact content", self.product)
+        self.assertIn("/api/autopilot/publications/approve", self.product)
+        self.assertIn("/submit", self.product)
+        self.assertNotIn("/api/autopilot/demo/publications/", self.product)
+
+    def test_finalizer_requires_three_completed_pixverse_scenes(self):
+        self.assertIn('@app.post("/api/autopilot/concepts/{concept_id}/finalize")', self.app)
+        self.assertIn("must contain exactly three scenes", self.app)
+        self.assertIn("is not a completed PixVerse clip", self.app)
+        self.assertIn('"provider": "pixverse", "scene_job_ids": job_ids', self.app)
+        self.assertIn('f"/api/finished-video/{filename}"', self.app)
 
 
 if __name__ == "__main__":
