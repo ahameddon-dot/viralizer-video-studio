@@ -55,11 +55,47 @@ class PostForMeAdapter:
                                    "media": [{"url": publication.get("media_url", "")}], "external_id": idempotency_key}
         if publication.get("scheduled_at"):
             payload["scheduled_at"] = publication["scheduled_at"]
-        return await _json_request(self.client, "post_for_me", "POST", f"{self.base_url}/v1/social-posts", json=payload,
-                                   headers={"Idempotency-Key": idempotency_key})
+        result = await _json_request(self.client, "post_for_me", "POST", f"{self.base_url}/v1/social-posts", json=payload,
+                                     headers={"Idempotency-Key": idempotency_key})
+        return {**result, "provider": "post_for_me", "provider_post_id": str(result.get("id") or result.get("post_id") or ""),
+                "status": str(result.get("status") or "processing").lower()}
 
     async def feed(self, social_account_id: str) -> dict[str, Any]:
         return await _json_request(self.client, "post_for_me", "GET", f"{self.base_url}/v1/social-account-feeds/{social_account_id}", params={"expand": "metrics"})
+
+
+def customer_social_accounts(result: Any, customer_id: str, platform: str = "") -> list[dict[str, Any]]:
+    """Build a minimal customer-owned account list from a provider response.
+
+    Quickstart receives the Viralizer customer id as ``external_id`` when the
+    hosted connection session is created. Accounts without that exact owner
+    marker are deliberately excluded, including accounts connected directly
+    in the shared Post for Me dashboard.
+    """
+    if isinstance(result, list):
+        rows = result
+    elif isinstance(result, dict):
+        rows = next((result.get(key) for key in ("data", "accounts", "items", "results") if isinstance(result.get(key), list)), [])
+    else:
+        rows = []
+    expected_platform = platform.strip().lower()
+    owned: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, dict) or str(raw.get("external_id") or "") != customer_id:
+            continue
+        provider = str(raw.get("platform") or raw.get("provider") or "").lower()
+        if expected_platform and provider != expected_platform:
+            continue
+        account_id = str(raw.get("id") or raw.get("social_account_id") or "")
+        if not account_id:
+            continue
+        owned.append({
+            "id": account_id,
+            "platform": provider,
+            "username": str(raw.get("username") or raw.get("name") or raw.get("display_name") or provider.title()),
+            "status": str(raw.get("status") or "connected").lower(),
+        })
+    return owned
 
 
 class GA4DataAdapter:

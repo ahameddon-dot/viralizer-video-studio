@@ -5,10 +5,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from autopilot_intelligence import (
+    archive_other_opportunities,
     generate_concepts,
     get_brand_profile,
     list_concepts,
     list_opportunities,
+    get_concept,
+    record_keyframe,
     rank_opportunities,
     save_brand_profile,
 )
@@ -75,8 +78,18 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         self.assertEqual("Ecommerce analytics changes", ranked[0]["title"])
         missing = next(item for item in ranked if item["title"] == "Retail dashboard design")
         self.assertEqual(0, missing["components"]["viralizer"])
+        self.assertFalse(missing["components"]["viral_data_available"])
+        self.assertIn("business_impact", missing["components"])
         self.assertIn("was not estimated", missing["rationale"])
         self.assertEqual(5, len(list_opportunities(self.root, "customer-1")))
+
+    def test_rank_over_one_hundred_is_available_even_when_normalized_signal_is_zero(self):
+        self.brand()
+        item = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Commerce analytics", "viral_rank": 137}]})[0]
+        self.assertEqual(0, item["components"]["viralizer"])
+        self.assertEqual(137, item["components"]["viral_rank"])
+        self.assertTrue(item["components"]["viral_data_available"])
+        self.assertIn("rank #137", item["rationale"])
 
     def test_ranking_is_idempotent_for_same_topic_and_model(self):
         self.brand()
@@ -84,6 +97,15 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         first = rank_opportunities(self.root, "customer-1", request)[0]
         second = rank_opportunities(self.root, "customer-1", request)[0]
         self.assertEqual(first["id"], second["id"])
+
+    def test_new_refresh_can_supersede_stale_recommendations(self):
+        self.brand()
+        old = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Old topic"}]})[0]
+        new = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "New topic"}]})[0]
+        archive_other_opportunities(self.root, "customer-1", [new["id"]])
+        visible = list_opportunities(self.root, "customer-1")
+        self.assertEqual([new["id"]], [item["id"] for item in visible])
+        self.assertNotEqual(old["id"], new["id"])
 
     def test_creative_director_generates_exactly_three_distinct_15_second_concepts(self):
         self.brand()
@@ -96,8 +118,14 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         self.assertEqual(3, len(concepts))
         self.assertEqual(3, len({item["name"] for item in concepts}))
         self.assertTrue(all(item["content"]["duration_seconds"] == 15 for item in concepts))
+        self.assertTrue(all(item["content"]["production_mode"] == "image_to_video" for item in concepts))
+        self.assertTrue(all(all(scene.get("keyframe_prompt") and scene.get("motion_prompt") for scene in item["content"]["storyboard"]) for item in concepts))
         self.assertTrue(all(item["content"]["cta"] == "Visit the website" for item in concepts))
         self.assertEqual(3, len(list_concepts(self.root, "customer-1", opportunity["id"])))
+        keyframe = record_keyframe(self.root, "customer-1", concepts[0]["id"], 0, {"filename": "scene.png", "image_url": "/keyframe", "provider": "openai_image"})
+        self.assertEqual(1, keyframe["version"])
+        stored = get_concept(self.root, "customer-1", concepts[0]["id"])
+        self.assertEqual("scene.png", stored["content"]["keyframes"]["0"][0]["filename"])
 
     def test_opportunities_and_concepts_cannot_cross_customer_boundary(self):
         self.brand("customer-1")

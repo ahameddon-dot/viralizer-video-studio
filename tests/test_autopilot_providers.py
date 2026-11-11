@@ -7,7 +7,7 @@ import unittest
 
 import httpx
 
-from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ShopifyAdminAdapter, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ShopifyAdminAdapter, customer_social_accounts, verify_post_for_me_webhook, verify_shopify_webhook
 
 
 class AutopilotProviderTests(unittest.TestCase):
@@ -20,12 +20,42 @@ class AutopilotProviderTests(unittest.TestCase):
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler), headers={"Authorization": "Bearer test-key"})
         adapter = PostForMeAdapter(api_key="test-key", base_url="https://provider.test", client=client)
-        asyncio.run(adapter.publish({"caption": "Exact", "destination_id": "social-1", "media_url": "https://media.test/video.mp4"}, "publication:1"))
+        result = asyncio.run(adapter.publish({"caption": "Exact", "destination_id": "social-1", "media_url": "https://media.test/video.mp4"}, "publication:1"))
         asyncio.run(client.aclose())
         self.assertEqual("https://provider.test/v1/social-posts", captured["url"])
         self.assertEqual("Bearer test-key", captured["headers"]["authorization"])
         self.assertEqual("publication:1", captured["headers"]["idempotency-key"])
         self.assertEqual(["social-1"], captured["body"]["social_accounts"])
+        self.assertEqual("post-1", result["provider_post_id"])
+        self.assertEqual("post_for_me", result["provider"])
+
+    def test_post_for_me_quickstart_connection_contract(self):
+        captured = {}
+        def handler(request):
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"url": "https://connect.test/session"})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = PostForMeAdapter(api_key="test-key", base_url="https://provider.test", client=client)
+        result = asyncio.run(adapter.create_connection_url("instagram", "https://app.test/connections", "customer-1"))
+        asyncio.run(client.aclose())
+        self.assertEqual("https://connect.test/session", result["url"])
+        self.assertEqual("customer-1", captured["body"]["external_id"])
+        self.assertEqual("instagram", captured["body"]["platform"])
+
+    def test_post_for_me_accounts_are_strictly_customer_scoped(self):
+        response = {"data": [
+            {"id": "ig-1", "platform": "instagram", "username": "owner", "external_id": "customer-1", "status": "connected"},
+            {"id": "yt-2", "platform": "youtube", "username": "other", "external_id": "customer-2", "status": "connected"},
+            {"id": "shared", "platform": "instagram", "username": "dashboard", "status": "connected"},
+        ]}
+        self.assertEqual(["ig-1"], [item["id"] for item in customer_social_accounts(response, "customer-1")])
+        self.assertEqual([], customer_social_accounts(response, "customer-1", "youtube"))
+
+    def test_post_for_me_account_response_shapes_are_normalized(self):
+        account = {"social_account_id": "yt-1", "provider": "youtube", "display_name": "Channel", "external_id": "customer-1"}
+        for response in ([account], {"accounts": [account]}, {"items": [account]}, {"results": [account]}):
+            self.assertEqual([{"id": "yt-1", "platform": "youtube", "username": "Channel", "status": "connected"}],
+                             customer_social_accounts(response, "customer-1"))
 
     def test_ga4_contract_is_read_only_report(self):
         captured = {}

@@ -46,6 +46,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("/api/autopilot/publications/approve", self.page)
         self.assertIn("/api/autopilot/demo/publications/", self.page)
         self.assertIn("/api/autopilot/growth-dashboard", self.page)
+        self.assertIn("autopilot-product.js", self.page)
 
     def test_does_not_embed_the_legacy_or_v3_ui(self):
         self.assertNotIn("creatorthon-v3", self.page)

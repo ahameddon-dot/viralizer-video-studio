@@ -36,7 +36,7 @@ from video_providers import (
     provider_catalog,
     video_status as provider_video_status,
 )
-from media_finisher import MediaFinisherError, finish_video
+from media_finisher import MediaFinisherError, _download as download_provider_media, finish_video
 from saved_videos import SavedVideoError, list_saved_videos, save_video
 from long_video import start as start_long_video, status as long_video_status
 from production_controller import prepare_production, record_production
@@ -88,13 +88,14 @@ from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as 
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
 from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflow_runs
-from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, ConceptGenerateRequest, DestructiveConfirmation, MetricSnapshotCreate, OpportunityRankRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
+from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, BrandSourceAnalyzeRequest, ConceptGenerateRequest, DestructiveConfirmation, KeyframeAnimateRequest, KeyframeGenerateRequest, MetricSnapshotCreate, OpportunityRankRequest, PostForMeConnectionRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
+from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_orchestrator import create_objective, make_selection
-from autopilot_intelligence import generate_concepts, get_brand_profile, list_concepts, list_opportunities, rank_opportunities, save_brand_profile
+from autopilot_intelligence import archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_concepts, list_opportunities, rank_opportunities, record_keyframe, save_brand_profile, update_keyframe_animation
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_publishing import FakePublishingAdapter, submit_publication
-from autopilot_providers import provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
 from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
 
@@ -107,6 +108,7 @@ PREDICTION_MARKET_PREFETCH_TASK: asyncio.Task | None = None
 PREDICTION_MARKET_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 PREDICTION_COVERAGE_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 CHANNEL_AUTOMATION_TASK: asyncio.Task | None = None
+DEVELOPER_TOPIC_CACHE: dict[str, tuple[float, list[dict[str, Any]], str]] = {}
 YOUTUBE_STATE_COOKIE = "viralizer_youtube_oauth_state"
 LOGGER = logging.getLogger("uvicorn.error")
 
@@ -559,6 +561,18 @@ async def require_password(request: Request, call_next):
         return response
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     is_public_demo = request.url.path in {"/demos", "/creatorthon/demos", "/api/creatorthon/demos"} or request.url.path.startswith("/api/creatorthon/demos/")
+    # This route authenticates with a scoped developer API key in the endpoint.
+    # Do not require an interactive browser session as well.
+    is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
+    # Keep the standalone stakeholder preview independent from the legacy
+    # Video Studio login while developing on this machine. Host checking makes
+    # this exception local-only; deployed environments retain normal auth.
+    request_host = (request.url.hostname or "").casefold()
+    is_local_autopilot_preview = request_host in {"127.0.0.1", "localhost", "::1"} and (
+        request.url.path == "/autopilot-review"
+        or request.url.path.startswith("/api/autopilot/")
+        or request.url.path in {"/static/autopilot-product.js", "/static/autopilot-product.css"}
+    )
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -608,7 +622,7 @@ async def require_password(request: Request, call_next):
             else:
                 login_path = "/creatorthon/login?next=" + quote(request.url.path + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&%")
             return RedirectResponse(login_path, status_code=303)
-    if request.url.path not in public_paths and not is_public_demo and request.url.path not in public_login_assets and not is_authenticated(request):
+    if request.url.path not in public_paths and not is_public_demo and not is_developer_topics_api and not is_local_autopilot_preview and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
@@ -1646,6 +1660,8 @@ def autopilot_user(request: Request) -> dict[str, Any]:
         return google_user
     if is_authenticated(request):
         return {"sub": "workspace-owner", "email": "workspace-owner", "name": "Workspace owner"}
+    if (request.url.hostname or "").casefold() in {"127.0.0.1", "localhost", "::1"}:
+        return {"sub": "local-stakeholder-review", "email": "local-review", "name": "Local reviewer"}
     raise HTTPException(401, "Sign in to use Growth Autopilot.")
 
 
@@ -2115,6 +2131,15 @@ async def autopilot_brand_profile(request: Request):
     return {"brand_profile": get_brand_profile(ROOT, str(user.get("sub", "")))}
 
 
+@app.post("/api/autopilot/brand-profile/analyze")
+async def analyze_autopilot_brand_profile(request: Request, payload: BrandSourceAnalyzeRequest):
+    """Analyze only customer-supplied public URLs and return an unconfirmed draft."""
+    autopilot_user(request)
+    if not payload.website_url.strip() and not payload.social_urls:
+        raise HTTPException(422, "Add a website or at least one public social profile URL.")
+    return await analyze_brand_sources(payload.website_url, payload.social_urls)
+
+
 @app.get("/api/autopilot/control/runs")
 async def autopilot_control_runs(request: Request, limit: int = 50):
     user = autopilot_user(request)
@@ -2172,18 +2197,92 @@ async def autopilot_opportunities(request: Request, limit: int = 5):
     return {"opportunities": list_opportunities(ROOT, str(user.get("sub", "")), limit)}
 
 
+@app.post("/api/autopilot/demo/bootstrap")
+async def bootstrap_autopilot_demo(request: Request):
+    """Create a ready-to-present local profile and load live topics when available."""
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    profile = save_brand_profile(
+        ROOT,
+        customer_id,
+        {
+            "customer_type": "business",
+            "website_url": "",
+            "social_urls": [],
+            "voice": ["clear", "confident", "helpful"],
+            "positioning": "AI-powered content growth for creators and individual businesses",
+            "audiences": ["creators", "small business owners", "marketing leaders"],
+            "goals": ["grow audience", "generate leads", "increase sales"],
+            "products_services": ["AI video creation", "trend intelligence", "social publishing"],
+            "keywords": ["AI content", "short-form video", "creator economy", "social growth"],
+            "hashtags": ["#AIContent", "#ShortFormVideo", "#CreatorEconomy"],
+            "competitor_urls": [],
+            "inspiration_urls": [],
+            "inspiration_notes": "Fast hooks, useful insights, and cinematic image-first storytelling.",
+            "visual_style": ["cinematic", "modern", "high contrast"],
+            "constraints": ["Never publish without exact-content approval."],
+            "confirmed": True,
+        },
+    )
+    source = "Viralizer MCP Hot Topic Engine + Viral Rank"
+    try:
+        raw_topics = await get_hot_topics_from_mcp()
+        topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
+        if not topics:
+            raise MCPOutlineError("No usable topics")
+    except MCPOutlineError:
+        source = "Stakeholder demo topics · illustrative data"
+        topics = [
+            {"topic": "AI agents become the new operating system for small businesses", "category": "AI & Business", "discovery_heat": "EXPLODING", "recommended_format": "15-second explainer", "demo_data": True},
+            {"topic": "Consumers increasingly discover products through short-form video search", "category": "Social Media", "discovery_heat": "VERY HOT", "recommended_format": "visual comparison", "demo_data": True},
+            {"topic": "Founder-led content is replacing polished corporate advertising", "category": "Marketing", "discovery_heat": "HOT", "recommended_format": "talking-head story", "demo_data": True},
+            {"topic": "Shoppable video turns entertainment into immediate checkout", "category": "Commerce", "discovery_heat": "HOT", "recommended_format": "product demonstration", "demo_data": True},
+            {"topic": "Behind-the-scenes creation is becoming a powerful trust signal", "category": "Creator Economy", "discovery_heat": "HOT", "recommended_format": "process reveal", "demo_data": True},
+        ]
+    opportunities = rank_opportunities(ROOT, customer_id, {"topics": topics, "limit": 5})
+    archive_other_opportunities(ROOT, customer_id, [item["id"] for item in opportunities])
+    return {"profile": profile, "opportunities": opportunities, "source": source, "demo": source.startswith("Stakeholder")}
+
+
 @app.post("/api/autopilot/topics/refresh")
 async def refresh_autopilot_topics(request: Request):
     """Pull the existing Viralizer MCP feed and personalize it against the confirmed brand profile."""
     user = autopilot_user(request)
     try:
-        topics = await get_hot_topics_from_mcp()
-        opportunities = rank_opportunities(ROOT, str(user.get("sub", "")), {"topics": topics[:50], "limit": 5})
+        raw_topics = await get_hot_topics_from_mcp()
+        topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
+        if not topics:
+            raise MCPOutlineError("Viralizer MCP returned no usable English-language topics.")
+        customer_id = str(user.get("sub", ""))
+        preliminary = rank_opportunities(ROOT, customer_id, {"topics": topics, "limit": 5})
+
+        async def enrich(candidate: dict[str, Any]) -> dict[str, Any]:
+            source = dict(candidate.get("source") or {})
+            topic_id = str(source.get("topic_id") or "").strip()
+            if not topic_id:
+                return source
+            original_title = str(source.get("topic") or source.get("title") or candidate["title"])
+            try:
+                details = await get_hot_topic_details_from_mcp(topic_id)
+            except MCPOutlineError as exc:
+                source["viralizer_detail_status"] = "unavailable"
+                source["viralizer_detail_error"] = str(exc)[:300]
+                return source
+            source.update(details)
+            source["topic"] = original_title
+            source["topic_id"] = topic_id
+            source["viralizer_detail_status"] = "verified"
+            return source
+
+        enriched = await asyncio.gather(*(enrich(candidate) for candidate in preliminary))
+        opportunities = rank_opportunities(ROOT, customer_id, {"topics": enriched, "limit": 5})
+        archive_other_opportunities(ROOT, customer_id, [item["id"] for item in opportunities])
     except MCPOutlineError as exc:
         raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
-    return {"opportunities": opportunities, "count": len(opportunities), "source": "Viralizer V3 + MCP Hot Topic Engine"}
+    verified = sum(1 for item in enriched if item.get("viralizer_detail_status") == "verified")
+    return {"opportunities": opportunities, "count": len(opportunities), "source": "Viralizer MCP Hot Topic Engine + Viral Rank", "received": len(raw_topics), "eligible": len(topics), "viral_rank_verified": verified}
 
 
 @app.post("/api/autopilot/opportunities/rank")
@@ -2210,6 +2309,156 @@ async def generate_autopilot_concepts(request: Request, payload: ConceptGenerate
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"concepts": concepts, "count": len(concepts)}
+
+
+@app.post("/api/autopilot/concepts/{concept_id}/keyframes/generate")
+async def generate_autopilot_keyframe(request: Request, concept_id: str, payload: KeyframeGenerateRequest):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    if not concept:
+        raise HTTPException(404, "Creative concept was not found.")
+    scenes = concept["content"].get("storyboard") or []
+    if payload.scene_index >= len(scenes):
+        raise HTTPException(404, "Storyboard scene was not found.")
+    scene = scenes[payload.scene_index]
+    keyframes = concept["content"].get("keyframes") or {}
+    identity_reference: dict[str, Any] | None = None
+    if payload.preserve_identity:
+        anchor_versions = keyframes.get("0") or []
+        if payload.scene_index == 0:
+            identity_reference = anchor_versions[-1] if anchor_versions else None
+        elif anchor_versions:
+            identity_reference = anchor_versions[-1]
+        else:
+            raise HTTPException(409, "Generate and approve Scene 1 first. It becomes the identity reference for every later scene.")
+    prompt = str(scene.get("keyframe_prompt") or "")
+    if payload.user_direction.strip():
+        prompt += " CUSTOMER CREATIVE DIRECTION (apply while preserving the storyboard purpose): " + " ".join(payload.user_direction.split())
+    negative_prompt = str(scene.get("negative_prompt") or "")
+    if payload.avoid.strip():
+        negative_prompt += " Customer exclusions: " + " ".join(payload.avoid.split())
+    if identity_reference:
+        prompt = (
+            "IDENTITY LOCK: preserve the exact same person's face, facial geometry, age, skin tone, hair, "
+            "body proportions, wardrobe, and distinguishing features from the supplied approved reference. "
+            "Do not substitute, beautify, age-shift, or redesign the person. Use the reference ONLY for human and product identity. "
+            "RECOMPOSE the full image for this storyboard beat: change the pose, action, camera distance, camera angle, lighting, "
+            "foreground, and environment exactly as the scene prompt requests. Never copy the reference composition or pose. "
+            "The new frame must be immediately distinguishable from every previous scene while preserving identity. Preserve the product identity and brand palette. "
+            + prompt
+        )
+    try:
+        if identity_reference:
+            reference_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(identity_reference.get("filename") or "")
+            if not reference_path.is_file():
+                raise HTTPException(404, "The approved identity reference image is missing.")
+            image_bytes = await generate_reference_image(reference_path.read_bytes(), prompt, "image/png")
+        else:
+            image_bytes = await generate_instagram_image(concept["content"], prompt, purpose="pixverse")
+    except OpenAIImageError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    keyframe_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id
+    keyframe_root.mkdir(parents=True, exist_ok=True)
+    version_number = len((concept["content"].get("keyframes") or {}).get(str(payload.scene_index), [])) + 1
+    filename = f"scene-{payload.scene_index}-v{version_number}-{digest[:12]}.png"
+    path = keyframe_root / filename
+    path.write_bytes(image_bytes)
+    keyframe = record_keyframe(ROOT, customer_id, concept_id, payload.scene_index, {
+        "filename": filename, "sha256": digest, "status": "generated", "provider": "openai_image",
+        "image_url": f"/api/autopilot/concepts/{concept_id}/keyframes/{payload.scene_index}/{version_number}",
+        "prompt": prompt, "negative_prompt": negative_prompt,
+        "user_direction": " ".join(payload.user_direction.split()), "user_avoid": " ".join(payload.avoid.split()),
+        "identity_lock": "reference_preserved" if identity_reference else "identity_anchor",
+        "identity_reference_sha256": str((identity_reference or {}).get("sha256") or digest),
+    })
+    return {"keyframe": keyframe}
+
+
+@app.get("/api/autopilot/concepts/{concept_id}/keyframes/{scene_index}/{version}")
+async def autopilot_keyframe_image(request: Request, concept_id: str, scene_index: int, version: int):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    versions = ((concept or {}).get("content", {}).get("keyframes") or {}).get(str(scene_index)) or []
+    if version < 1 or version > len(versions):
+        raise HTTPException(404, "Keyframe version was not found.")
+    filename = str(versions[version - 1].get("filename") or "")
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / filename
+    if not filename or not path.is_file():
+        raise HTTPException(404, "Keyframe image file was not found.")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "private, no-store"})
+
+
+@app.post("/api/autopilot/concepts/{concept_id}/keyframes/animate")
+async def animate_autopilot_keyframe(request: Request, concept_id: str, payload: KeyframeAnimateRequest):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    if not concept:
+        raise HTTPException(404, "Creative concept was not found.")
+    scenes = concept["content"].get("storyboard") or []
+    versions = (concept["content"].get("keyframes") or {}).get(str(payload.scene_index)) or []
+    if payload.scene_index >= len(scenes) or not versions:
+        raise HTTPException(409, "Generate the scene keyframe before animation.")
+    latest = versions[-1]
+    path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(latest.get("filename") or "")
+    if not path.is_file():
+        raise HTTPException(404, "Keyframe image file was not found.")
+    scene = scenes[payload.scene_index]
+    try:
+        pixverse = PixVerseClient()
+        image_id = await pixverse.upload_image(image_bytes=path.read_bytes(), filename=path.name, content_type="image/png")
+        job_id = await pixverse.generate_from_image(image_id, str(scene.get("motion_prompt") or ""), duration=5, quality="720p", model="v6", negative_prompt=str(scene.get("negative_prompt") or ""))
+    except PixVerseError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    keyframe = update_keyframe_animation(ROOT, customer_id, concept_id, payload.scene_index, {"provider": "pixverse", "image_id": image_id, "job_id": str(job_id), "status": "processing", "generation_mode": "image_to_video", "duration_seconds": 5})
+    return {"keyframe": keyframe, "job_id": str(job_id), "status": "processing"}
+
+
+@app.get("/api/autopilot/concepts/{concept_id}/animations/{scene_index}/status")
+async def autopilot_keyframe_animation_status(request: Request, concept_id: str, scene_index: int):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    versions = ((concept or {}).get("content", {}).get("keyframes") or {}).get(str(scene_index)) or []
+    animation = (versions[-1].get("animation") or {}) if versions else {}
+    job_id = str(animation.get("job_id") or "")
+    if not job_id:
+        raise HTTPException(404, "PixVerse animation job was not found.")
+    try:
+        result = await provider_video_status("pixverse", job_id)
+    except VideoProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    status = str(result.get("status") or "processing")
+    provider_video_url = str(result.get("url") or "")
+    video_url = f"/api/autopilot/concepts/{concept_id}/animations/{scene_index}/video" if provider_video_url else ""
+    keyframe = update_keyframe_animation(ROOT, customer_id, concept_id, scene_index, {
+        **animation, "status": status, "video_url": video_url, "provider_video_url": provider_video_url,
+        "error": str(result.get("error") or "")[:500], "provider_result": result.get("result") or {},
+    })
+    return {"status": status, "video_url": video_url, "error": result.get("error") or "", "job_id": job_id, "keyframe": keyframe}
+
+
+@app.get("/api/autopilot/concepts/{concept_id}/animations/{scene_index}/video")
+async def autopilot_keyframe_animation_video(request: Request, concept_id: str, scene_index: int):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    versions = ((concept or {}).get("content", {}).get("keyframes") or {}).get(str(scene_index)) or []
+    animation = (versions[-1].get("animation") or {}) if versions else {}
+    provider_url = str(animation.get("provider_video_url") or animation.get("video_url") or "")
+    job_id = str(animation.get("job_id") or "")
+    if not job_id or not provider_url.startswith("https://"):
+        raise HTTPException(404, "Completed PixVerse video was not found.")
+    clip_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_clips" / customer_id / concept_id
+    clip_root.mkdir(parents=True, exist_ok=True)
+    clip_path = clip_root / f"scene-{scene_index}-{job_id}.mp4"
+    if not clip_path.is_file():
+        temporary = clip_path.with_suffix(".part")
+        try:
+            await download_provider_media(provider_url, temporary)
+            temporary.replace(clip_path)
+        except MediaFinisherError as exc:
+            temporary.unlink(missing_ok=True)
+            raise HTTPException(502, str(exc)) from exc
+    return FileResponse(clip_path, media_type="video/mp4", filename=f"viralizer-scene-{scene_index + 1}.mp4", content_disposition_type="inline", headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"})
 
 
 @app.post("/api/autopilot/workflows/start/{concept_id}")
@@ -2365,6 +2614,65 @@ async def create_autopilot_metric_snapshot(request: Request, payload: MetricSnap
 async def autopilot_connections(request: Request):
     user = autopilot_user(request)
     return {"connections": list_connections(ROOT, str(user.get("sub", "")))}
+
+
+@app.post("/api/autopilot/post-for-me/connection-url")
+async def autopilot_post_for_me_connection_url(request: Request, payload: PostForMeConnectionRequest):
+    user = autopilot_user(request)
+    parsed = urlparse(payload.redirect_url)
+    if parsed.scheme not in {"https", "http"} or (parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost"}):
+        raise HTTPException(422, "Redirect URL must use HTTPS, except for localhost development.")
+    if not provider_readiness()["live_calls_enabled"]:
+        raise HTTPException(409, "Post for Me is prepared but live provider calls are disabled.")
+    try:
+        result = await PostForMeAdapter().create_connection_url(payload.platform, payload.redirect_url, str(user.get("sub", "")))
+    except ProviderConfigurationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(502 if exc.retryable else 422, str(exc)) from exc
+    return {"provider": "post_for_me", "mode": "quickstart", "platform": payload.platform, "connection": result}
+
+
+@app.get("/api/autopilot/post-for-me/accounts")
+async def autopilot_post_for_me_accounts(request: Request, platform: str = ""):
+    user = autopilot_user(request)
+    if platform and platform not in {"instagram", "tiktok", "youtube", "linkedin"}:
+        raise HTTPException(422, "Unsupported social platform.")
+    try:
+        result = await PostForMeAdapter().list_accounts(platform)
+    except ProviderConfigurationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(502 if exc.retryable else 422, str(exc)) from exc
+    customer_id = str(user.get("sub", ""))
+    accounts = customer_social_accounts(result, customer_id, platform)
+    connections = []
+    for account in accounts:
+        status = "connected" if account["status"] in {"connected", "active", "ok"} else "pending"
+        connections.append(save_connection(ROOT, customer_id, {
+            "provider": "post_for_me", "external_account_id": account["id"],
+            "display_name": account["username"], "status": status,
+            "capabilities": ["posts", "feeds"], "metadata": {"platform": account["platform"]},
+        }))
+    return {"provider": "post_for_me", "accounts": accounts, "connections": connections}
+
+
+@app.post("/api/autopilot/publications/{publication_id}/submit")
+async def submit_autopilot_publication(request: Request, publication_id: str):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    if not provider_readiness()["live_calls_enabled"]:
+        raise HTTPException(409, "Live provider calls are disabled. The approved publication remains safely queued.")
+    try:
+        publication = await submit_publication(ROOT, customer_id, publication_id, PostForMeAdapter())
+    except ProviderConfigurationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(502 if exc.retryable else 422, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"publication": publication, "provider": "post_for_me"}
 
 
 @app.put("/api/autopilot/connections")
@@ -4264,6 +4572,188 @@ async def analyze_site_url(request: SiteUrlVideoRequest):
     analysis["aspect_ratio"] = request.aspect_ratio
     analysis["transfer_version"] = 2
     return analysis
+
+
+def _developer_topic_api_keys() -> list[str]:
+    """Return configured read-only topic API keys without exposing them."""
+    configured = os.getenv("VIRALIZER_TOPICS_API_KEYS", "").strip()
+    legacy = os.getenv("VIRALIZER_TOPICS_API_KEY", "").strip()
+    values = [value.strip() for value in configured.split(",") if value.strip()]
+    if legacy:
+        values.append(legacy)
+    return list(dict.fromkeys(values))
+
+
+def _require_developer_topic_key(request: Request) -> None:
+    keys = _developer_topic_api_keys()
+    if not keys:
+        raise HTTPException(503, "The developer topics API is not configured.")
+    authorization = request.headers.get("authorization", "").strip()
+    bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    supplied = bearer or request.headers.get("x-api-key", "").strip()
+    if not supplied or not any(hmac.compare_digest(supplied, expected) for expected in keys):
+        raise HTTPException(401, "A valid developer API key is required.", headers={"WWW-Authenticate": "Bearer"})
+
+
+def _topic_text(item: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return " ".join(str(value).split())
+    return ""
+
+
+def _topic_number(item: dict[str, Any], *keys: str) -> float | int | None:
+    for key in keys:
+        value = item.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            number = float(str(value).strip().rstrip("%"))
+            return int(number) if number.is_integer() else number
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _normalize_developer_topic(item: dict[str, Any], rank: int) -> dict[str, Any]:
+    """Give MCP and public-source topics one versioned developer contract."""
+    title = _topic_text(item, "topic", "title", "headline") or "Untitled topic"
+    raw_id = _topic_text(item, "topic_id", "id")
+    topic_id = raw_id or "topic_" + hashlib.sha256(title.casefold().encode("utf-8")).hexdigest()[:16]
+    groups = item.get("groups") if isinstance(item.get("groups"), list) else []
+    category = _topic_text(item, "category_label", "category", "section")
+    if not category and groups:
+        category = str(groups[0])
+    countries = item.get("countries") if isinstance(item.get("countries"), list) else []
+    languages = item.get("languages") if isinstance(item.get("languages"), list) else []
+    urls = item.get("source_urls") if isinstance(item.get("source_urls"), list) else []
+    platforms = item.get("source_platforms") if isinstance(item.get("source_platforms"), list) else []
+    sources = item.get("sources") if isinstance(item.get("sources"), list) else []
+    if not sources:
+        sources = [
+            {
+                "publisher": str(platforms[index]) if index < len(platforms) else _topic_text(item, "publisher_name", "publisher_domain") or "Source",
+                "url": str(url),
+                "published_at": _topic_text(item, "published_at"),
+            }
+            for index, url in enumerate(urls)
+            if str(url).startswith(("http://", "https://"))
+        ]
+    image = _topic_text(item, "image", "thumbnail_url", "img")
+    keywords = item.get("keywords") if isinstance(item.get("keywords"), list) else []
+    mentions = _topic_number(item, "global_mentions", "mentions", "source_count")
+    return {
+        "id": topic_id,
+        "rank": rank,
+        "title": title,
+        "summary": _topic_text(item, "summary", "why_it_matters", "description"),
+        "category": category or "General",
+        "countries": [str(value) for value in countries],
+        "languages": [str(value) for value in languages],
+        "published_at": _topic_text(item, "published_at") or None,
+        "trend_score": _topic_number(item, "trend_score", "score"),
+        "viral_score": _topic_number(item, "viral_score", "viral_rank"),
+        "global_mentions": mentions,
+        "keywords": [str(value) for value in keywords],
+        "thumbnail_url": image or None,
+        "sources": sources,
+        "source_count": len(sources) if sources else (int(mentions) if mentions is not None else 0),
+        "groups": [str(value) for value in groups],
+    }
+
+
+def _decode_topic_cursor(cursor: str) -> int:
+    if not cursor:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        return max(0, int(base64.urlsafe_b64decode(padded.encode("ascii")).decode("ascii")))
+    except (ValueError, UnicodeError, binascii.Error):
+        raise HTTPException(422, "Invalid pagination cursor.")
+
+
+def _encode_topic_cursor(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode("ascii")).decode("ascii").rstrip("=")
+
+
+async def _developer_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
+    ttl = max(30, int(os.getenv("VIRALIZER_TOPICS_API_CACHE_SECONDS", "300")))
+    cached = DEVELOPER_TOPIC_CACHE.get("worldwide")
+    if cached and time.time() - cached[0] < ttl:
+        return cached[1], cached[2]
+    try:
+        raw_topics = await get_hot_topics_from_mcp()
+        source = "Viralizer MCP"
+    except MCPOutlineError:
+        raw_topics = await discover_global_sources()
+        source = "Worldwide public sources"
+    normalized = [_normalize_developer_topic(item, index) for index, item in enumerate(raw_topics, 1)]
+    DEVELOPER_TOPIC_CACHE["worldwide"] = (time.time(), normalized, source)
+    return normalized, source
+
+
+@app.get("/api/v1/hot-topics", tags=["Developer Topics"])
+async def developer_hot_topics(
+    request: Request,
+    category: str = "",
+    country: str = "worldwide",
+    language: str = "",
+    search: str = "",
+    limit: int = 20,
+    cursor: str = "",
+):
+    """Read-only, normalized worldwide hot-topic feed for approved developers."""
+    _require_developer_topic_key(request)
+    limit = max(1, min(100, limit))
+    offset = _decode_topic_cursor(cursor)
+    topics, source = await _developer_worldwide_topics()
+    category_key = category.strip().casefold()
+    country_key = country.strip().casefold()
+    language_key = language.strip().casefold()
+    search_key = search.strip().casefold()
+    country_aliases = {
+        "us": {"us", "usa", "united states", "united states of america"},
+        "gb": {"gb", "uk", "united kingdom", "great britain"},
+        "uk": {"gb", "uk", "united kingdom", "great britain"},
+        "in": {"in", "india"},
+        "au": {"au", "australia"},
+        "sa": {"sa", "saudi arabia"},
+        "ae": {"ae", "united arab emirates", "uae"},
+    }
+
+    def matches(item: dict[str, Any]) -> bool:
+        if category_key and category_key not in str(item.get("category") or "").casefold():
+            return False
+        if country_key and country_key not in {"worldwide", "all", "global"}:
+            values = [str(value).casefold() for value in item.get("countries") or []]
+            groups = [str(value).casefold() for value in item.get("groups") or []]
+            requested_countries = country_aliases.get(country_key, {country_key})
+            if not any(any(alias == value or alias in value for alias in requested_countries) for value in [*values, *groups]):
+                return False
+        if language_key:
+            values = [str(value).casefold() for value in item.get("languages") or []]
+            if not any(language_key in value for value in values):
+                return False
+        if search_key:
+            haystack = " ".join((str(item.get("title") or ""), str(item.get("summary") or ""), str(item.get("category") or ""))).casefold()
+            if search_key not in haystack:
+                return False
+        return True
+
+    filtered = [item for item in topics if matches(item)]
+    page = filtered[offset:offset + limit]
+    next_offset = offset + len(page)
+    return {
+        "api_version": "v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "worldwide" if country_key in {"", "worldwide", "all", "global"} else country,
+        "source": source,
+        "count": len(page),
+        "total": len(filtered),
+        "topics": page,
+        "next_cursor": _encode_topic_cursor(next_offset) if next_offset < len(filtered) else None,
+    }
 
 
 @app.get("/api/topics/hot")

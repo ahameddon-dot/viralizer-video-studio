@@ -66,9 +66,35 @@ class BrandProfileUpsert(BaseModel):
     audiences: list[str] = Field(default_factory=list, max_length=20)
     goals: list[str] = Field(default_factory=list, max_length=20)
     products_services: list[str] = Field(default_factory=list, max_length=100)
+    keywords: list[str] = Field(default_factory=list, max_length=100)
+    hashtags: list[str] = Field(default_factory=list, max_length=100)
+    competitor_urls: list[str] = Field(default_factory=list, max_length=20)
+    inspiration_urls: list[str] = Field(default_factory=list, max_length=20)
+    inspiration_notes: str = Field(default="", max_length=2_000)
     visual_style: list[str] = Field(default_factory=list, max_length=30)
     constraints: list[str] = Field(default_factory=list, max_length=50)
     confirmed: bool = False
+
+
+class BrandSourceAnalyzeRequest(BaseModel):
+    website_url: str = Field(default="", max_length=2048)
+    social_urls: list[str] = Field(default_factory=list, max_length=20)
+
+
+class KeyframeGenerateRequest(BaseModel):
+    scene_index: int = Field(ge=0, le=2)
+    preserve_identity: bool = True
+    user_direction: str = Field(default="", max_length=2_000)
+    avoid: str = Field(default="", max_length=1_000)
+
+
+class KeyframeAnimateRequest(BaseModel):
+    scene_index: int = Field(ge=0, le=2)
+
+
+class PostForMeConnectionRequest(BaseModel):
+    platform: Literal["instagram", "tiktok", "youtube", "linkedin"]
+    redirect_url: str = Field(min_length=8, max_length=2048)
 
 
 class OpportunityRankRequest(BaseModel):
