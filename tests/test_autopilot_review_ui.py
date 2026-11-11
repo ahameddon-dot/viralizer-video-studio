@@ -74,7 +74,8 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('"provider": "pixverse", "scene_job_ids": job_ids', self.app)
         self.assertIn('f"/api/finished-video/{filename}"', self.app)
         self.assertIn('methods=["GET", "HEAD"]', self.app)
-        self.assertIn('(?:hybrid|autopilot)', self.app)
+        finished_route = self.app.split('@app.api_route("/api/finished-video/{filename}"', 1)[1][:500]
+        self.assertIn('(?:hybrid|autopilot)', finished_route)
         self.assertIn('autopilot_recovery', self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
