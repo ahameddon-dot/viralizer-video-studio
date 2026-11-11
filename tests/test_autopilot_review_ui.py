@@ -48,6 +48,11 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("/api/autopilot/growth-dashboard", self.page)
         self.assertIn("autopilot-product.js", self.page)
 
+    def test_demo_preserves_confirmed_profile_and_personalizes_fallback(self):
+        self.assertIn("profile = get_brand_profile(ROOT, customer_id)", self.app)
+        self.assertIn("AI-powered kitchen tools", self.app)
+        self.assertIn("Food + Tech", self.app)
+
     def test_does_not_embed_the_legacy_or_v3_ui(self):
         self.assertNotIn("creatorthon-v3", self.page)
         self.assertNotIn("Turn hot topics into", self.page)

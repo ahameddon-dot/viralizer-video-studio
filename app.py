@@ -2202,28 +2202,30 @@ async def bootstrap_autopilot_demo(request: Request):
     """Create a ready-to-present local profile and load live topics when available."""
     user = autopilot_user(request)
     customer_id = str(user.get("sub", ""))
-    profile = save_brand_profile(
-        ROOT,
-        customer_id,
-        {
-            "customer_type": "business",
-            "website_url": "",
-            "social_urls": [],
-            "voice": ["clear", "confident", "helpful"],
-            "positioning": "AI-powered content growth for creators and individual businesses",
-            "audiences": ["creators", "small business owners", "marketing leaders"],
-            "goals": ["grow audience", "generate leads", "increase sales"],
-            "products_services": ["AI video creation", "trend intelligence", "social publishing"],
-            "keywords": ["AI content", "short-form video", "creator economy", "social growth"],
-            "hashtags": ["#AIContent", "#ShortFormVideo", "#CreatorEconomy"],
-            "competitor_urls": [],
-            "inspiration_urls": [],
-            "inspiration_notes": "Fast hooks, useful insights, and cinematic image-first storytelling.",
-            "visual_style": ["cinematic", "modern", "high contrast"],
-            "constraints": ["Never publish without exact-content approval."],
-            "confirmed": True,
-        },
-    )
+    profile = get_brand_profile(ROOT, customer_id)
+    if not profile:
+        profile = save_brand_profile(
+            ROOT,
+            customer_id,
+            {
+                "customer_type": "business",
+                "website_url": "",
+                "social_urls": [],
+                "voice": ["clear", "confident", "helpful"],
+                "positioning": "AI-powered content growth for creators and individual businesses",
+                "audiences": ["creators", "small business owners", "marketing leaders"],
+                "goals": ["grow audience", "generate leads", "increase sales"],
+                "products_services": ["AI video creation", "trend intelligence", "social publishing"],
+                "keywords": ["AI content", "short-form video", "creator economy", "social growth"],
+                "hashtags": ["#AIContent", "#ShortFormVideo", "#CreatorEconomy"],
+                "competitor_urls": [],
+                "inspiration_urls": [],
+                "inspiration_notes": "Fast hooks, useful insights, and cinematic image-first storytelling.",
+                "visual_style": ["cinematic", "modern", "high contrast"],
+                "constraints": ["Never publish without exact-content approval."],
+                "confirmed": True,
+            },
+        )
     source = "Viralizer MCP Hot Topic Engine + Viral Rank"
     try:
         raw_topics = await get_hot_topics_from_mcp()
@@ -2232,13 +2234,26 @@ async def bootstrap_autopilot_demo(request: Request):
             raise MCPOutlineError("No usable topics")
     except MCPOutlineError:
         source = "Stakeholder demo topics · illustrative data"
-        topics = [
-            {"topic": "AI agents become the new operating system for small businesses", "category": "AI & Business", "discovery_heat": "EXPLODING", "recommended_format": "15-second explainer", "demo_data": True},
-            {"topic": "Consumers increasingly discover products through short-form video search", "category": "Social Media", "discovery_heat": "VERY HOT", "recommended_format": "visual comparison", "demo_data": True},
-            {"topic": "Founder-led content is replacing polished corporate advertising", "category": "Marketing", "discovery_heat": "HOT", "recommended_format": "talking-head story", "demo_data": True},
-            {"topic": "Shoppable video turns entertainment into immediate checkout", "category": "Commerce", "discovery_heat": "HOT", "recommended_format": "product demonstration", "demo_data": True},
-            {"topic": "Behind-the-scenes creation is becoming a powerful trust signal", "category": "Creator Economy", "discovery_heat": "HOT", "recommended_format": "process reveal", "demo_data": True},
-        ]
+        interests = " ".join(
+            str(value).casefold()
+            for key in ("audiences", "keywords", "products_services")
+            for value in profile.get("profile", {}).get(key, [])
+        )
+        if any(term in interests for term in ("food", "foodie", "cuisine", "recipe", "restaurant")) and "tech" in interests:
+            topics = [
+                {"topic": "AI-powered kitchen tools are changing how home cooks plan and prepare meals", "category": "Food + Tech", "discovery_heat": "VERY HOT", "recommended_format": "visual demonstration", "demo_data": True},
+                {"topic": "Smartphone food photography tricks that make everyday dishes look premium", "category": "Food Creator Tech", "discovery_heat": "HOT", "recommended_format": "before-and-after", "demo_data": True},
+                {"topic": "Creators are using AI to turn one recipe into multiple short-form videos", "category": "Food + AI", "discovery_heat": "HOT", "recommended_format": "15-second workflow", "demo_data": True},
+                {"topic": "Affordable smart kitchen gadgets gaining attention among Indian food creators", "category": "Cuisine + Tech", "discovery_heat": "HOT", "recommended_format": "product comparison", "demo_data": True},
+                {"topic": "Behind-the-scenes restaurant technology is becoming compelling foodie content", "category": "Food Business Tech", "discovery_heat": "RISING", "recommended_format": "process reveal", "demo_data": True},
+            ]
+        else:
+            audience = next(iter(profile.get("profile", {}).get("audiences", [])), "your audience")
+            topics = [
+                {"topic": f"Practical trends changing how {audience} discover and choose products", "category": "Audience Trends", "discovery_heat": "VERY HOT", "recommended_format": "15-second explainer", "demo_data": True},
+                {"topic": f"Behind-the-scenes content is building trust with {audience}", "category": "Creator Strategy", "discovery_heat": "HOT", "recommended_format": "process reveal", "demo_data": True},
+                {"topic": f"Short-form search is becoming a discovery engine for {audience}", "category": "Social Media", "discovery_heat": "HOT", "recommended_format": "visual comparison", "demo_data": True},
+            ]
     opportunities = rank_opportunities(ROOT, customer_id, {"topics": topics, "limit": 5})
     archive_other_opportunities(ROOT, customer_id, [item["id"] for item in opportunities])
     return {"profile": profile, "opportunities": opportunities, "source": source, "demo": source.startswith("Stakeholder")}
