@@ -2083,7 +2083,7 @@ async def view_creatorthon_project_video(request: Request, project_id: str, down
     if not video_url.startswith("/api/finished-video/"):
         raise HTTPException(409, "This project does not have a permanent finished-video link yet.")
     filename = video_url.removeprefix("/api/finished-video/")
-    if not re.fullmatch(r"viralizer-(?:hybrid-)?[a-f0-9]{32}\.mp4", filename):
+    if not re.fullmatch(r"viralizer-(?:(?:hybrid|autopilot)-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
     try:
         signed_url = object_share_url(
