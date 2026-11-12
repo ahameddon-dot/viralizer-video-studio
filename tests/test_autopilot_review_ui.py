@@ -15,6 +15,9 @@ class AutopilotReviewUiTests(unittest.TestCase):
     def test_has_a_dedicated_route_and_file(self):
         self.assertIn('@app.get("/autopilot-review")', self.app)
         self.assertIn('"autopilot-review.html"', self.app)
+
+    def test_manual_direction_wrapper_has_its_own_scope_safe_mode_reader(self):
+        self.assertIn("(()=>{const directionMode=()=>document.querySelector", self.product)
         self.assertIn("AI Growth Assistant", self.page)
 
     def test_exposes_a_simple_customer_experience_not_agent_internals(self):
@@ -37,8 +40,9 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("PixVerse is not called", self.page)
         self.assertIn("Exact-content approval is always required before publishing.", self.page)
         self.assertIn("I approve this exact content", self.page)
-        self.assertIn("Simulated 3-hour report", self.page)
+        self.assertIn("SIMULATED DATA — NOT SOCIAL PERFORMANCE", self.page)
         self.assertIn("It will not contact a social network", self.page)
+        self.assertIn("Demo values are excluded from real performance claims", self.product)
 
     def test_flywheel_uses_existing_topic_and_autopilot_endpoints(self):
         self.assertIn("/api/autopilot/topics/refresh", self.page)

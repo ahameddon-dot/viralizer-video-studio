@@ -145,9 +145,12 @@ async def execute_step(root: Path, step: dict[str, Any], mode: str = "disabled")
         else:
             raise RuntimeError("Provider execution is disabled.")
         result = await submit_publication(root, customer_id, dict(publication)["id"], adapter)
-        notify(root, customer_id, "publication_status", "Publication updated", f"Publication is {result['status']}.", entity_type="publication", entity_id=result["id"], action_url="/autopilot/growth")
-        audit(root, customer_id, "publication.submitted", "publication", result["id"], {"status": result["status"], "provider": result["provider"]}, correlation_id=step["id"])
-        return {"publication_id": result["id"], "status": result["status"]}
+        persisted = json.loads(result.get("result_json") or "{}")
+        simulated = bool(persisted.get("is_simulated"))
+        label = "Simulated publication" if simulated else "Publication"
+        notify(root, customer_id, "publication_status", f"{label} updated", f"{label} is {result['status']}.", entity_type="publication", entity_id=result["id"], action_url="/autopilot/growth")
+        audit(root, customer_id, "publication.submitted", "publication", result["id"], {"status": result["status"], "provider": result["provider"], "is_simulated": simulated, "data_source": persisted.get("data_source", "unknown")}, correlation_id=step["id"])
+        return {"publication_id": result["id"], "status": result["status"], "is_simulated": simulated, "data_source": persisted.get("data_source", "unknown")}
     if agent_type == "growth_monitoring":
         publication_id = str(inputs.get("publication_id") or "")
         if mode != "fake":
@@ -155,7 +158,7 @@ async def execute_step(root: Path, step: dict[str, Any], mode: str = "disabled")
         with _connect(root) as db:
             count = db.execute("SELECT COUNT(*) AS n FROM autopilot_metric_snapshots WHERE publication_id=?", (publication_id,)).fetchone()
         sequence = int(dict(count)["n"]) + 1
-        snapshot = record_metric_snapshot(root, customer_id, {"publication_id": publication_id, "metrics": {"views": sequence * 100, "likes": sequence * 7, "comments": sequence * 2}, "unavailable": ["shares"], "raw": {"provider": "fake"}})
+        snapshot = record_metric_snapshot(root, customer_id, {"publication_id": publication_id, "metrics": {"views": sequence * 100, "likes": sequence * 7, "comments": sequence * 2}, "unavailable": ["shares"], "raw": {"provider": "fake", "data_source": "synthetic", "provider_mode": "fake", "is_simulated": True, "label": "Simulated metrics — not social performance"}})
         recommendation = create_recommendation(root, customer_id, publication_id)
         notify(root, customer_id, "growth_update", "New growth insight", recommendation["recommendation"], entity_type="publication", entity_id=publication_id, action_url="/autopilot/growth")
         return {"snapshot_id": snapshot["id"], "recommendation_id": recommendation["id"]}

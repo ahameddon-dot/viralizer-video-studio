@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Viralizer · AI Growth Workspace</title>
+  <link rel="stylesheet" href="/static/autopilot-workspace.css?v=1">
+  <link rel="stylesheet" href="/static/autopilot-workspace-live.css?v=4">
+  <script defer src="/static/autopilot-workspace-live.js?v=4"></script>
+</head>
+<body>
+  <div class="prototype-bar"><b>LIVE UNIFIED WORKSPACE</b><span>Real data · provider costs and publishing require approval</span></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="logo"><span>V.</span><div>Viralizer AI<small>Growth Autopilot</small></div></div>
+      <nav id="primaryNav">
+        <button class="active" data-screen="today"><i>⌂</i><span>Home</span></button>
+        <button data-screen="projects"><i>▣</i><span>Projects</span></button>
+        <button id="openAssistantNav"><i>▢</i><span>AI Chat</span></button>
+        <button data-screen="create"><i>▶</i><span>Studio</span><em id="createBadge">1</em></button>
+        <button data-screen="approve"><i>◇</i><span>Publish</span></button>
+        <button data-screen="results"><i>↗</i><span>Analytics</span></button>
+        <button data-screen="brand"><i>♧</i><span>Brand Kit</span></button>
+        <button data-screen="connections"><i>⚙</i><span>Connections</span></button>
+      </nav>
+      <div class="sidebar-bottom"><div class="avatar">AK</div><div><b>Your workspace</b><small>Food + technology</small></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="project-pill"><span></span><div><small>ACTIVE PROJECT</small><b id="projectName">New growth cycle</b></div><button>⌄</button></div>
+        <div class="top-actions"><button class="icon-button" aria-label="Notifications">♢</button><button class="assistant-button" id="openAssistant"><span>✦</span> Ask Viralizer</button></div>
+      </header>
+
+      <div class="journey" id="journey">
+        <button class="active" data-screen="today"><span>1</span><b>Choose topic</b></button><i></i>
+        <button data-screen="create"><span>2</span><b>Create</b></button><i></i>
+        <button data-screen="produce"><span>3</span><b>Produce</b></button><i></i>
+        <button data-screen="approve"><span>4</span><b>Approve</b></button><i></i>
+        <button data-screen="results"><span>5</span><b>Learn</b></button>
+      </div>
+
+      <section class="screen active" id="screen-today">
+        <div class="screen-head"><div><span class="eyebrow">PERSONALIZED FOR YOUR BRAND</span><h1>What should we create today?</h1><p>Worldwide trends filtered for your audience, products, and growth goal.</p></div><button class="secondary">↻ Refresh topics</button></div>
+        <div class="brief-card"><div class="pulse">✦</div><div><b id="briefTitle">Preparing your daily opportunity brief</b><p id="briefCopy">Loading topics matched to your confirmed brand profile.</p></div><button id="explainTopics">Why these topics?</button></div>
+        <div class="section-label"><b>Best opportunities</b><span>Updated 8 minutes ago</span></div>
+        <div class="topic-grid" id="topicGrid"></div>
+      </section>
+
+      <section class="screen" id="screen-create">
+        <div class="screen-head compact"><div><span class="eyebrow">CREATIVE WORKSPACE</span><h1 id="createTitle">Your video is taking shape.</h1><p>Review the story, adjust anything, then create the visuals.</p></div><span class="saved">✓ Saved</span></div>
+        <div class="concept-strip"><div><span>RECOMMENDED DIRECTION</span><h2>Fast, useful, immediately visual</h2><p id="conceptReason">A practical 15-second story built for your audience.</p></div><button class="secondary" id="changeDirection">See other directions</button></div>
+        <div class="create-layout">
+          <div class="storyboard" id="storyboard"></div>
+          <aside class="creative-panel">
+            <span class="eyebrow">VIDEO SETTINGS</span>
+            <label>Platform<select><option>Instagram Reels</option><option>YouTube Shorts</option><option>TikTok</option></select></label>
+            <label>Visual style<select><option>Cinematic realism</option><option>Editorial clean</option><option>Bold social</option></select></label>
+            <label>Person consistency<select><option>Keep the same person</option><option>Different people per scene</option><option>No people</option></select></label>
+            <div class="creative-note"><b>✦ AI recommendation</b><p>Keep one person across all scenes. It will make the 15-second story feel connected.</p></div>
+            <button class="primary wide" id="startRealProduction">Generate three keyframe images <span>→</span></button>
+            <small class="safe-copy">Uses OpenAI Images after confirmation.</small>
+            <small class="safe-copy">You will review everything before publishing.</small>
+          </aside>
+        </div>
+        <div class="image-generation-status" id="imageGenerationStatus" hidden><div class="sand-timer" aria-hidden="true">⌛</div><div class="generation-clock"><span id="imageElapsed">00:00</span><small>ELAPSED</small></div><div class="generation-copy"><span class="eyebrow">OPENAI IMAGE GENERATION</span><h2 id="imageGenerationTitle">Creating your three keyframes</h2><p id="imageGenerationCopy">Preparing Scene 1 · You can keep this page open.</p><div class="generation-progress"><span id="imageGenerationBar"></span></div><small>Estimated total time: <b id="imageEstimate">1–3 minutes</b></small></div></div>
+        <div class="keyframe-review create-keyframe-review" id="keyframeReview" hidden><div class="review-heading"><div><span class="eyebrow">GENERATED KEYFRAMES</span><b>Review and direct every image.</b><small>View each image fully, describe a change, or regenerate only that scene.</small></div></div><div class="production-keyframes" id="productionKeyframes"></div><button class="primary wide" id="approveKeyframes">Approve images & continue to PixVerse animation →</button><small class="safe-copy">Produce begins only after these three images are approved.</small></div>
+      </section>
+
+      <section class="screen" id="screen-produce">
+        <div class="screen-head compact production-head"><div><span class="eyebrow">AI VIDEO PRODUCTION</span><h1>Your video is taking shape.</h1><p>Three approved images are being animated and joined into one 15-second video.</p></div><button class="secondary" id="resumeProduction">Check progress</button></div>
+        <div class="production-card production-dashboard">
+          <div class="production-preview">
+            <div class="production-preview-label"><span class="live-dot"></span><b>LIVE PREVIEW</b><em>Scene <span id="productionScene">1</span> of 3</em></div>
+            <div class="phone"><div class="phone-scene"><strong id="productionVisual">Preparing your first scene…</strong></div></div>
+            <div class="scene-miniatures" id="productionSceneStrip"><span class="active">1</span><span>2</span><span>3</span></div>
+          </div>
+          <div class="production-status">
+            <div class="production-time-row"><div class="production-hourglass">⌛</div><div><span class="eyebrow">TIME ELAPSED</span><strong id="productionElapsed">00:00</strong></div><div class="estimate-card"><small>ESTIMATED TOTAL</small><b>3–6 min</b><span>You can leave this page safely</span></div></div>
+            <span class="eyebrow">CURRENT ACTIVITY</span><h2 id="productionTitle">Animating approved images</h2><p id="progressCopy">PixVerse begins only after image approval.</p><div class="progress production-progress"><span id="progressBar"></span></div>
+            <div class="task-list"><div class="complete"><i>✓</i><span><b>Images approved</b><small>Three reviewed keyframes</small></span><em id="taskOne">Approved</em></div><div><i>2</i><span><b>Animate three scenes</b><small>PixVerse image-to-video</small></span><em id="taskTwo">Waiting</em></div><div><i>3</i><span><b>Build final video</b><small>Join clips into one publication file</small></span><em id="taskThree">Waiting</em></div></div>
+            <div class="production-note"><span>✓</span><div><b>No need to keep watching</b><small>This job continues safely in the background. Return and click Check progress at any time.</small></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-approve">
+        <div class="screen-head compact"><div><span class="eyebrow">YOUR APPROVAL</span><h1>Everything that will be published.</h1><p>Review the exact video, caption, accounts, and timing in one place.</p></div><span class="ready-pill">READY TO REVIEW</span></div>
+        <div class="approval-layout"><div class="video-review"><video class="video-frame" id="finalVideo" controls playsinline></video><div class="revision-row"><span>Final video · immutable review asset</span><button class="secondary" data-go="create">Edit video</button></div></div><aside class="post-card"><label>Title<input id="approvalTitle"></label><label>Caption<textarea id="approvalCaption"></textarea></label><label>Hashtags<input id="approvalHashtags"></label><div class="destinations" id="publishDestinations"><b>Publish to</b><p>Loading connected accounts…</p></div><label class="approval-check"><input type="checkbox" id="exactApproval"><span><b>I approve this exact content</b><small>Any edit will require a new approval.</small></span></label><button class="primary wide" id="publishApproved" disabled>Publish approved content</button><small class="safe-copy">Approval is recorded before Post for Me receives the publication.</small></aside></div>
+      </section>
+
+      <section class="screen" id="screen-results">
+        <div class="screen-head"><div><span class="eyebrow">GROWTH INTELLIGENCE</span><h1>What happened—and what to do next.</h1><p>Real platform data stays separate from simulated or unavailable metrics.</p></div><select class="period"><option>Last 7 days</option><option>Last 30 days</option></select></div>
+        <div class="prototype-disclosure" id="resultsDisclosure">Loading provider-reported performance…</div>
+        <div class="metric-grid" id="metricGrid"><div><span>Views</span><b>—</b></div><div><span>Likes</span><b>—</b></div><div><span>Comments</span><b>—</b></div><div><span>Shares</span><b>—</b></div></div>
+        <div class="results-grid"><div class="chart-card"><div class="card-head"><div><b>Performance over 24 hours</b><small>Views after publication</small></div><span>Instagram + YouTube</span></div><div class="chart"><div class="grid-lines"></div><svg viewBox="0 0 700 220" preserveAspectRatio="none"><defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d4be8" stop-opacity=".28"/><stop offset="1" stop-color="#6d4be8" stop-opacity="0"/></linearGradient></defs><path class="area" d="M0,200 C90,195 100,170 170,165 S260,130 330,140 S420,90 500,100 S610,48 700,42 L700,220 L0,220Z"/><path class="line" d="M0,200 C90,195 100,170 170,165 S260,130 330,140 S420,90 500,100 S610,48 700,42"/></svg><div class="chart-axis"><span>Published</span><span>3h</span><span>6h</span><span>12h</span><span>24h</span></div></div></div><aside class="learning-card"><span class="eyebrow">✦ AI LEARNING</span><h2>Your practical hook worked.</h2><p>Viewers stayed when the video showed a clear benefit immediately. The slower final scene lost some attention.</p><div class="insight"><b>Next recommendation</b><span>Keep the first two scenes. Make the closing CTA faster and more specific.</span></div><button class="primary wide" data-go="today">Start the next cycle →</button></aside></div>
+      </section>
+
+      <section class="screen simple-screen" id="screen-projects"><div class="screen-head"><div><span class="eyebrow">PROJECTS</span><h1>Your content workspace.</h1><p>Continue the active campaign or start with a personalized opportunity.</p></div><button class="primary" data-go="today">+ New project</button></div><div class="project-gallery" id="projectGallery"><article><div class="project-thumb"><span>ACTIVE</span><b id="projectCardTitle">Current growth cycle</b></div><div><b>Current Viralizer project</b><small>Storyboard, images, video, approval and publishing state stay together.</small><button class="secondary" data-go="create">Open project →</button></div></article></div></section>
+
+      <section class="screen simple-screen" id="screen-brand"><span class="eyebrow">BRAND INTELLIGENCE</span><h1>What Viralizer knows about you.</h1><p>Confirmed information guides every topic, creative decision, and recommendation.</p><div class="brand-grid" id="brandGrid"></div><button class="primary" id="editBrand">Edit brand profile</button></section>
+      <section class="screen simple-screen" id="screen-connections"><span class="eyebrow">CONNECTIONS</span><h1>Your publishing and measurement accounts.</h1><p>Connect once. Viralizer always asks for approval before publication.</p><div class="connection-list" id="connectionList"><article><div><b>Loading connections…</b></div></article></div></section>
+    </main>
+
+    <aside class="assistant-drawer" id="assistantDrawer" aria-label="Viralizer assistant">
+      <header><div class="assistant-orb">✦</div><div><b>Viralizer</b><small id="assistantContext">Topic advisor</small></div><button id="closeAssistant">×</button></header>
+      <div class="context-chip" id="contextChip"><span>⌂</span><div><small>CONTEXT</small><b>Today’s opportunities</b></div></div>
+      <div class="assistant-messages" id="assistantMessages"><div class="ai-message"><span>✦</span><p>I’m here with the context of this screen. Ask me to explain, compare, edit, or recommend the next action.</p></div></div>
+      <div class="quick-prompts" id="quickPrompts"></div>
+      <form id="assistantForm"><textarea rows="2" placeholder="Ask about what you’re viewing…"></textarea><button>↑</button><small>Real AI · Tool actions are audited and approval protected</small></form>
+    </aside>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="onboarding-modal" id="workspaceOnboarding" hidden><div class="onboarding-card"><span class="eyebrow">WELCOME TO VIRALIZER</span><h1>Teach your AI what matters.</h1><p>This profile personalizes every topic and creative recommendation.</p><div class="choice-row"><button class="selected" data-customer-type="business">Individual business</button><button data-customer-type="creator">Creator</button></div><label>Website or public profile <input id="onboardWebsite" placeholder="https://yourbrand.com"></label><button class="secondary" id="analyzeOnboardBrand">Analyze public brand</button><label>What do you offer? <input id="onboardOffer" placeholder="Products, services, or content focus"></label><label>Who do you want to reach? <input id="onboardAudience" placeholder="Your ideal audience"></label><div class="two-fields"><label>Brand voice <input id="onboardVoice" placeholder="Helpful, confident, energetic"></label><label>Growth goal <select id="onboardGoal"><option>Grow audience</option><option>Build authority</option><option>Generate leads</option><option>Increase sales</option></select></label></div><label class="approval-check"><input type="checkbox" id="confirmOnboarding"><span><b>I confirm this profile</b><small>You can update it later.</small></span></label><button class="primary wide" id="finishWorkspaceOnboarding" disabled>Find my opportunities →</button><p class="form-status" id="onboardingStatus"></p></div></div>
+  <div class="onboarding-modal" id="costConfirmation" hidden><div class="onboarding-card small"><span class="eyebrow">IMAGE COST CONFIRMATION</span><h2>Generate three real keyframes?</h2><p>This runs three OpenAI image generations. You will review and edit the images in Create before approving any PixVerse animation.</p><div class="modal-actions"><button class="secondary" id="cancelProduction">Not now</button><button class="primary" id="confirmProduction">Generate images</button></div></div></div>
+</body>
+</html>

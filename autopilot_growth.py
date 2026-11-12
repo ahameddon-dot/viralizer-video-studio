@@ -165,6 +165,21 @@ def growth_dashboard(root: Path, customer_id: str) -> dict[str, Any]:
         recommendations = [dict(row) for row in db.execute("SELECT * FROM autopilot_recommendations WHERE customer_id=? ORDER BY created_at DESC LIMIT 50", (customer_id,)).fetchall()]
         metrics = [dict(row) for row in db.execute("SELECT * FROM autopilot_metric_snapshots WHERE customer_id=? ORDER BY captured_at DESC LIMIT 100", (customer_id,)).fetchall()]
         attribution = [dict(row) for row in db.execute("SELECT * FROM autopilot_attribution_events WHERE customer_id=? ORDER BY occurred_at DESC LIMIT 200", (customer_id,)).fetchall()]
+    for publication in publications:
+        result = json.loads(publication.get("result_json") or "{}")
+        publication["provenance"] = {
+            "data_source": result.get("data_source", "provider" if publication.get("provider") != "fake" else "synthetic"),
+            "provider_mode": result.get("provider_mode", "live" if publication.get("provider") != "fake" else "fake"),
+            "is_simulated": bool(result.get("is_simulated", publication.get("provider") == "fake")),
+        }
+    for snapshot in metrics:
+        raw = json.loads(snapshot.get("raw_json") or "{}")
+        snapshot["provenance"] = {
+            "data_source": raw.get("data_source", "provider" if raw.get("provider") not in {"fake", None} else "unknown"),
+            "provider_mode": raw.get("provider_mode", "fake" if raw.get("provider") == "fake" else "unknown"),
+            "is_simulated": bool(raw.get("is_simulated") or raw.get("demo") or raw.get("provider") == "fake"),
+            "label": raw.get("label", ""),
+        }
     ga4 = {"sessions": 0.0, "conversions": 0.0, "reported_revenue": 0.0}
     shopify = {"orders": 0.0, "order_revenue": 0.0}
     unattributed_shopify = 0.0
@@ -174,7 +189,9 @@ def growth_dashboard(root: Path, customer_id: str) -> dict[str, Any]:
         else:
             shopify["orders"] += float(event["conversions"]); shopify["order_revenue"] += float(event["revenue"])
             if event["attribution_status"] != "attributed": unattributed_shopify += float(event["revenue"])
+    simulated = any(item["provenance"]["is_simulated"] for item in publications + metrics)
     return {"connections": list_connections(root, customer_id), "publications": publications, "recommendations": recommendations, "metrics": metrics,
+            "provenance": {"contains_simulated_data": simulated, "label": "SIMULATED DATA — NOT SOCIAL PERFORMANCE" if simulated else "Provider-reported data"},
             "commerce": {"ga4": ga4, "shopify": shopify, "unattributed_shopify_revenue": unattributed_shopify,
                          "disclosure": "GA4 reported revenue and Shopify order revenue are shown separately and are never added together."}}
 

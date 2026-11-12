@@ -50,6 +50,7 @@ class AutopilotUiTests(unittest.TestCase):
         self.assertIn("GA4", self.page)
         self.assertIn("Shopify", self.page)
         self.assertIn("Paid promotion is advisory only", self.page)
+        self.assertIn("SIMULATED DATA — NOT SOCIAL PERFORMANCE", self.page)
 
     def test_notifications_and_recommendation_feedback_are_customer_actions(self):
         self.assertIn('id="autopilotNotifications"', self.page)

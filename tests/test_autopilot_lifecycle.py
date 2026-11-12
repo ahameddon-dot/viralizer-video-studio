@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -115,6 +116,31 @@ class AutopilotLifecycleTests(unittest.TestCase):
         self.assertEqual(published["id"], replay["id"])
         self.assertEqual(1, len(adapter.calls))
         self.assertGreater(published["next_metrics_at"], published["published_at"])
+        provenance = json.loads(published["result_json"])
+        self.assertTrue(provenance["is_simulated"])
+        self.assertEqual("synthetic", provenance["data_source"])
+
+    def test_provider_result_secrets_are_not_persisted(self):
+        class UnsafeAdapter:
+            async def publish(self, publication, idempotency_key):
+                return {
+                    "provider": "post_for_me", "status": "published", "provider_post_id": "post-1",
+                    "native_url": "https://social.test/post/1", "access_token": "secret",
+                    "refresh_token": "secret", "social_accounts": [{"access_token": "nested-secret"}],
+                }
+
+        asset = self.asset()
+        approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "instagram-1", "caption": "Caption",
+        })
+        published = asyncio.run(submit_publication(self.root, "customer-1", approved["publication"]["id"], UnsafeAdapter()))
+        stored = json.loads(published["result_json"])
+        self.assertEqual("post-1", stored["provider_post_id"])
+        self.assertEqual("https://social.test/post/1", stored["native_url"])
+        self.assertNotIn("access_token", stored)
+        self.assertNotIn("refresh_token", stored)
+        self.assertNotIn("social_accounts", stored)
 
     def test_provider_account_failure_is_not_reported_as_published(self):
         asset = self.asset()

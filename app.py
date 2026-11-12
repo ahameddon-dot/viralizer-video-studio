@@ -26,6 +26,10 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
+# Provider feature flags are imported below, so load server-owned configuration first.
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env.local", override=False)
+
 from pixverse_client import PixVerseClient, PixVerseError, build_narration_script, build_video_prompt
 from pixverse_growth_client import PixVerseGrowthClient, PixVerseGrowthError
 from openai_image_client import OpenAIImageError, analyze_reference_image, generate_instagram_album, generate_instagram_image, generate_reference_image, prepare_image_prompt
@@ -99,6 +103,13 @@ from autopilot_publishing import FakePublishingAdapter, submit_publication
 from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
 from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
+from hybrid_contracts import SceneRevisionCreate
+from hybrid_project_state import RevisionConflictError, ensure_autopilot_project, get_project_context, list_project_events, revise_storyboard_scene
+from conversation import MODEL_ORCHESTRATION_ENABLED
+from conversation.contracts import ConversationCreate, ConversationRespond, MemoryFactConfirmation, MemoryFactCreate, MessageCreate, ToolExecutionPropose
+from conversation.orchestrator import respond as orchestrate_conversation
+from conversation.registry import public_registry
+from conversation.store import append_message, confirm_memory_fact, confirmed_memory, create_conversation, get_conversation, list_conversations, propose_memory_fact, propose_tool_execution
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -565,6 +576,7 @@ async def require_password(request: Request, call_next):
     # This route authenticates with a scoped developer API key in the endpoint.
     # Do not require an interactive browser session as well.
     is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
+    is_provider_relay = request.url.path == "/api/autopilot/provider-relay/publications"
     # Keep the standalone stakeholder preview independent from the legacy
     # Video Studio login while developing on this machine. Host checking makes
     # this exception local-only; deployed environments retain normal auth.
@@ -623,7 +635,7 @@ async def require_password(request: Request, call_next):
             else:
                 login_path = "/creatorthon/login?next=" + quote(request.url.path + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&%")
             return RedirectResponse(login_path, status_code=303)
-    if request.url.path not in public_paths and not is_public_demo and not is_developer_topics_api and not is_local_autopilot_preview and request.url.path not in public_login_assets and not is_authenticated(request):
+    if request.url.path not in public_paths and not is_public_demo and not is_developer_topics_api and not is_provider_relay and not is_local_autopilot_preview and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
@@ -844,6 +856,18 @@ async def admin_autopilot_operations_page(request: Request):
 async def autopilot_review_page(request: Request):
     """Standalone stakeholder review experience; intentionally separate from legacy and V3 UI."""
     return FileResponse(ROOT / "static" / "autopilot-review.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/autopilot-chat")
+async def autopilot_chat_page(request: Request):
+    """Conversational workspace shell backed by the existing Viralizer services."""
+    return FileResponse(ROOT / "static" / "autopilot-chat.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/autopilot-workspace")
+async def autopilot_workspace_prototype(request: Request):
+    """Clickable unified-workspace UX prototype; it performs no provider actions."""
+    return FileResponse(ROOT / "static" / "autopilot-workspace.html", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/admin/autopilot/tick")
@@ -2132,6 +2156,182 @@ async def autopilot_brand_profile(request: Request):
     return {"brand_profile": get_brand_profile(ROOT, str(user.get("sub", "")))}
 
 
+@app.get("/api/hybrid/projects/autopilot-concept/{concept_id}")
+async def resolve_hybrid_autopilot_project(request: Request, concept_id: str):
+    """Resolve or lazily create shared state for an existing Autopilot concept."""
+    user = autopilot_user(request)
+    try:
+        project = ensure_autopilot_project(ROOT, str(user.get("sub", "")), concept_id, str(user.get("email") or user.get("sub") or ""))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"project": project, "etag": f'project-revision-{project["revision"]}'}
+
+
+@app.get("/api/hybrid/projects/{project_id}")
+async def hybrid_project_context(request: Request, project_id: str):
+    user = autopilot_user(request)
+    try:
+        project = get_project_context(ROOT, str(user.get("sub", "")), project_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return JSONResponse({"project": project}, headers={"ETag": f'"project-revision-{project["revision"]}"'})
+
+
+@app.post("/api/hybrid/projects/{project_id}/storyboard/scenes/{scene_index}/revisions")
+async def revise_hybrid_storyboard_scene(request: Request, project_id: str, scene_index: int, payload: SceneRevisionCreate):
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    actor_id = str(user.get("email") or user.get("sub") or "")
+    try:
+        result = revise_storyboard_scene(
+            ROOT, customer_id, project_id, scene_index, payload.expected_revision, payload.patch,
+            "user_ui", actor_id, payload.change_summary, request.headers.get("x-correlation-id", ""),
+        )
+    except RevisionConflictError as exc:
+        raise HTTPException(409, {"code": "revision_conflict", "expected_revision": exc.expected, "current_revision": exc.current}) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    revision = result["project"]["revision"]
+    return JSONResponse(result, headers={"ETag": f'"project-revision-{revision}"'})
+
+
+@app.get("/api/hybrid/projects/{project_id}/events")
+async def hybrid_project_events(request: Request, project_id: str, after: int = 0, limit: int = 100):
+    user = autopilot_user(request)
+    try:
+        events = list_project_events(ROOT, str(user.get("sub", "")), project_id, after, limit)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"events": events, "next_sequence": events[-1]["sequence"] if events else after}
+
+
+@app.get("/api/hybrid/projects/{project_id}/events/stream")
+async def stream_hybrid_project_events(request: Request, project_id: str, after: int = 0):
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    try:
+        get_project_context(ROOT, customer_id, project_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    async def stream():
+        cursor, started = max(0, after), time.monotonic()
+        while time.monotonic() - started < 25:
+            if await request.is_disconnected():
+                return
+            events = list_project_events(ROOT, customer_id, project_id, cursor, 100)
+            for event in events:
+                cursor = int(event["sequence"])
+                yield f"id: {cursor}\nevent: {event['event_type']}\ndata: {json.dumps(event, separators=(',', ':'), ensure_ascii=False)}\n\n"
+            if not events:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/conversations")
+async def create_conversation_thread(request: Request, payload: ConversationCreate):
+    user = autopilot_user(request)
+    try:
+        conversation = create_conversation(
+            ROOT, str(user.get("sub", "")), payload.title, payload.active_project_context_id,
+            str(user.get("email") or user.get("sub") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"conversation": conversation, "model_orchestration_enabled": MODEL_ORCHESTRATION_ENABLED}
+
+
+@app.get("/api/conversations")
+async def conversation_threads(request: Request, limit: int = 50):
+    user = autopilot_user(request)
+    return {"conversations": list_conversations(ROOT, str(user.get("sub", "")), limit), "model_orchestration_enabled": MODEL_ORCHESTRATION_ENABLED}
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def conversation_thread(request: Request, conversation_id: str):
+    user = autopilot_user(request)
+    try:
+        conversation = get_conversation(ROOT, str(user.get("sub", "")), conversation_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"conversation": conversation, "model_orchestration_enabled": MODEL_ORCHESTRATION_ENABLED}
+
+
+@app.post("/api/conversations/{conversation_id}/messages")
+async def store_conversation_message(request: Request, conversation_id: str, payload: MessageCreate):
+    """Persist a human message only; no model response or tool execution occurs."""
+    user = autopilot_user(request)
+    try:
+        message = append_message(ROOT, str(user.get("sub", "")), conversation_id, "user", payload.content, payload.correlation_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"message": message, "assistant_response": None, "model_orchestration_enabled": MODEL_ORCHESTRATION_ENABLED}
+
+
+@app.post("/api/conversations/{conversation_id}/respond")
+async def respond_to_conversation(request: Request, conversation_id: str, payload: ConversationRespond):
+    """Generate one audited assistant turn and run only policy-authorized tools."""
+    user = autopilot_user(request)
+    try:
+        return await orchestrate_conversation(
+            ROOT, str(user.get("sub", "")), conversation_id, str(user.get("email") or user.get("sub") or ""),
+            payload.message_id, payload.cost_confirmed,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/conversations/{conversation_id}/memory")
+async def propose_conversation_memory(request: Request, conversation_id: str, payload: MemoryFactCreate):
+    user = autopilot_user(request)
+    try:
+        fact = propose_memory_fact(ROOT, str(user.get("sub", "")), conversation_id, payload.fact_key, payload.value, payload.source_message_id, payload.confidence)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"memory": fact, "requires_human_confirmation": True}
+
+
+@app.post("/api/conversations/memory/{fact_id}/confirm")
+async def confirm_conversation_memory(request: Request, fact_id: str, payload: MemoryFactConfirmation):
+    user = autopilot_user(request)
+    try:
+        fact = confirm_memory_fact(ROOT, str(user.get("sub", "")), fact_id, str(user.get("email") or user.get("sub") or ""), payload.accept)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"memory": fact}
+
+
+@app.get("/api/conversations/memory/confirmed")
+async def confirmed_conversation_memory(request: Request):
+    user = autopilot_user(request)
+    return {"memory": confirmed_memory(ROOT, str(user.get("sub", "")))}
+
+
+@app.get("/api/conversation-tools")
+async def conversation_tool_registry(request: Request):
+    autopilot_user(request)
+    return {"tools": public_registry(), "model_orchestration_enabled": MODEL_ORCHESTRATION_ENABLED, "execution_endpoint_enabled": MODEL_ORCHESTRATION_ENABLED}
+
+
+@app.post("/api/conversations/{conversation_id}/tool-executions/propose")
+async def propose_conversation_tool_execution(request: Request, conversation_id: str, payload: ToolExecutionPropose):
+    """Record and authorize a proposal only. This endpoint never executes a tool."""
+    user = autopilot_user(request)
+    try:
+        execution = propose_tool_execution(
+            ROOT, str(user.get("sub", "")), conversation_id, payload.tool_name, payload.arguments,
+            payload.idempotency_key, payload.correlation_id, payload.message_id, payload.workflow_run_id,
+            payload.cost_confirmed,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"execution": execution, "executed": False, "model_orchestration_enabled": False}
+
+
 @app.post("/api/autopilot/brand-profile/analyze")
 async def analyze_autopilot_brand_profile(request: Request, payload: BrandSourceAnalyzeRequest):
     """Analyze only customer-supplied public URLs and return an unconfirmed draft."""
@@ -2264,11 +2464,23 @@ async def bootstrap_autopilot_demo(request: Request):
 async def refresh_autopilot_topics(request: Request):
     """Pull the existing Viralizer MCP feed and personalize it against the confirmed brand profile."""
     user = autopilot_user(request)
+    source_label = "Viralizer MCP Hot Topic Engine + Viral Rank"
+    provider_notice = ""
     try:
         raw_topics = await get_hot_topics_from_mcp()
         topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
         if not topics:
             raise MCPOutlineError("Viralizer MCP returned no usable English-language topics.")
+    except MCPOutlineError as exc:
+        # Keep onboarding usable with real, last-known public trend evidence while
+        # Viralizer account/billing configuration is repaired. Never invent rank.
+        raw_topics = await discover_global_sources()
+        topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
+        source_label = "Worldwide public trend sources · Viralizer MCP temporarily unavailable"
+        provider_notice = str(exc)[:300]
+        if not topics:
+            raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
+    try:
         customer_id = str(user.get("sub", ""))
         preliminary = rank_opportunities(ROOT, customer_id, {"topics": topics, "limit": 5})
 
@@ -2293,12 +2505,10 @@ async def refresh_autopilot_topics(request: Request):
         enriched = await asyncio.gather(*(enrich(candidate) for candidate in preliminary))
         opportunities = rank_opportunities(ROOT, customer_id, {"topics": enriched, "limit": 5})
         archive_other_opportunities(ROOT, customer_id, [item["id"] for item in opportunities])
-    except MCPOutlineError as exc:
-        raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     verified = sum(1 for item in enriched if item.get("viralizer_detail_status") == "verified")
-    return {"opportunities": opportunities, "count": len(opportunities), "source": "Viralizer MCP Hot Topic Engine + Viral Rank", "received": len(raw_topics), "eligible": len(topics), "viral_rank_verified": verified}
+    return {"opportunities": opportunities, "count": len(opportunities), "source": source_label, "received": len(raw_topics), "eligible": len(topics), "viral_rank_verified": verified, "provider_notice": provider_notice}
 
 
 @app.post("/api/autopilot/opportunities/rank")
@@ -2532,7 +2742,9 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     with output.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
-    media_url = str(request.base_url).rstrip("/") + f"/api/finished-video/{filename}"
+    # Store the stable application-relative route. This is valid locally and in
+    # production, and avoids persisting an insecure http://localhost origin.
+    media_url = f"/api/finished-video/{filename}"
     try:
         asset = create_asset_version(ROOT, customer_id, {
             **payload.model_dump(), "media_url": media_url, "media_sha256": digest.hexdigest(),
@@ -2674,14 +2886,16 @@ async def complete_autopilot_demo_publication(request: Request, publication_id: 
             "captured_at": int(time.time()) + 10_800,
             "metrics": {"views": 1240, "likes": 96, "comments": 18, "shares": 22},
             "unavailable": ["watch_time", "revenue"],
-            "raw": {"demo": True, "label": "Simulated three-hour performance snapshot"},
+            "raw": {"demo": True, "data_source": "synthetic", "provider_mode": "fake", "is_simulated": True,
+                    "label": "Simulated three-hour performance snapshot — not social performance"},
         })
         recommendation = create_recommendation(ROOT, customer_id, publication_id)
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
-    return {"publication": publication, "snapshot": snapshot, "recommendation": recommendation, "demo": True}
+    return {"publication": publication, "snapshot": snapshot, "recommendation": recommendation, "demo": True,
+            "provenance": {"data_source": "synthetic", "provider_mode": "fake", "is_simulated": True}}
 
 
 @app.post("/api/autopilot/metrics/snapshots")
@@ -2700,12 +2914,108 @@ async def autopilot_connections(request: Request):
     return {"connections": list_connections(ROOT, str(user.get("sub", "")))}
 
 
+def _post_for_me_proxy_url() -> str:
+    """Return the optional trusted Viralizer provider relay URL.
+
+    The relay lets local stakeholder builds use the already-configured staging
+    provider without putting its API key in the browser or copying it into a
+    developer machine.
+    """
+    value = os.getenv("AUTOPILOT_PROVIDER_PROXY_URL", "").strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ProviderConfigurationError("AUTOPILOT_PROVIDER_PROXY_URL must be a trusted HTTPS origin.")
+    return value
+
+
+def _post_for_me_relay_secret() -> str:
+    return os.getenv("AUTOPILOT_PROVIDER_RELAY_SECRET", "").strip()
+
+
+async def _post_for_me_proxy_request(method: str, path: str, *, params: dict[str, Any] | None = None,
+                                      payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    base = _post_for_me_proxy_url()
+    if not base:
+        raise ProviderConfigurationError("The Post for Me provider relay is not configured.")
+    headers = {"X-Viralizer-Relay-Secret": _post_for_me_relay_secret()} if _post_for_me_relay_secret() else {}
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+        response = await client.request(method, f"{base}{path}", params=params, json=payload, headers=headers)
+    if response.status_code >= 400:
+        try:
+            detail = str(response.json().get("detail") or response.json().get("message") or "Provider relay rejected the request.")
+        except (ValueError, AttributeError):
+            detail = "Provider relay rejected the request."
+        raise ProviderResponseError("post_for_me_relay", response.status_code, detail, response.status_code >= 500)
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise ProviderResponseError("post_for_me_relay", response.status_code, "Provider relay returned invalid JSON.") from exc
+    if not isinstance(result, dict):
+        raise ProviderResponseError("post_for_me_relay", response.status_code, "Provider relay returned an invalid response.")
+    return result
+
+
+class _PostForMeRelayAdapter:
+    """Publish an approved local asset through the authenticated staging relay."""
+
+    async def publish(self, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
+        secret = _post_for_me_relay_secret()
+        if not secret:
+            raise ProviderConfigurationError("The provider relay secret is not configured.")
+        media_url = str(publication.get("media_url") or "")
+        match = re.fullmatch(r"/api/finished-video/(viralizer-autopilot-[a-f0-9]{32}\.mp4)", media_url)
+        if not match:
+            raise ProviderConfigurationError("The approved local video is not eligible for secure relay publishing.")
+        path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos" / match.group(1)
+        if not path.is_file():
+            raise ProviderConfigurationError("The approved local video file is unavailable.")
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        expected = str(publication.get("asset_sha256") or "")
+        if expected and not hmac.compare_digest(digest.hexdigest(), expected):
+            raise ProviderConfigurationError("The approved video changed after approval.")
+        fields = {
+            "destination_id": str(publication.get("destination_id") or ""),
+            "caption": str(publication.get("caption") or ""),
+            "title": str(publication.get("title") or ""),
+            "hashtags_json": json.dumps(publication.get("hashtags") or [], separators=(",", ":")),
+            "media_sha256": digest.hexdigest(),
+            "idempotency_key": idempotency_key,
+        }
+        async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client, path.open("rb") as media:
+            response = await client.post(
+                f"{_post_for_me_proxy_url()}/api/autopilot/provider-relay/publications",
+                data=fields,
+                files={"media": (path.name, media, "video/mp4")},
+                headers={"X-Viralizer-Relay-Secret": secret, "Idempotency-Key": idempotency_key},
+            )
+        if response.status_code >= 400:
+            try:
+                detail = str(response.json().get("detail") or "Provider relay rejected the publication.")
+            except (ValueError, AttributeError):
+                detail = "Provider relay rejected the publication."
+            raise ProviderResponseError("post_for_me_relay", response.status_code, detail, response.status_code >= 500)
+        return response.json()
+
+
 @app.post("/api/autopilot/post-for-me/connection-url")
 async def autopilot_post_for_me_connection_url(request: Request, payload: PostForMeConnectionRequest):
     user = autopilot_user(request)
     parsed = urlparse(payload.redirect_url)
     if parsed.scheme not in {"https", "http"} or (parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost"}):
         raise HTTPException(422, "Redirect URL must use HTTPS, except for localhost development.")
+    proxy_url = _post_for_me_proxy_url()
+    if proxy_url:
+        try:
+            return await _post_for_me_proxy_request("POST", "/api/autopilot/post-for-me/connection-url", payload={"platform": payload.platform, "redirect_url": payload.redirect_url})
+        except ProviderConfigurationError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ProviderResponseError as exc:
+            raise HTTPException(502 if exc.retryable else 422, str(exc)) from exc
     if not provider_readiness()["live_calls_enabled"]:
         raise HTTPException(409, "Post for Me is prepared but live provider calls are disabled.")
     try:
@@ -2722,6 +3032,18 @@ async def autopilot_post_for_me_accounts(request: Request, platform: str = ""):
     user = autopilot_user(request)
     if platform and platform not in {"instagram", "tiktok", "youtube", "linkedin"}:
         raise HTTPException(422, "Unsupported social platform.")
+    proxy_url = _post_for_me_proxy_url()
+    if proxy_url:
+        try:
+            remote = await _post_for_me_proxy_request("GET", "/api/autopilot/post-for-me/accounts", params={"platform": platform} if platform else None)
+        except ProviderConfigurationError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ProviderResponseError as exc:
+            raise HTTPException(502 if exc.retryable else 422, str(exc)) from exc
+        accounts = remote.get("accounts") if isinstance(remote.get("accounts"), list) else []
+        customer_id = str(user.get("sub", ""))
+        connections = [save_connection(ROOT, customer_id, {"provider": "post_for_me", "external_account_id": str(account.get("id") or ""), "display_name": str(account.get("username") or account.get("platform") or "Connected account"), "status": "connected", "capabilities": ["posts", "feeds"], "metadata": {"platform": str(account.get("platform") or "")}}) for account in accounts if isinstance(account, dict) and account.get("id")]
+        return {"provider": "post_for_me", "accounts": accounts, "connections": connections, "via": "trusted_relay"}
     try:
         result = await PostForMeAdapter().list_accounts(platform)
     except ProviderConfigurationError as exc:
@@ -2741,13 +3063,75 @@ async def autopilot_post_for_me_accounts(request: Request, platform: str = ""):
     return {"provider": "post_for_me", "accounts": accounts, "connections": connections}
 
 
+@app.post("/api/autopilot/provider-relay/publications")
+async def autopilot_provider_relay_publication(
+    request: Request,
+    media: UploadFile = File(...),
+    destination_id: str = Form(...),
+    caption: str = Form(""),
+    title: str = Form(""),
+    hashtags_json: str = Form("[]"),
+    media_sha256: str = Form(...),
+    idempotency_key: str = Form(...),
+):
+    """Receive one approval-bound MP4 and submit it with server-owned credentials."""
+    expected_secret = _post_for_me_relay_secret()
+    received_secret = request.headers.get("X-Viralizer-Relay-Secret", "")
+    if not expected_secret or not received_secret or not hmac.compare_digest(received_secret.encode(), expected_secret.encode()):
+        raise HTTPException(401, "Invalid provider relay authorization.")
+    if not re.fullmatch(r"[a-f0-9]{64}", media_sha256) or not re.fullmatch(r"publication:[a-f0-9]{32}", idempotency_key):
+        raise HTTPException(422, "Invalid immutable publication fingerprint.")
+    if media.content_type not in {"video/mp4", "application/octet-stream"}:
+        raise HTTPException(415, "The provider relay accepts MP4 video only.")
+    try:
+        listed = await PostForMeAdapter().list_accounts()
+        permitted = {item["id"] for item in customer_social_accounts(listed, "workspace-owner")}
+    except (ProviderConfigurationError, ProviderResponseError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+    if destination_id not in permitted:
+        raise HTTPException(403, "The selected social account is not connected to this Viralizer workspace.")
+    try:
+        hashtags = json.loads(hashtags_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "Hashtags are not valid JSON.") from exc
+    if not isinstance(hashtags, list) or len(hashtags) > 100 or any(not isinstance(item, str) for item in hashtags):
+        raise HTTPException(422, "Hashtags are invalid.")
+    with tempfile.TemporaryDirectory(prefix="viralizer-relay-") as temporary:
+        path = Path(temporary) / "approved.mp4"
+        digest = hashlib.sha256(); size = 0
+        with path.open("wb") as target:
+            while chunk := await media.read(1024 * 1024):
+                size += len(chunk)
+                if size > 100 * 1024 * 1024:
+                    raise HTTPException(413, "The approved video exceeds the 100 MB relay limit.")
+                digest.update(chunk); target.write(chunk)
+        if not size or not hmac.compare_digest(digest.hexdigest(), media_sha256):
+            raise HTTPException(409, "The uploaded video does not match the approved fingerprint.")
+        object_key = f"provider_relay/{media_sha256}.mp4"
+        try:
+            await upload_object_file(path, object_key, "video/mp4")
+            public_media_url = object_share_url(object_key, expires_in=7 * 24 * 60 * 60, filename="viralizer-approved.mp4")
+        except ObjectStoreError as exc:
+            raise HTTPException(503, "Permanent media storage is unavailable for publishing.") from exc
+        exact_caption = caption.strip()
+        tag_line = " ".join(str(item).strip() for item in hashtags if str(item).strip())
+        if tag_line:
+            exact_caption = f"{exact_caption}\n\n{tag_line}".strip()
+        result = await PostForMeAdapter().publish({"destination_id": destination_id, "media_url": public_media_url, "caption": exact_caption, "title": title}, idempotency_key)
+    return sanitize_publication_result(result)
+
+
 @app.post("/api/autopilot/publications/{publication_id}/submit")
 async def submit_autopilot_publication(request: Request, publication_id: str):
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
-    if not provider_readiness()["live_calls_enabled"]:
+    if _post_for_me_proxy_url() and _post_for_me_relay_secret():
+        adapter = _PostForMeRelayAdapter()
+    elif not provider_readiness()["live_calls_enabled"]:
         raise HTTPException(409, "Live provider calls are disabled. The approved publication remains safely queued.")
+    else:
+        adapter = PostForMeAdapter()
     try:
-        publication = await submit_publication(ROOT, customer_id, publication_id, PostForMeAdapter())
+        publication = await submit_publication(ROOT, customer_id, publication_id, adapter)
     except ProviderConfigurationError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ProviderResponseError as exc:
@@ -2818,7 +3202,16 @@ async def read_autopilot_notification(request: Request, notification_id: str, di
 @app.get("/api/autopilot/provider-readiness")
 async def autopilot_provider_readiness(request: Request):
     autopilot_user(request)
-    return provider_readiness()
+    readiness = provider_readiness()
+    if _post_for_me_proxy_url():
+        try:
+            remote = await _post_for_me_proxy_request("GET", "/api/autopilot/provider-readiness")
+            readiness["post_for_me"] = remote.get("post_for_me", readiness["post_for_me"])
+            readiness["live_calls_enabled"] = bool(remote.get("live_calls_enabled"))
+            readiness["provider_relay"] = {"configured": True, "source": "viralizer_staging"}
+        except (ProviderConfigurationError, ProviderResponseError):
+            readiness["provider_relay"] = {"configured": True, "source": "viralizer_staging", "reachable": False}
+    return readiness
 
 
 @app.post("/api/autopilot/webhooks/post-for-me")

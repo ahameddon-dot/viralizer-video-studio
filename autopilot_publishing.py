@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from autopilot_contracts import PublicationPayload
+from autopilot_providers import sanitize_publication_result
 from autopilot_store import authorize_publication_step
 from creatorthon_store import _connect
 
@@ -25,7 +26,10 @@ class FakePublishingAdapter:
     async def publish(self, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
         call = {"publication": publication, "idempotency_key": idempotency_key}
         self.calls.append(call)
-        return {"status": "published", "provider": "fake", "provider_post_id": idempotency_key}
+        return {
+            "status": "published", "provider": "fake", "provider_post_id": idempotency_key,
+            "data_source": "synthetic", "provider_mode": "fake", "is_simulated": True,
+        }
 
 
 def queue_approved_publication(root: Path, customer_id: str, run_id: str, approval_id: str, payload: PublicationPayload | dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -69,7 +73,11 @@ async def submit_publication(root: Path, customer_id: str, publication_id: str, 
     try:
         provider_payload = json.loads(publication["payload_json"])
         provider_payload["media_url"] = dict(asset)["media_url"]
-        result = await adapter.publish(provider_payload, idempotency_key)
+        result = sanitize_publication_result(await adapter.publish(provider_payload, idempotency_key))
+        if not result.get("provider"):
+            raise ValueError("Publishing provider returned no safe provider identifier.")
+        if not result.get("status"):
+            raise ValueError("Publishing provider returned no safe status.")
     except Exception as exc:
         with _connect(root) as db:
             db.execute(

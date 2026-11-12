@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,6 +52,9 @@ class AutopilotOperationsTests(unittest.TestCase):
         with _connect(self.root) as db:
             publication = db.execute("SELECT * FROM autopilot_publications WHERE id=?", (approved["publication"]["id"],)).fetchone()
         self.assertEqual("published", dict(publication)["status"])
+        provenance = json.loads(dict(publication)["result_json"])
+        self.assertTrue(provenance["is_simulated"])
+        self.assertEqual("fake", provenance["provider_mode"])
         self.assertEqual(1, len(list_notifications(self.root, "customer-1")))
         self.assertEqual([], list_notifications(self.root, "customer-2"))
 
@@ -67,8 +71,12 @@ class AutopilotOperationsTests(unittest.TestCase):
         self.assertEqual(1, monitored["succeeded"])
         with _connect(self.root) as db:
             snapshots = db.execute("SELECT COUNT(*) AS n FROM autopilot_metric_snapshots").fetchone()
+            snapshot = db.execute("SELECT raw_json FROM autopilot_metric_snapshots LIMIT 1").fetchone()
             recommendations = db.execute("SELECT COUNT(*) AS n FROM autopilot_recommendations").fetchone()
         self.assertEqual(1, dict(snapshots)["n"])
+        provenance = json.loads(dict(snapshot)["raw_json"])
+        self.assertTrue(provenance["is_simulated"])
+        self.assertEqual("synthetic", provenance["data_source"])
         self.assertEqual(1, dict(recommendations)["n"])
 
     def test_dead_letter_is_visible_and_admin_retry_resets_it(self):

@@ -11,6 +11,36 @@ from typing import Any
 import httpx
 
 
+PUBLICATION_RESULT_FIELDS = frozenset({
+    "provider", "provider_post_id", "native_post_id", "native_url", "status",
+    "platform", "created_at", "updated_at", "scheduled_at", "published_at",
+    "data_source", "provider_mode", "is_simulated",
+})
+
+
+def sanitize_publication_result(result: Any) -> dict[str, Any]:
+    """Return the small, non-sensitive subset safe to persist and expose.
+
+    Provider payloads are untrusted. This intentionally uses an allowlist rather
+    than attempting to enumerate every possible token, credential, account, or
+    authorization field that a provider may add in the future.
+    """
+    if not isinstance(result, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key in PUBLICATION_RESULT_FIELDS:
+        value = result.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            safe[key] = value
+    provider = str(safe.get("provider") or "")
+    simulated_value = safe.get("is_simulated")
+    simulated = provider == "fake" if simulated_value is None else bool(simulated_value)
+    safe["is_simulated"] = simulated
+    safe["data_source"] = str(safe.get("data_source") or ("synthetic" if simulated else "provider"))
+    safe["provider_mode"] = str(safe.get("provider_mode") or ("fake" if simulated else "live"))
+    return safe
+
+
 class ProviderConfigurationError(RuntimeError):
     pass
 
@@ -57,8 +87,15 @@ class PostForMeAdapter:
             payload["scheduled_at"] = publication["scheduled_at"]
         result = await _json_request(self.client, "post_for_me", "POST", f"{self.base_url}/v1/social-posts", json=payload,
                                      headers={"Idempotency-Key": idempotency_key})
-        return {**result, "provider": "post_for_me", "provider_post_id": str(result.get("id") or result.get("post_id") or ""),
-                "status": str(result.get("status") or "processing").lower()}
+        return sanitize_publication_result({
+            **result,
+            "provider": "post_for_me",
+            "provider_post_id": str(result.get("id") or result.get("post_id") or ""),
+            "status": str(result.get("status") or "processing").lower(),
+            "data_source": "provider",
+            "provider_mode": "live",
+            "is_simulated": False,
+        })
 
     async def feed(self, social_account_id: str) -> dict[str, Any]:
         return await _json_request(self.client, "post_for_me", "GET", f"{self.base_url}/v1/social-account-feeds/{social_account_id}", params={"expand": "metrics"})

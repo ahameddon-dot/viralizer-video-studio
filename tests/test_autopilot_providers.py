@@ -7,10 +7,35 @@ import unittest
 
 import httpx
 
-from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ShopifyAdminAdapter, customer_social_accounts, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ShopifyAdminAdapter, customer_social_accounts, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
 
 
 class AutopilotProviderTests(unittest.TestCase):
+    def test_publication_result_sanitizer_uses_allowlist_and_drops_nested_secrets(self):
+        safe = sanitize_publication_result({
+            "provider": "post_for_me", "status": "published", "native_url": "https://social.test/post/1",
+            "access_token": "secret", "refresh_token": "secret", "authorization": "Bearer secret",
+            "social_accounts": [{"id": "account-1", "access_token": "nested-secret"}],
+            "account": {"email": "private@example.com"}, "unexpected": "not persisted",
+            "is_simulated": False, "data_source": "provider", "provider_mode": "live",
+        })
+        self.assertEqual("post_for_me", safe["provider"])
+        self.assertEqual("https://social.test/post/1", safe["native_url"])
+        self.assertFalse(safe["is_simulated"])
+        for key in ("access_token", "refresh_token", "authorization", "social_accounts", "account", "unexpected"):
+            self.assertNotIn(key, safe)
+
+    def test_publication_result_sanitizer_rejects_non_mapping_payload(self):
+        self.assertEqual({}, sanitize_publication_result([{"access_token": "secret"}]))
+
+    def test_publication_result_sanitizer_adds_required_provenance(self):
+        live = sanitize_publication_result({"provider": "post_for_me", "status": "processing"})
+        fake = sanitize_publication_result({"provider": "fake", "status": "published"})
+        self.assertEqual({"is_simulated": False, "data_source": "provider", "provider_mode": "live"},
+                         {key: live[key] for key in ("is_simulated", "data_source", "provider_mode")})
+        self.assertEqual({"is_simulated": True, "data_source": "synthetic", "provider_mode": "fake"},
+                         {key: fake[key] for key in ("is_simulated", "data_source", "provider_mode")})
+
     def test_post_for_me_contract_uses_bearer_idempotency_and_exact_destination(self):
         captured = {}
 
@@ -28,6 +53,8 @@ class AutopilotProviderTests(unittest.TestCase):
         self.assertEqual(["social-1"], captured["body"]["social_accounts"])
         self.assertEqual("post-1", result["provider_post_id"])
         self.assertEqual("post_for_me", result["provider"])
+        self.assertEqual("provider", result["data_source"])
+        self.assertFalse(result["is_simulated"])
 
     def test_post_for_me_quickstart_connection_contract(self):
         captured = {}

@@ -1,5 +1,6 @@
 import json
 import asyncio
+import logging
 import os
 import re
 import time
@@ -550,6 +551,57 @@ async def get_category_intelligence_from_mcp(topic: str) -> dict[str, Any]:
     return outline
 
 
+def _hot_topics_from_payload(payload: Any) -> list[dict[str, Any]]:
+    """Normalize both legacy grouped and newer nested Viralizer hot-topic payloads."""
+    topics_by_id: dict[str, dict[str, Any]] = {}
+
+    def visit(value: Any, group_key: str = "", group_label: str = "") -> None:
+        if isinstance(value, list):
+            for child in value:
+                visit(child, group_key, group_label)
+            return
+        if not isinstance(value, dict):
+            return
+        current_key = str(value.get("key") or value.get("group_key") or group_key or "")
+        current_label = str(value.get("label") or value.get("group_label") or group_label or "Hot topic")
+        topic_id = str(value.get("topic_id") or value.get("topicId") or value.get("id") or "").strip()
+        title = str(value.get("topic") or value.get("title") or value.get("name") or "").strip()
+        looks_like_topic = bool(topic_id and title and not any(key in value for key in ("topics", "items", "records")))
+        if looks_like_topic:
+            topic = topics_by_id.setdefault(topic_id, {
+                "topic_id": topic_id,
+                "topic": title,
+                "image": str(value.get("img") or value.get("image") or value.get("image_url") or ""),
+                "groups": [],
+                "group_keys": [],
+            })
+            for source_key in ("language", "lang", "category", "summary", "description", "viral_rank", "rank", "score"):
+                if value.get(source_key) not in (None, "", [], {}):
+                    topic[source_key] = value[source_key]
+            if current_key and current_key not in topic["group_keys"]:
+                topic["group_keys"].append(current_key)
+                topic["groups"].append(current_label)
+            return
+        for child_key, child in value.items():
+            if child_key in {"key", "label", "group_key", "group_label"}:
+                continue
+            visit(child, current_key, current_label)
+
+    visit(payload)
+    return list(topics_by_id.values())
+
+
+def _payload_shape(value: Any, depth: int = 0) -> Any:
+    """Return field names and container types only; never log provider values."""
+    if depth >= 5:
+        return type(value).__name__
+    if isinstance(value, dict):
+        return {str(key): _payload_shape(child, depth + 1) for key, child in list(value.items())[:30]}
+    if isinstance(value, list):
+        return [len(value), _payload_shape(value[0], depth + 1) if value else "empty"]
+    return type(value).__name__
+
+
 async def get_hot_topics_from_mcp(option_keys: str | None = None) -> list[dict[str, Any]]:
     url, headers = _mcp_config()
     configured_keys = option_keys or os.getenv("MCP_HOT_TOPIC_KEYS", "").strip()
@@ -586,29 +638,10 @@ async def get_hot_topics_from_mcp(option_keys: str | None = None) -> list[dict[s
         raise MCPOutlineError(_connection_error(exc, url)) from exc
 
     payload = _extract_outline(result)
-    topics_by_id: dict[str, dict[str, Any]] = {}
-    for group in payload.get("records", {}).get("items", []):
-        if not isinstance(group, dict):
-            continue
-        group_key = str(group.get("key", ""))
-        group_label = str(group.get("label", "Hot topic"))
-        for item in group.get("topics", []):
-            if isinstance(item, dict) and item.get("topic_id"):
-                topic_id = str(item["topic_id"])
-                topic = topics_by_id.setdefault(
-                    topic_id,
-                    {
-                        "topic_id": topic_id,
-                        "topic": str(item.get("topic", "Untitled topic")),
-                        "image": str(item.get("img", "")),
-                        "groups": [],
-                        "group_keys": [],
-                    },
-                )
-                if group_key not in topic["group_keys"]:
-                    topic["group_keys"].append(group_key)
-                    topic["groups"].append(group_label)
-    return list(topics_by_id.values())
+    topics = _hot_topics_from_payload(payload)
+    if not topics:
+        logging.getLogger(__name__).warning("Viralizer hot-topic payload had no normalized topics; shape=%s", _payload_shape(payload))
+    return topics
 
 
 async def get_hot_topic_details_from_mcp(topic_id: str) -> dict[str, Any]:
