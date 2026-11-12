@@ -6,7 +6,9 @@ import base64
 import hashlib
 import hmac
 import os
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -66,12 +68,14 @@ async def _json_request(client: httpx.AsyncClient, provider: str, method: str, u
 
 
 class PostForMeAdapter:
-    def __init__(self, api_key: str | None = None, base_url: str = "https://api.postforme.dev", client: httpx.AsyncClient | None = None):
+    def __init__(self, api_key: str | None = None, base_url: str = "https://api.postforme.dev", client: httpx.AsyncClient | None = None,
+                 upload_client: httpx.AsyncClient | None = None):
         self.api_key = api_key if api_key is not None else os.getenv("POST_FOR_ME_API_KEY", "")
         if not self.api_key:
             raise ProviderConfigurationError("POST_FOR_ME_API_KEY is not configured.")
         self.base_url = base_url.rstrip("/")
         self.client = client or httpx.AsyncClient(timeout=30, headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+        self.upload_client = upload_client
 
     async def create_connection_url(self, platform: str, redirect_url: str, external_id: str) -> dict[str, Any]:
         return await _json_request(self.client, "post_for_me", "POST", f"{self.base_url}/v1/social-accounts/auth-url",
@@ -79,6 +83,34 @@ class PostForMeAdapter:
 
     async def list_accounts(self, platform: str = "") -> dict[str, Any]:
         return await _json_request(self.client, "post_for_me", "GET", f"{self.base_url}/v1/social-accounts", params={"platform": platform} if platform else None)
+
+    async def upload_media(self, path: Path, content_type: str = "video/mp4") -> str:
+        """Stage a local file in Post for Me's short-lived media storage."""
+        upload = await _json_request(
+            self.client,
+            "post_for_me",
+            "POST",
+            f"{self.base_url}/v1/media/create-upload-url",
+            json={},
+        )
+        upload_url = str(upload.get("upload_url") or "")
+        media_url = str(upload.get("media_url") or "")
+        if urlparse(upload_url).scheme != "https" or urlparse(media_url).scheme != "https":
+            raise ProviderResponseError("post_for_me", 502, "Media upload service returned invalid URLs", retryable=True)
+        upload_client = self.upload_client or httpx.AsyncClient(timeout=180, follow_redirects=False)
+        try:
+            response = await upload_client.put(upload_url, content=path.read_bytes(), headers={"Content-Type": content_type})
+        finally:
+            if self.upload_client is None:
+                await upload_client.aclose()
+        if response.status_code >= 400:
+            raise ProviderResponseError(
+                "post_for_me",
+                response.status_code,
+                "Temporary media upload failed",
+                response.status_code in {408, 429, 500, 502, 503, 504},
+            )
+        return media_url
 
     async def publish(self, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
         payload: dict[str, Any] = {"caption": publication.get("caption", ""), "social_accounts": [publication["destination_id"]],

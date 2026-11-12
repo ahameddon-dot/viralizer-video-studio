@@ -3,7 +3,9 @@ import base64
 import hashlib
 import hmac
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import httpx
 
@@ -68,6 +70,35 @@ class AutopilotProviderTests(unittest.TestCase):
         self.assertEqual("https://connect.test/session", result["url"])
         self.assertEqual("customer-1", captured["body"]["external_id"])
         self.assertEqual("instagram", captured["body"]["platform"])
+
+    def test_post_for_me_temporary_media_upload_contract(self):
+        calls = []
+
+        def api_handler(request):
+            calls.append((request.method, str(request.url)))
+            return httpx.Response(200, json={
+                "upload_url": "https://uploads.provider.test/signed",
+                "media_url": "https://media.provider.test/approved.mp4",
+            })
+
+        def upload_handler(request):
+            calls.append((request.method, str(request.url), request.headers.get("content-type"), request.content))
+            return httpx.Response(200)
+
+        api_client = httpx.AsyncClient(transport=httpx.MockTransport(api_handler))
+        upload_client = httpx.AsyncClient(transport=httpx.MockTransport(upload_handler))
+        adapter = PostForMeAdapter(api_key="test-key", base_url="https://provider.test", client=api_client, upload_client=upload_client)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "approved.mp4"
+            path.write_bytes(b"exact-approved-video")
+            media_url = asyncio.run(adapter.upload_media(path))
+        asyncio.run(api_client.aclose())
+        asyncio.run(upload_client.aclose())
+        self.assertEqual("https://media.provider.test/approved.mp4", media_url)
+        self.assertEqual(("POST", "https://provider.test/v1/media/create-upload-url"), calls[0])
+        self.assertEqual("PUT", calls[1][0])
+        self.assertEqual("video/mp4", calls[1][2])
+        self.assertEqual(b"exact-approved-video", calls[1][3])
 
     def test_post_for_me_accounts_are_strictly_customer_scoped(self):
         response = {"data": [

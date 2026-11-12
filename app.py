@@ -3107,17 +3107,16 @@ async def autopilot_provider_relay_publication(
                 digest.update(chunk); target.write(chunk)
         if not size or not hmac.compare_digest(digest.hexdigest(), media_sha256):
             raise HTTPException(409, "The uploaded video does not match the approved fingerprint.")
-        object_key = f"provider_relay/{media_sha256}.mp4"
         try:
-            await upload_object_file(path, object_key, "video/mp4")
-            public_media_url = object_share_url(object_key, expires_in=7 * 24 * 60 * 60, filename="viralizer-approved.mp4")
-        except ObjectStoreError as exc:
-            raise HTTPException(503, "Permanent media storage is unavailable for publishing.") from exc
+            provider = PostForMeAdapter()
+            public_media_url = await provider.upload_media(path, "video/mp4")
+        except (ProviderConfigurationError, ProviderResponseError) as exc:
+            raise HTTPException(502, str(exc)) from exc
         exact_caption = caption.strip()
         tag_line = " ".join(str(item).strip() for item in hashtags if str(item).strip())
         if tag_line:
             exact_caption = f"{exact_caption}\n\n{tag_line}".strip()
-        result = await PostForMeAdapter().publish({"destination_id": destination_id, "media_url": public_media_url, "caption": exact_caption, "title": title}, idempotency_key)
+        result = await provider.publish({"destination_id": destination_id, "media_url": public_media_url, "caption": exact_caption, "title": title}, idempotency_key)
     return sanitize_publication_result(result)
 
 
