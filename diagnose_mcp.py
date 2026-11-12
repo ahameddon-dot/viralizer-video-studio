@@ -15,9 +15,13 @@ async def main() -> None:
     try:
         url = os.environ["MCP_SERVER_URL"]
         headers = {}
-        if os.getenv("MCP_API_KEY"):
-            headers["X-API-Key"] = os.environ["MCP_API_KEY"]
-        if os.getenv("MCP_AUTH_TOKEN"):
+        api_key = (
+            os.getenv("VIRALIZER_MCP_API_KEY", "").strip()
+            or os.getenv("MCP_API_KEY", "").strip()
+        )
+        if api_key:
+            headers["X-API-Key"] = api_key
+        elif os.getenv("MCP_AUTH_TOKEN"):
             headers["Authorization"] = f"Bearer {os.environ['MCP_AUTH_TOKEN']}"
         async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
             async with streamable_http_client(url, http_client=client) as (read, write, _):
@@ -26,7 +30,11 @@ async def main() -> None:
                     tools = await session.list_tools()
                     for tool in tools.tools:
                         print(f"\n{tool.name}\n{json.dumps(tool.inputSchema, indent=2)}")
-                    if len(sys.argv) > 2 and sys.argv[1] == "--options":
+                    if len(sys.argv) > 1 and sys.argv[1] == "--balance":
+                        result = await session.call_tool("check_credit_balance", {})
+                        print("\ncheck_credit_balance response")
+                        print(result.model_dump_json(indent=2, by_alias=True))
+                    elif len(sys.argv) > 2 and sys.argv[1] == "--options":
                         result = await session.call_tool(
                             "hot_topics_options", {"q": sys.argv[2]}
                         )
