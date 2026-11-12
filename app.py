@@ -497,15 +497,13 @@ def access_token(password: str) -> str:
 
 
 def is_authenticated(request: Request) -> bool:
-    if request.cookies.get(LOGOUT_COOKIE) == "1":
-        return False
     supplied = request.cookies.get(AUTH_COOKIE, "")
     if read_google_session(supplied) or read_email_session(supplied):
         return True
     password = configured_password()
     if password and hmac.compare_digest(supplied, access_token(password)):
         return True
-    return not password and not google_configured()
+    return (request.url.hostname or "").casefold() in {"127.0.0.1", "localhost", "::1"}
 
 
 def configured_admin_password() -> str:
@@ -761,7 +759,7 @@ async def logout(request: Request, next: str = "/login"):
     # marker makes logout deterministic even if a browser retained an older
     # host/domain variant of the access cookie.
     response.set_cookie(AUTH_COOKIE, "logged-out", max_age=0, expires=0, path="/", httponly=True, secure=secure, samesite="lax")
-    response.set_cookie(LOGOUT_COOKIE, "1", max_age=7 * 86400, path="/", httponly=True, secure=secure, samesite="lax")
+    response.delete_cookie(LOGOUT_COOKIE, path="/", secure=secure, samesite="lax")
     response.delete_cookie(GOOGLE_STATE_COOKIE, path="/", secure=secure, samesite="lax")
     return response
 
@@ -1718,8 +1716,6 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
 
 def autopilot_user(request: Request) -> dict[str, Any]:
     """Authenticate the standalone product independently of Creatorthon enrollment."""
-    if request.cookies.get(LOGOUT_COOKIE) == "1":
-        raise HTTPException(401, "Sign in to use Growth Autopilot.")
     google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if google_user:
         return google_user

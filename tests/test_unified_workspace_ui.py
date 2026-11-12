@@ -106,7 +106,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn('href="/logout?next=/login"', self.page)
         self.assertIn("aria-expanded", self.script)
         self.assertIn('LOGOUT_COOKIE = "viralizer_logged_out"', self.app)
-        self.assertIn('response.set_cookie(LOGOUT_COOKIE, "1"', self.app)
+        self.assertIn('response.delete_cookie(LOGOUT_COOKIE', self.app)
+        self.assertNotIn('request.cookies.get(LOGOUT_COOKIE) == "1"', self.app)
         self.assertIn('response.set_cookie(AUTH_COOKIE, "logged-out"', self.app)
 
     def test_workspace_uses_consistent_svg_navigation_icons(self):
