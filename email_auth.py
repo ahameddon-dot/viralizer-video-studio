@@ -102,6 +102,19 @@ def authenticate_email_account(root: Path, email: str, password: str) -> dict[st
     return account
 
 
+def register_or_authenticate_email_account(root: Path, email: str, password: str) -> dict[str, Any]:
+    """Create an account, or safely resume a matching interrupted registration."""
+    try:
+        return create_email_account(root, email, password)
+    except EmailAuthError as exc:
+        if "already exists" not in str(exc).casefold():
+            raise
+        account = authenticate_email_account(root, email, password)
+        if account:
+            return account
+        raise
+
+
 def _session_secret() -> bytes:
     value = (
         os.getenv("EMAIL_SESSION_SECRET", "").strip()

@@ -49,7 +49,7 @@ from heygen_director import build_heygen_script, build_presenter_direction
 from heygen_video_director import build_heygen_plan, compile_heygen_request
 from hybrid_video import start as start_hybrid_video, status as hybrid_video_status
 from google_auth import GoogleAuthError, authorization_url as google_authorization_url, configured as google_configured, exchange_code as google_exchange_code, new_state as google_new_state, read_session as read_google_session, read_signed_payload as read_google_state, redirect_uri as google_redirect_uri, session_token as google_session_token, signed_payload as google_signed_payload, user_allowed as google_user_allowed
-from email_auth import EmailAuthError, authenticate_email_account, create_email_account, email_session_token, read_email_session
+from email_auth import EmailAuthError, authenticate_email_account, email_session_token, read_email_session, register_or_authenticate_email_account
 from daily_trends import daily_trends
 from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, discover_global_sources, suggest_logos_for_content
 from mcp_outline_client import (
@@ -731,7 +731,7 @@ async def login(request: Request, password: str = Form(...), email: str = Form("
 async def email_account_auth(request: Request, email: str = Form(...), password: str = Form(...), mode: str = Form("signin")):
     try:
         if mode == "signup":
-            account = create_email_account(ROOT, email, password)
+            account = register_or_authenticate_email_account(ROOT, email, password)
         else:
             account = authenticate_email_account(ROOT, email, password)
             if not account:

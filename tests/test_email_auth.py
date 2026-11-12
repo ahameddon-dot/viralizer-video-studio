@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from email_auth import EmailAuthError, authenticate_email_account, create_email_account, email_session_token, read_email_session
+from email_auth import EmailAuthError, authenticate_email_account, create_email_account, email_session_token, read_email_session, register_or_authenticate_email_account
 
 
 class EmailAuthTests(unittest.TestCase):
@@ -39,6 +39,13 @@ class EmailAuthTests(unittest.TestCase):
         create_email_account(self.root, "same@example.com", "first-password-123")
         with self.assertRaises(EmailAuthError):
             create_email_account(self.root, "SAME@example.com", "second-password-123")
+
+    def test_interrupted_registration_can_resume_with_matching_password(self):
+        original = create_email_account(self.root, "resume@example.com", "resume-password-123")
+        resumed = register_or_authenticate_email_account(self.root, "resume@example.com", "resume-password-123")
+        self.assertEqual(resumed["id"], original["id"])
+        with self.assertRaises(EmailAuthError):
+            register_or_authenticate_email_account(self.root, "resume@example.com", "different-password-123")
 
     def test_signed_session_preserves_tenant_identity(self):
         account = create_email_account(self.root, "tenant@example.com", "tenant-password-123")
