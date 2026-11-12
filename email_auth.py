@@ -115,6 +115,19 @@ def register_or_authenticate_email_account(root: Path, email: str, password: str
         raise
 
 
+def authenticate_or_register_email_account(root: Path, email: str, password: str) -> dict[str, Any]:
+    """Continue an existing account or create the first account for a new email."""
+    account = authenticate_email_account(root, email, password)
+    if account:
+        return account
+    try:
+        return create_email_account(root, email, password)
+    except EmailAuthError as exc:
+        if "already exists" in str(exc).casefold():
+            raise EmailAuthError("Email or password not recognized.") from exc
+        raise
+
+
 def _session_secret() -> bytes:
     value = (
         os.getenv("EMAIL_SESSION_SECRET", "").strip()

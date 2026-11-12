@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from email_auth import EmailAuthError, authenticate_email_account, create_email_account, email_session_token, read_email_session, register_or_authenticate_email_account
+from email_auth import EmailAuthError, authenticate_email_account, authenticate_or_register_email_account, create_email_account, email_session_token, read_email_session, register_or_authenticate_email_account
 
 
 class EmailAuthTests(unittest.TestCase):
@@ -46,6 +46,13 @@ class EmailAuthTests(unittest.TestCase):
         self.assertEqual(resumed["id"], original["id"])
         with self.assertRaises(EmailAuthError):
             register_or_authenticate_email_account(self.root, "resume@example.com", "different-password-123")
+
+    def test_default_continue_creates_new_account_or_signs_in_existing_account(self):
+        created = authenticate_or_register_email_account(self.root, "new@example.com", "new-password-123")
+        signed_in = authenticate_or_register_email_account(self.root, "new@example.com", "new-password-123")
+        self.assertEqual(signed_in["id"], created["id"])
+        with self.assertRaises(EmailAuthError):
+            authenticate_or_register_email_account(self.root, "new@example.com", "wrong-password-123")
 
     def test_signed_session_preserves_tenant_identity(self):
         account = create_email_account(self.root, "tenant@example.com", "tenant-password-123")
