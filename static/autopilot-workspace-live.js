@@ -18,6 +18,21 @@
   const list = (value = '') => String(value).split(/[,\n]/).map(item => item.trim()).filter(Boolean);
   const parse = value => { try { return typeof value === 'string' ? JSON.parse(value || '{}') : (value || {}); } catch { return {}; } };
   const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  const userMenuToggle = $('#userMenuToggle'), userMenu = $('#userMenu');
+  if (userMenuToggle && userMenu) {
+    userMenuToggle.addEventListener('click', event => {
+      event.stopPropagation();
+      const opening = userMenu.hidden;
+      userMenu.hidden = !opening;
+      userMenuToggle.setAttribute('aria-expanded', String(opening));
+    });
+    document.addEventListener('click', event => {
+      if (!userMenu.hidden && !userMenu.contains(event.target)) {
+        userMenu.hidden = true;
+        userMenuToggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
   async function prepareUserPhoto() {
     if (!$('#useUserPhoto')?.checked) return '';
     if (state.userPhotoId) return state.userPhotoId;

@@ -94,6 +94,11 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Continue with email", self.app)
         self.assertIn('RedirectResponse("/autopilot-workspace"', self.app)
 
+    def test_workspace_profile_menu_has_logout(self):
+        self.assertIn('id="userMenuToggle"', self.page)
+        self.assertIn('href="/logout?next=/login"', self.page)
+        self.assertIn("aria-expanded", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()
