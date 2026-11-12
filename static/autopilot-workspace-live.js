@@ -137,12 +137,31 @@
     const number = Number(String(value ?? '').replace(/[^0-9.]/g, ''));
     return Number.isFinite(number) && String(value ?? '').trim() ? Math.round(number) : null;
   }
+  function topicFallbackImage(topic) {
+    const value = `${topic.category || ''} ${topic.title || ''}`.toLowerCase();
+    const categories = [
+      ['food', /food|cook|kitchen|restaurant|recipe|meal|cuisine/],
+      ['ai', /\bai\b|artificial intelligence|anthropic|openai|machine learning|robot/],
+      ['finance', /finance|stock|dividend|bank|invest|market|sales|money/],
+      ['technology', /tech|software|app|device|digital|startup|internet/],
+      ['business', /business|founder|company|entrepreneur|workplace|employee/],
+      ['health', /health|fitness|wellness|medical/],
+      ['travel', /travel|tourism|hotel|flight|destination/],
+      ['fashion', /fashion|style|clothing|beauty/],
+      ['entertainment', /music|film|movie|celebrity|entertainment/],
+      ['sports', /sport|football|cricket|basketball|game/],
+      ['education', /education|school|student|learning/],
+      ['home', /home|interior|house|decor|garden/]
+    ];
+    const match = categories.find(([, pattern]) => pattern.test(value));
+    return `/static/category-images/${match ? match[0] : 'realtime'}.webp`;
+  }
   function renderTopics() {
     const host = $('#topicGrid');
     if (!state.opportunities.length) { host.innerHTML = '<div class="production-error">No ranked opportunities are ready yet. Refresh to ask the Hot Topic engine for new matches.</div>'; return; }
     host.innerHTML = state.opportunities.map((topic, index) => {
-      const score = scoreFor(topic), viralRank = viralRankFor(topic), why = topic.reason || topic.explanation || topic.brand_match_reason || 'Matched against your confirmed audience, offer, and goal.', image = topic.source?.image || topic.source?.thumbnail_url || topic.image || topic.thumbnail_url || '';
-      return `<article class="topic-card ${index === 0 ? 'recommended' : ''}" data-topic="${esc(topic.id)}"><div class="topic-image ${image ? '' : 'topic-image-placeholder'}">${image ? `<img src="${esc(image)}" alt="">` : '<span>V.</span>'}<b>${score || '—'}</b></div><div class="topic-top"><span>${index === 0 ? 'BEST MATCH' : esc(topic.category || 'OPPORTUNITY')}</span></div><h2>${esc(topic.title)}</h2><p>${esc(why)}</p><div class="topic-footer"><span>Viral Rank: ${viralRank ?? 'not available'}</span><button>Select topic →</button></div></article>`;
+      const score = scoreFor(topic), viralRank = viralRankFor(topic), why = topic.reason || topic.explanation || topic.brand_match_reason || 'Matched against your confirmed audience, offer, and goal.', image = topic.source?.image || topic.source?.thumbnail_url || topic.image || topic.thumbnail_url || topicFallbackImage(topic);
+      return `<article class="topic-card ${index === 0 ? 'recommended' : ''}" data-topic="${esc(topic.id)}"><div class="topic-image"><img src="${esc(image)}" alt="${esc(topic.title)}" loading="lazy"><b>${score || '—'}</b><span>${index === 0 ? 'BEST MATCH' : esc(topic.category || 'OPPORTUNITY')}</span></div><h2>${esc(topic.title)}</h2><p>${esc(why)}</p><div class="topic-footer"><span>Viral Rank: ${viralRank ?? 'not available'}</span><button>Select topic →</button></div></article>`;
     }).join('');
     $$('[data-topic]').forEach(card => card.onclick = () => selectTopic(card.dataset.topic));
     const best = state.opportunities[0];

@@ -82,6 +82,18 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("startProductionTimer", self.script)
         self.assertIn("stopProductionTimer", self.script)
 
+    def test_topic_cards_use_one_real_image_surface(self):
+        self.assertIn("topicFallbackImage", self.script)
+        self.assertIn("/static/category-images/", self.script)
+        self.assertNotIn('<div class="topic-top">', self.script)
+
+    def test_login_leads_into_autopilot_onboarding(self):
+        self.assertIn("Create content people stop for.", self.app)
+        self.assertIn("Continue with Google", self.app)
+        self.assertIn("Continue with Apple", self.app)
+        self.assertIn("Continue with email", self.app)
+        self.assertIn('RedirectResponse("/autopilot-workspace"', self.app)
+
 
 if __name__ == "__main__":
     unittest.main()
