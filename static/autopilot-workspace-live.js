@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, onboardingType: 'business', userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
+  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -120,6 +120,7 @@
       if (!website) throw new Error('Add a public website or profile first.');
       const data = await api('/api/autopilot/brand-profile/analyze', { method: 'POST', body: JSON.stringify({ website_url: website, social_urls: [] }) });
       const draft = data.draft || {};
+      state.brandAnalysisDraft = draft;
       if (draft.positioning) $('#onboardOffer').value = draft.positioning;
       if (draft.voice?.length) $('#onboardVoice').value = draft.voice.join(', ');
       if (draft.audiences?.length) $('#onboardAudience').value = draft.audiences.join(', ');
@@ -143,10 +144,10 @@
     try {
       if (!$('#onboardOffer').value.trim() || !$('#onboardAudience').value.trim()) throw new Error('Add what you offer and who you want to reach.');
       const data = await api('/api/autopilot/brand-profile', { method: 'PUT', body: JSON.stringify({
-        customer_type: state.onboardingType, website_url: $('#onboardWebsite').value.trim(), social_urls: [],
+        customer_type: state.onboardingType, brand_name: state.brandAnalysisDraft.brand_name || '', category: state.brandAnalysisDraft.category || '', website_url: $('#onboardWebsite').value.trim(), social_urls: [],
         voice: list($('#onboardVoice').value), positioning: $('#onboardOffer').value.trim(),
         audiences: list($('#onboardAudience').value), goals: [$('#onboardGoal').value],
-        products_services: list($('#onboardOffer').value), keywords: [], hashtags: [], competitor_urls: [], inspiration_urls: [], inspiration_notes: '',
+        products_services: list($('#onboardOffer').value), keywords: state.brandAnalysisDraft.keywords || [], hashtags: state.brandAnalysisDraft.hashtags || [], content_themes: state.brandAnalysisDraft.content_themes || [], recent_content: state.brandAnalysisDraft.recent_content || [], analysis_confidence: state.brandAnalysisDraft.confidence || '', competitor_urls: [], inspiration_urls: [], inspiration_notes: '',
         visual_style: ['cinematic', 'realistic'], constraints: ['Never publish without exact-content approval.'], confirmed: true
       }) });
       state.profile = data.brand_profile;

@@ -59,6 +59,8 @@ class ProviderCostCreate(BaseModel):
 
 class BrandProfileUpsert(BaseModel):
     customer_type: Literal["creator", "business"]
+    brand_name: str = Field(default="", max_length=300)
+    category: str = Field(default="", max_length=120)
     website_url: str = Field(default="", max_length=2_000)
     social_urls: list[str] = Field(default_factory=list, max_length=20)
     voice: list[str] = Field(default_factory=list, max_length=20)
@@ -68,6 +70,9 @@ class BrandProfileUpsert(BaseModel):
     products_services: list[str] = Field(default_factory=list, max_length=100)
     keywords: list[str] = Field(default_factory=list, max_length=100)
     hashtags: list[str] = Field(default_factory=list, max_length=100)
+    content_themes: list[str] = Field(default_factory=list, max_length=100)
+    recent_content: list[str] = Field(default_factory=list, max_length=30)
+    analysis_confidence: str = Field(default="", max_length=30)
     competitor_urls: list[str] = Field(default_factory=list, max_length=20)
     inspiration_urls: list[str] = Field(default_factory=list, max_length=20)
     inspiration_notes: str = Field(default="", max_length=2_000)
