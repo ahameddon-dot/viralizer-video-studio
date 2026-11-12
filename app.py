@@ -51,6 +51,7 @@ from mcp_outline_client import (
     MCPOutlineError,
     check_mcp_credit_balance,
     get_full_report_from_mcp,
+    get_full_report_from_mcp_service,
     get_hot_topic_details_from_mcp,
     get_hot_topics_from_mcp,
     get_idea_smith_from_mcp,
@@ -2813,7 +2814,7 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
     for candidate in _mcp_search_candidates(topic, preferred, llm_fallbacks)[:max_attempts]:
         attempted_terms.append(candidate)
         try:
-            report = await get_full_report_from_mcp(candidate)
+            report = await get_full_report_from_mcp_service(candidate)
             search_term = candidate
             break
         except MCPOutlineError as exc:
@@ -2843,7 +2844,7 @@ async def _proprietary_insight_payload(topic: str, mcp_search_term: str = "") ->
         "mcp_search_terms_attempted": attempted_terms,
         "mcp_search_refiner": refiner,
         "query_refiner_version": MCP_QUERY_REFINER_VERSION,
-        "parser_version": 2,
+        "parser_version": 3,
         "metrics": {key: value for key, value in metrics.items() if value not in (None, "", [], {})},
         "audience_insight": audience,
         "creator_insight": creator,
@@ -2864,7 +2865,7 @@ CREATORTHON_PREFETCH_CATEGORIES = (
 )
 # Increment whenever query-refinement behavior changes. Persisted reports from an
 # older generation are requeued and fetched again instead of being shown.
-MCP_QUERY_REFINER_VERSION = 6
+MCP_QUERY_REFINER_VERSION = 7
 
 
 def _topic_title_value(topic: dict[str, Any]) -> str:
@@ -3016,7 +3017,10 @@ def _hydrate_creatorthon_insight_jobs_from_cache(user_id: str, jobs: list[dict[s
             allow_stale=True,
             stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
         )
-        if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
+        if (
+            int((cached or {}).get("parser_version") or 0) < 3
+            or int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
+        ):
             continue
         finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
         hydrated = True
@@ -3041,7 +3045,7 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     stale_completed_job = job.get("status") == "completed" and (
-        int((job.get("result") or {}).get("parser_version") or 0) < 2
+        int((job.get("result") or {}).get("parser_version") or 0) < 3
         or int((job.get("result") or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
     )
     if stale_completed_job:
@@ -3057,7 +3061,10 @@ async def enqueue_creatorthon_insight(request: Request, payload: CreatorthonInsi
         allow_stale=True,
         stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
     )
-    if int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION:
+    if (
+        int((cached or {}).get("parser_version") or 0) < 3
+        or int((cached or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
+    ):
         cached = None
     if created and cached:
         finish_insight_job(ROOT, user_id, str(job["id"]), result=cached)
@@ -3077,7 +3084,7 @@ async def get_creatorthon_insight_queue(request: Request):
     legacy_jobs = [
         job for job in jobs
         if job.get("status") == "completed" and (
-            int((job.get("result") or {}).get("parser_version") or 0) < 2
+            int((job.get("result") or {}).get("parser_version") or 0) < 3
             or int((job.get("result") or {}).get("query_refiner_version") or 0) < MCP_QUERY_REFINER_VERSION
         )
     ]
