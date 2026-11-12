@@ -47,7 +47,7 @@ async def submit_publication(root: Path, customer_id: str, publication_id: str, 
         if not row:
             raise ValueError("Publication was not found for this customer.")
         publication = dict(row)
-        if publication["status"] == "published":
+        if publication["status"] in {"submitting", "processing", "published"}:
             return publication
         if publication["status"] not in {"queued", "scheduled", "failed"}:
             raise ValueError("Publication is not ready for submission.")

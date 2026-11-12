@@ -53,12 +53,39 @@ class ProviderResponseError(RuntimeError):
         self.provider, self.status_code, self.retryable = provider, status_code, retryable
 
 
+def _provider_error_detail(payload: Any) -> str:
+    """Extract a useful validation error without echoing arbitrary provider data."""
+    if isinstance(payload, str):
+        return payload[:300]
+    if isinstance(payload, list):
+        details = [_provider_error_detail(item) for item in payload[:5]]
+        return "; ".join(detail for detail in details if detail)[:300]
+    if not isinstance(payload, dict):
+        return ""
+    details: list[str] = []
+    for key in ("message", "detail", "error", "errors"):
+        if key not in payload:
+            continue
+        value = payload[key]
+        if key == "error" and isinstance(value, dict):
+            value = {safe_key: value[safe_key] for safe_key in ("message", "detail", "code", "errors") if safe_key in value}
+        detail = _provider_error_detail(value)
+        if detail and detail not in details:
+            details.append(detail)
+    if not details:
+        field = str(payload.get("field") or payload.get("loc") or "").strip()
+        message = str(payload.get("msg") or payload.get("reason") or "").strip()
+        if message:
+            details.append(f"{field}: {message}" if field else message)
+    return "; ".join(details)[:300]
+
+
 async def _json_request(client: httpx.AsyncClient, provider: str, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
     response = await client.request(method, url, **kwargs)
     if response.status_code >= 400:
         try:
-            detail = (response.json().get("message") or response.json().get("detail") or "Request rejected")
-        except (ValueError, AttributeError):
+            detail = _provider_error_detail(response.json()) or "Request rejected"
+        except ValueError:
             detail = "Request rejected"
         raise ProviderResponseError(provider, response.status_code, str(detail), response.status_code in {408, 429, 500, 502, 503, 504})
     try:

@@ -14,7 +14,7 @@ from typing import Any
 
 from autopilot_contracts import AssetVersionCreate, MetricSnapshotCreate, PublicationApprovalRequest
 from autopilot_publishing import queue_approved_publication
-from autopilot_store import create_content_approval, create_workflow_run
+from autopilot_store import create_content_approval, create_workflow_run, publication_payload_hash
 from creatorthon_store import _connect
 
 
@@ -117,6 +117,28 @@ def approve_and_queue_publication(root: Path, customer_id: str, approved_by: str
         "destination_id": model.destination_id,
         "scheduled_at": model.scheduled_at,
     }
+    payload_hash, _ = publication_payload_hash(payload)
+    with _connect(root) as db:
+        existing = db.execute(
+            """SELECT p.*,a.id AS existing_approval_id,a.status AS approval_status
+            FROM autopilot_publications p
+            JOIN autopilot_content_approvals a ON a.id=p.approval_id
+            WHERE p.customer_id=? AND p.workflow_run_id=? AND a.payload_hash=?
+            ORDER BY p.created_at DESC LIMIT 1""",
+            (customer_id, model.workflow_run_id, payload_hash),
+        ).fetchone()
+        if existing:
+            publication = dict(existing)
+            approval = db.execute(
+                "SELECT * FROM autopilot_content_approvals WHERE id=? AND customer_id=?",
+                (publication["approval_id"], customer_id),
+            ).fetchone()
+            step = db.execute(
+                "SELECT * FROM autopilot_workflow_steps WHERE customer_id=? AND idempotency_key LIKE ? ORDER BY created_at DESC LIMIT 1",
+                (customer_id, f"publish:{publication['approval_id']}:%"),
+            ).fetchone()
+            return {"approval": dict(approval), "publication": publication,
+                    "workflow_step": dict(step) if step else {}, "created": False}
     approval = create_content_approval(root, {
         "customer_id": customer_id, "approved_by": approved_by, "publication": payload,
     })

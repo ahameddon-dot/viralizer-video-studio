@@ -31,7 +31,7 @@ class AutopilotLifecycleTests(unittest.TestCase):
             "goals": ["grow reach"], "confirmed": True,
         })
         opportunity = rank_opportunities(self.root, "customer-1", {
-            "topics": [{"topic": "Creator video workflows", "category": "Technology", "viral_score": 88}], "limit": 5,
+            "topics": [{"topic": "Creators video workflows", "category": "Technology", "viral_score": 88}], "limit": 5,
         })[0]
         self.concept = generate_concepts(self.root, "customer-1", {"opportunity_id": opportunity["id"]})[0]
         self.run = start_content_workflow(self.root, "customer-1", self.concept["id"])
@@ -76,6 +76,19 @@ class AutopilotLifecycleTests(unittest.TestCase):
         self.assertEqual("publishing", result["workflow_step"]["agent_type"])
         self.assertEqual(1, len(list_publications(self.root, "customer-1")))
         self.assertEqual([], list_publications(self.root, "customer-2"))
+
+    def test_repeated_exact_approval_reuses_publication(self):
+        asset = self.asset()
+        request = {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "instagram-1", "caption": "Exact caption",
+            "title": "Exact title", "hashtags": ["#viralizer"], "scheduled_at": 0,
+        }
+        first = approve_and_queue_publication(self.root, "customer-1", "owner", request)
+        second = approve_and_queue_publication(self.root, "customer-1", "owner", request)
+        self.assertEqual(first["publication"]["id"], second["publication"]["id"])
+        self.assertFalse(second["created"])
+        self.assertEqual(1, len(list_publications(self.root, "customer-1")))
 
     def test_metrics_store_deltas_and_schedule_three_hours(self):
         asset = self.asset()

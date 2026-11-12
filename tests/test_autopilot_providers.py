@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ShopifyAdminAdapter, customer_social_accounts, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_providers import GA4DataAdapter, PostForMeAdapter, ProviderResponseError, ShopifyAdminAdapter, customer_social_accounts, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
 
 
 class AutopilotProviderTests(unittest.TestCase):
@@ -57,6 +57,19 @@ class AutopilotProviderTests(unittest.TestCase):
         self.assertEqual("post_for_me", result["provider"])
         self.assertEqual("provider", result["data_source"])
         self.assertFalse(result["is_simulated"])
+
+    def test_provider_validation_error_is_safe_and_actionable(self):
+        def handler(request):
+            return httpx.Response(400, json={"errors": [{"field": "media.0.url", "msg": "must be a public HTTPS URL", "input": "secret"}]})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        adapter = PostForMeAdapter(api_key="test-key", base_url="https://provider.test", client=client)
+        with self.assertRaises(ProviderResponseError) as raised:
+            asyncio.run(adapter.publish({"caption": "Exact", "destination_id": "social-1", "media_url": "bad"}, "publication:1"))
+        asyncio.run(client.aclose())
+        self.assertIn("media.0.url: must be a public HTTPS URL", str(raised.exception))
+        self.assertNotIn("secret", str(raised.exception))
+        self.assertFalse(raised.exception.retryable)
 
     def test_post_for_me_quickstart_connection_contract(self):
         captured = {}
