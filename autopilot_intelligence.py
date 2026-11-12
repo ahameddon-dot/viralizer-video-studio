@@ -14,7 +14,7 @@ from autopilot_contracts import BrandProfileUpsert, ConceptGenerateRequest, Oppo
 from creatorthon_store import _connect
 
 
-OPPORTUNITY_MODEL_VERSION = "autopilot-opportunity-v3"
+OPPORTUNITY_MODEL_VERSION = "autopilot-opportunity-v4"
 CONCEPT_VERSION = "autopilot-concept-v4-distinct-scenes"
 
 
@@ -214,8 +214,8 @@ def rank_opportunities(root: Path, customer_id: str, request: OpportunityRankReq
 def list_opportunities(root: Path, customer_id: str, limit: int = 5) -> list[dict[str, Any]]:
     with _connect(root) as db:
         rows = db.execute(
-            "SELECT * FROM autopilot_opportunities WHERE customer_id=? AND status IN ('recommended','selected') ORDER BY CAST(score AS DECIMAL) DESC,updated_at DESC LIMIT ?",
-            (customer_id, max(1, min(50, int(limit)))),
+            "SELECT * FROM autopilot_opportunities WHERE customer_id=? AND model_version=? AND status IN ('recommended','selected') ORDER BY CAST(score AS DECIMAL) DESC,updated_at DESC LIMIT ?",
+            (customer_id, OPPORTUNITY_MODEL_VERSION, max(1, min(50, int(limit)))),
         ).fetchall()
     result = []
     for row in rows:
