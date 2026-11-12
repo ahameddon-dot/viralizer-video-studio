@@ -91,7 +91,7 @@ class AutopilotIntelligenceTests(unittest.TestCase):
             "keywords": ["rottweiler", "dogs", "puppies"], "confirmed": True,
         })
         ranked = rank_opportunities(self.root, "dog-channel", {"topics": [
-            {"topic": "Claude Code API billing changes", "viral_score": 99},
+            {"topic": "Claude Code API billing changes", "viral_score": 99, "role_match_index": 200},
             {"topic": "Rottweiler puppy obedience mistakes", "viral_score": 70},
         ]})
         self.assertEqual(["Rottweiler puppy obedience mistakes"], [item["title"] for item in ranked])

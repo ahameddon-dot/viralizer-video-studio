@@ -148,12 +148,14 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     viral_rank = _number(topic.get("viral_rank") or viralizer.get("viral_rank"))
     viral_value = viral_score if viral_score else 100 - min(100, viral_rank)
     viral = round(max(0, min(100, viral_value))) if (viral_score or viral_rank) else 0
-    role_match = _number(topic.get("role_match_index"))
     brand_text = " ".join(str(value) for value in brand.get("profile", {}).values())
     topic_text = " ".join(str(topic.get(key) or "") for key in ("topic", "title", "category", "summary", "description", "creator_angle"))
     brand_tokens, topic_tokens = _expanded_tokens(_tokens(brand_text)), _expanded_tokens(_tokens(topic_text))
     overlap = len(brand_tokens & topic_tokens)
-    relevance = round(max(role_match / 2, min(100, overlap * 20)))
+    # role_match_index is a provider-wide trend signal, not a match against this
+    # customer's confirmed profile. Brand relevance must come only from actual
+    # overlap with the customer's audience, offer, themes, and keywords.
+    relevance = round(min(100, overlap * 20))
     goals = _tokens(" ".join(brand.get("profile", {}).get("goals", [])))
     products = _tokens(" ".join(brand.get("profile", {}).get("products_services", [])))
     commercial_overlap = len((goals | products) & topic_tokens)
