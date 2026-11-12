@@ -662,7 +662,7 @@ async def login_page(request: Request, error: str = "", email_mode: str = ""):
         "email_password": "Use at least 10 characters for your password.",
         "email_config": "Email account sessions are not configured on this server.",
     }
-    message = f'<p class="error">{errors.get(error, "")}</p>' if error else ""
+    message = f'<p class="error" role="alert" aria-live="assertive"><b>Sign-in could not continue.</b><br>{errors.get(error, "")}</p>' if error else ""
     selected_email_mode = "signup" if email_mode == "signup" else "signin"
     email_form_class = "email-form open" if email_mode else "email-form"
     google_button = '<a class="auth-button google" href="/auth/google?next=/autopilot-workspace"><span>G</span> Continue with Google</a>' if google_configured() else '<button class="auth-button unavailable" type="button" disabled><span>G</span><b>Google sign-in</b><small>Setup required</small></button>'
@@ -738,6 +738,7 @@ async def email_account_auth(request: Request, email: str = Form(...), password:
     except EmailAuthError as exc:
         message = str(exc).casefold()
         error = "email_exists" if "already exists" in message else "email_password" if "10 characters" in message else "email_config" if "not configured" in message else "email_invalid"
+        LOGGER.info("Email authentication rejected: reason=%s mode=%s", error, "signup" if mode == "signup" else "signin")
         return RedirectResponse(f"/login?error={error}&email_mode={'signup' if mode == 'signup' else 'signin'}", status_code=303)
     customer_id = f"email:{account['id']}"
     profile = get_brand_profile(ROOT, customer_id)
