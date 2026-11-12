@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, onboardingType: 'business', userPhotoId: '' };
+  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, onboardingType: 'business', userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -30,6 +30,14 @@
     if (!response.ok) throw new Error(result.detail || `Photo upload failed (${response.status})`);
     state.userPhotoId = result.photo_id; status.textContent = `Ready · ${file.name} will guide all three scenes`;
     return state.userPhotoId;
+  }
+  function updatePhotoAction() {
+    const button = $('#startRealProduction'); if (!button) return;
+    if ($('#useUserPhoto')?.checked && state.userPhotoDirty) button.innerHTML = 'Regenerate all three with my photo <span>→</span>';
+    else {
+      const imagesReady = [0, 1, 2].every(index => currentKeyframe(index));
+      button.innerHTML = imagesReady ? 'Review generated images <span>↓</span>' : 'Generate three keyframe images <span>→</span>';
+    }
   }
   function toast(message) { const node = $('#toast'); node.textContent = message; node.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('show'), 3800); }
 
@@ -185,7 +193,7 @@
     }).join('');
     $('#createBadge').textContent = '1';
     const imagesReady = [0, 1, 2].every(index => currentKeyframe(index));
-    $('#startRealProduction').innerHTML = imagesReady ? 'Review generated images <span>↓</span>' : 'Generate three keyframe images <span>→</span>';
+    updatePhotoAction();
     if (imagesReady) renderProductionKeyframes();
   }
   async function selectTopic(id) {
@@ -246,13 +254,14 @@
   }
   async function regenerateKeyframe(scene) {
     const button = $(`[data-regenerate-keyframe="${scene}"]`), status = $(`[data-keyframe-status="${scene}"]`), direction = $(`[data-keyframe-direction="${scene}"]`).value.trim();
-    if (!direction) return toast('Describe the change you want for this scene.');
+    if (!direction && !$('#useUserPhoto')?.checked) return toast('Describe the change you want for this scene.');
     button.disabled = true; status.textContent = 'Regenerating with your direction…';
     try {
+      startImageTimer(); updateImageTimer(scene);
       const user_photo_id = await prepareUserPhoto();
       await api(`/api/autopilot/concepts/${encodeURIComponent(state.concept.id)}/keyframes/generate`, { method: 'POST', body: JSON.stringify({ scene_index: scene, preserve_identity: true, user_photo_id, user_direction: direction, avoid: '' }) });
-      state.keyframesApproved = false; await reloadConcept(); renderProductionKeyframes(); toast(`Scene ${scene + 1} regenerated. Review it before animation.`);
-    } catch (error) { status.textContent = error.message; button.disabled = false; }
+      state.keyframesApproved = false; state.userPhotoDirty = false; await reloadConcept(); renderProductionKeyframes(); updatePhotoAction(); stopImageTimer(true); toast(`Scene ${scene + 1} regenerated. Review it before animation.`);
+    } catch (error) { if (state.imageTimer) stopImageTimer(false); status.textContent = error.message; button.disabled = false; }
   }
   async function runProduction() {
     if (state.productionRunning) return;
@@ -261,12 +270,13 @@
     try {
       if (!state.workflow) state.workflow = (await api(`/api/autopilot/workflows/start/${encodeURIComponent(state.concept.id)}`, { method: 'POST' })).workflow;
       await reloadConcept();
-      const needsImages = [0, 1, 2].some(index => !currentKeyframe(index));
+      const forceRegeneration = state.forceRegenerateKeyframes;
+      const needsImages = forceRegeneration || [0, 1, 2].some(index => !currentKeyframe(index));
       if (needsImages && !state.keyframesApproved) startImageTimer();
       markTask('#taskOne', 'active', 'In progress');
       const user_photo_id = await prepareUserPhoto();
       for (let scene = 0; scene < 3; scene++) {
-        let frame = currentKeyframe(scene);
+        let frame = forceRegeneration ? null : currentKeyframe(scene);
         if (!frame) updateImageTimer(scene);
         updateProgress(5 + scene * 10, 'Creating three visual scenes', `Scene ${scene + 1} of 3 · Creating the approved image`, scene + 1);
         if (!frame) frame = (await api(`/api/autopilot/concepts/${encodeURIComponent(state.concept.id)}/keyframes/generate`, { method: 'POST', body: JSON.stringify({ scene_index: scene, preserve_identity: true, user_photo_id, user_direction: '', avoid: '' }) })).keyframe;
@@ -275,6 +285,7 @@
         await reloadConcept();
       }
       markTask('#taskOne', 'complete', 'Ready for review');
+      if (forceRegeneration) { state.forceRegenerateKeyframes = false; state.userPhotoDirty = false; updatePhotoAction(); }
       if (!state.keyframesApproved) {
         updateProgress(35, 'Images ready for review', 'Edit or regenerate any scene in Create before PixVerse animation', 3);
         renderProductionKeyframes();
@@ -412,13 +423,14 @@
     $$('[data-customer-type]').forEach(button => button.onclick = () => { state.onboardingType = button.dataset.customerType; $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item === button)); });
     $('#analyzeOnboardBrand').onclick = analyzeBrand; $('#confirmOnboarding').onchange = event => $('#finishWorkspaceOnboarding').disabled = !event.target.checked; $('#finishWorkspaceOnboarding').onclick = finishOnboarding;
     $('#startRealProduction').onclick = () => {
+      if ($('#useUserPhoto')?.checked && state.userPhotoDirty) { state.forceRegenerateKeyframes = true; state.keyframesApproved = false; $('#costConfirmation').hidden = false; return; }
       if ([0, 1, 2].every(index => currentKeyframe(index))) {
         renderProductionKeyframes(); $('#keyframeReview').scrollIntoView({ behavior: 'smooth', block: 'start' }); toast('Your three images are already ready below.');
       } else $('#costConfirmation').hidden = false;
     }; $('#cancelProduction').onclick = () => $('#costConfirmation').hidden = true; $('#confirmProduction').onclick = () => { $('#costConfirmation').hidden = true; runProduction(); }; $('#resumeProduction').onclick = runProduction;
     $('#approveKeyframes').onclick = () => { state.keyframesApproved = true; $('#keyframeReview').hidden = true; showScreen('produce'); runProduction(); };
-    $('#userPhotoInput').onchange = () => { state.userPhotoId = ''; $('#userPhotoStatus').textContent = $('#userPhotoInput').files?.[0] ? 'Selected · confirm permission below to use it' : 'Optional · kept private in your workspace'; };
-    $('#useUserPhoto').onchange = event => { if (!event.target.checked) $('#userPhotoStatus').textContent = 'Photo will not be used'; else if (state.userPhotoId) $('#userPhotoStatus').textContent = 'Ready · your photo will guide all three scenes'; };
+    $('#userPhotoInput').onchange = () => { state.userPhotoId = ''; state.userPhotoDirty = Boolean($('#userPhotoInput').files?.[0]); $('#userPhotoStatus').textContent = state.userPhotoDirty ? 'Selected · confirm permission below to use it' : 'Optional · kept private in your workspace'; updatePhotoAction(); };
+    $('#useUserPhoto').onchange = event => { if (!event.target.checked) $('#userPhotoStatus').textContent = 'Photo will not be used'; else { state.userPhotoDirty = Boolean(state.userPhotoId || $('#userPhotoInput').files?.[0]); $('#userPhotoStatus').textContent = state.userPhotoId ? 'Ready · your photo will guide all three scenes' : 'Selected · click regenerate to upload and use it'; } updatePhotoAction(); };
     $('#changeDirection').onclick = () => { if (state.concepts.length < 2) return toast('Only one saved direction is available.'); const index = state.concepts.findIndex(item => item.id === state.concept.id); state.concept = state.concepts[(index + 1) % state.concepts.length]; renderConcept(); };
     $('#exactApproval').onchange = event => { $('#publishApproved').disabled = !event.target.checked; };
     ['#approvalTitle', '#approvalCaption', '#approvalHashtags'].forEach(selector => $(selector).addEventListener('input', invalidateApproval));

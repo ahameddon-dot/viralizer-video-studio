@@ -72,6 +72,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("/api/autopilot/user-photos", self.script)
         self.assertIn("user_photo_id", self.script)
         self.assertIn("USER PHOTO IDENTITY LOCK", self.app)
+        self.assertIn("Regenerate all three with my photo", self.script)
+        self.assertIn("startImageTimer(); updateImageTimer(scene)", self.script)
 
     def test_video_production_has_elapsed_time_and_scene_status(self):
         self.assertIn('id="productionElapsed"', self.page)
