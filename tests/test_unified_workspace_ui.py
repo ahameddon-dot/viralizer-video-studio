@@ -99,6 +99,11 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn('href="/logout?next=/login"', self.page)
         self.assertIn("aria-expanded", self.script)
 
+    def test_workspace_uses_consistent_svg_navigation_icons(self):
+        self.assertGreaterEqual(self.page.count('<svg viewBox="0 0 24 24"'), 12)
+        for legacy_icon in ("<i>⌂</i>", "<i>▣</i>", "<i>⚙</i>", ">♢</button>"):
+            self.assertNotIn(legacy_icon, self.page)
+
 
 if __name__ == "__main__":
     unittest.main()
