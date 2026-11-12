@@ -37,6 +37,15 @@ class BrandAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("unavailable",result["sources"][0]["status"])
         self.assertIn("not allowed",result["sources"][0]["reason"])
 
+    async def test_recognizes_rottweiler_channel_as_pets_and_animals(self):
+        html=b'''<html><head><meta property="og:title" content="Dyce the Rottweiler"><meta property="og:description" content="Rottweiler puppy training, dog care and canine adventures."></head><body><script>{"channelId":"UC1234567890ABCDE","ownerChannelName":"Dyce the Rottweiler","description":"Rottweiler puppy training, dog care and canine adventures.","title":{"runs":[{"text":"Rottweiler obedience training tips"}]}}</script></body></html>'''
+        transport=httpx.MockTransport(lambda request:httpx.Response(200,headers={"content-type":"text/html"},content=html))
+        with patch("autopilot_brand_analysis.socket.getaddrinfo",return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",("142.250.1.1",443))]):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result=await analyze_brand_sources("https://youtube.com/@Dycederottweiler",[],client)
+        self.assertEqual("Pets & Animals",result["draft"]["category"])
+        self.assertIn("dog owners",result["draft"]["audiences"][0])
+
     async def test_social_block_is_reported_not_fabricated(self):
         transport=httpx.MockTransport(lambda request:httpx.Response(403,headers={"content-type":"text/html"}))
         with patch("autopilot_brand_analysis.socket.getaddrinfo",return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",("142.250.1.1",443))]):

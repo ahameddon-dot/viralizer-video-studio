@@ -1435,6 +1435,11 @@ async def hot_topic_details_with_retry(topic_id: str):
 
 @app.get("/")
 async def index(request: Request):
+    # The dedicated Growth Autopilot staging service must never fall through to
+    # the legacy Video Studio dashboard. Authentication middleware sends new
+    # visitors to /login; signed-in visitors enter the shared Autopilot workspace.
+    if os.getenv("APP_ENVIRONMENT", "").strip().casefold() == "staging":
+        return RedirectResponse("/autopilot-workspace", status_code=303)
     if _is_creatorthon_v3_host(request):
         if not read_google_session(request.cookies.get(AUTH_COOKIE, "")):
             return await creatorthon_v3_login(request, next="/")

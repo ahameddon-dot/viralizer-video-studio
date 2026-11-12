@@ -74,14 +74,27 @@ class AutopilotIntelligenceTests(unittest.TestCase):
             {"topic": "Unrelated sports result", "category": "Sports", "viral_score": 20, "discovery_heat": "WATCH"},
         ]
         ranked = rank_opportunities(self.root, "customer-1", {"topics": topics, "limit": 5})
-        self.assertEqual(5, len(ranked))
+        self.assertEqual(4, len(ranked))
         self.assertEqual("Ecommerce analytics changes", ranked[0]["title"])
         missing = next(item for item in ranked if item["title"] == "Retail dashboard design")
         self.assertEqual(0, missing["components"]["viralizer"])
         self.assertFalse(missing["components"]["viral_data_available"])
         self.assertIn("business_impact", missing["components"])
         self.assertIn("was not estimated", missing["rationale"])
-        self.assertEqual(5, len(list_opportunities(self.root, "customer-1")))
+        self.assertEqual(4, len(list_opportunities(self.root, "customer-1")))
+
+    def test_unrelated_high_velocity_topics_are_not_recommended(self):
+        save_brand_profile(self.root, "dog-channel", {
+            "customer_type": "creator", "social_urls": ["https://youtube.com/@dog"],
+            "positioning": "Rottweiler training, puppy care and canine adventures",
+            "audiences": ["dog owners and pet lovers"], "products_services": ["dog training content"],
+            "keywords": ["rottweiler", "dogs", "puppies"], "confirmed": True,
+        })
+        ranked = rank_opportunities(self.root, "dog-channel", {"topics": [
+            {"topic": "Claude Code API billing changes", "viral_score": 99},
+            {"topic": "Rottweiler puppy obedience mistakes", "viral_score": 70},
+        ]})
+        self.assertEqual(["Rottweiler puppy obedience mistakes"], [item["title"] for item in ranked])
 
     def test_rank_over_one_hundred_is_available_even_when_normalized_signal_is_zero(self):
         self.brand()
@@ -100,8 +113,8 @@ class AutopilotIntelligenceTests(unittest.TestCase):
 
     def test_new_refresh_can_supersede_stale_recommendations(self):
         self.brand()
-        old = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Old topic"}]})[0]
-        new = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "New topic"}]})[0]
+        old = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Old ecommerce analytics topic"}]})[0]
+        new = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "New ecommerce analytics topic"}]})[0]
         archive_other_opportunities(self.root, "customer-1", [new["id"]])
         visible = list_opportunities(self.root, "customer-1")
         self.assertEqual([new["id"]], [item["id"] for item in visible])
@@ -130,7 +143,7 @@ class AutopilotIntelligenceTests(unittest.TestCase):
     def test_opportunities_and_concepts_cannot_cross_customer_boundary(self):
         self.brand("customer-1")
         self.brand("customer-2")
-        opportunity = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Private topic"}]})[0]
+        opportunity = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Private ecommerce analytics topic"}]})[0]
         with self.assertRaises(ValueError):
             generate_concepts(self.root, "customer-2", {"opportunity_id": opportunity["id"]})
         self.assertEqual([], list_concepts(self.root, "customer-2", opportunity["id"]))

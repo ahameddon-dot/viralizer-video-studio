@@ -117,6 +117,24 @@ def _tokens(value: Any) -> set[str]:
     return {word for word in re.findall(r"[a-z0-9]+", str(value).casefold()) if len(word) > 2}
 
 
+TOPIC_FAMILIES = (
+    {"pet", "pets", "dog", "dogs", "puppy", "puppies", "rottweiler", "canine", "animal", "animals", "training", "obedience", "breed", "breeds"},
+    {"food", "recipe", "recipes", "cooking", "cook", "kitchen", "restaurant", "cuisine", "meal", "meals"},
+    {"technology", "tech", "software", "coding", "code", "digital", "gadget", "gadgets", "computer", "computers"},
+    {"business", "finance", "marketing", "sales", "founder", "founders", "startup", "commerce", "ecommerce", "investment"},
+    {"travel", "tour", "trip", "hotel", "destination", "vacation"},
+    {"fitness", "workout", "health", "wellness", "nutrition", "gym"},
+)
+
+
+def _expanded_tokens(tokens: set[str]) -> set[str]:
+    expanded = set(tokens)
+    for family in TOPIC_FAMILIES:
+        if tokens & family:
+            expanded.update(family)
+    return expanded
+
+
 def _number(value: Any) -> float:
     try:
         return float(value)
@@ -133,9 +151,9 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     role_match = _number(topic.get("role_match_index"))
     brand_text = " ".join(str(value) for value in brand.get("profile", {}).values())
     topic_text = " ".join(str(topic.get(key) or "") for key in ("topic", "title", "category", "summary", "description", "creator_angle"))
-    brand_tokens, topic_tokens = _tokens(brand_text), _tokens(topic_text)
+    brand_tokens, topic_tokens = _expanded_tokens(_tokens(brand_text)), _expanded_tokens(_tokens(topic_text))
     overlap = len(brand_tokens & topic_tokens)
-    relevance = round(max(role_match / 2, min(100, 35 + overlap * 15)))
+    relevance = round(max(role_match / 2, min(100, overlap * 20)))
     goals = _tokens(" ".join(brand.get("profile", {}).get("goals", [])))
     products = _tokens(" ".join(brand.get("profile", {}).get("products_services", [])))
     commercial_overlap = len((goals | products) & topic_tokens)
@@ -158,6 +176,10 @@ def rank_opportunities(root: Path, customer_id: str, request: OpportunityRankReq
         if not title:
             continue
         components = _opportunity_components(topic, brand)
+        # A worldwide trend is only an opportunity when it matches the confirmed
+        # customer profile. Do not fill the UI with high-velocity but unrelated topics.
+        if components["brand_relevance"] < 20:
+            continue
         score = round(components["viralizer"] * .30 + components["brand_relevance"] * .25 + components["business_impact"] * .20 + components["freshness"] * .10 + components["production_feasibility"] * .15, 2)
         trend_key = hashlib.sha256(title.casefold().encode("utf-8")).hexdigest()[:32]
         rationale = (

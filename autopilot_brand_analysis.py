@@ -97,6 +97,7 @@ def _youtube_signals(html: str) -> dict[str, Any]:
 
 
 CATEGORY_TERMS = {
+    "Pets & Animals": {"pet","pets","dog","dogs","puppy","puppies","rottweiler","canine","animal","animals","training","obedience","kennel","breed","breeds"},
     "Food & Cooking": {"food","recipe","cooking","restaurant","biryani","chicken","kitchen","chef","streetfood","cuisine","eat"},
     "Technology": {"technology","tech","ai","software","gadget","phone","computer","digital","app","coding"},
     "Business & Finance": {"business","finance","marketing","sales","entrepreneur","founder","founders","investment","money","startup","commerce","ecommerce","conversion","store"},
@@ -132,7 +133,7 @@ def _analyse(url: str, html: str) -> dict[str, Any]:
     category,category_score=_category(words)
     brand_name=youtube.get("owner_name") or parser.author or re.sub(r"\s*[-|–].*$", "", parser.title).strip()
     description=youtube.get("channel_description") or parser.description
-    audience_map={"Food & Cooking":"food lovers, home cooks, and restaurant explorers","Technology":"technology enthusiasts, creators, and digital professionals","Business & Finance":"business owners, founders, and growth-focused professionals","Travel & Places":"travelers and destination explorers","Entertainment":"entertainment audiences and pop-culture followers","Education":"learners seeking practical guidance","Health & Fitness":"health-conscious and fitness-focused audiences","Beauty & Fashion":"beauty and style audiences","Home & Design":"homeowners, designers, and renovation audiences","Gaming":"gamers and gaming communities"}
+    audience_map={"Pets & Animals":"dog owners, pet lovers, and animal-care audiences","Food & Cooking":"food lovers, home cooks, and restaurant explorers","Technology":"technology enthusiasts, creators, and digital professionals","Business & Finance":"business owners, founders, and growth-focused professionals","Travel & Places":"travelers and destination explorers","Entertainment":"entertainment audiences and pop-culture followers","Education":"learners seeking practical guidance","Health & Fitness":"health-conscious and fitness-focused audiences","Beauty & Fashion":"beauty and style audiences","Home & Design":"homeowners, designers, and renovation audiences","Gaming":"gamers and gaming communities"}
     return {"url":url,"title":parser.title,"brand_name":brand_name,"description":description,"image_url":parser.image,"channel_id":youtube.get("channel_id",""),"recent_content":recent,"category":category,"category_score":category_score,"suggested_audience":audience_map.get(category,"people interested in " + ", ".join(themes[:3])),"positioning_evidence":combined[:1200],"content_themes":themes,"interests":themes[:8],"voice_signals":tone or ["not confidently detected"],"heading_samples":parser.headings[:8],"text_characters_analyzed":len(text)}
 
 

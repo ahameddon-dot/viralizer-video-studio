@@ -9,6 +9,11 @@ class AutopilotUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.page = (ROOT / "static" / "creatorthon-v3.html").read_text(encoding="utf-8")
+        cls.app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+
+    def test_staging_root_enters_autopilot_instead_of_legacy_dashboard(self):
+        self.assertIn('os.getenv("APP_ENVIRONMENT", "").strip().casefold() == "staging"', self.app_source)
+        self.assertIn('RedirectResponse("/autopilot-workspace", status_code=303)', self.app_source)
 
     def test_customer_flow_exposes_three_autopilot_stages(self):
         self.assertIn('id="autopilotBrand"', self.page)
