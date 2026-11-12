@@ -65,6 +65,14 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Typical time per image", self.script)
         self.assertIn("Your three images are already ready below.", self.script)
 
+    def test_user_photo_can_drive_private_identity_generation(self):
+        self.assertIn('id="userPhotoInput"', self.page)
+        self.assertIn('id="useUserPhoto"', self.page)
+        self.assertIn("permission to use this photo", self.page)
+        self.assertIn("/api/autopilot/user-photos", self.script)
+        self.assertIn("user_photo_id", self.script)
+        self.assertIn("USER PHOTO IDENTITY LOCK", self.app)
+
     def test_video_production_has_elapsed_time_and_scene_status(self):
         self.assertIn('id="productionElapsed"', self.page)
         self.assertIn('id="productionSceneStrip"', self.page)

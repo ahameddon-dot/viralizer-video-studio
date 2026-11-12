@@ -2549,7 +2549,12 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
     scene = scenes[payload.scene_index]
     keyframes = concept["content"].get("keyframes") or {}
     identity_reference: dict[str, Any] | None = None
-    if payload.preserve_identity:
+    user_photo_path: Path | None = None
+    if payload.user_photo_id:
+        user_photo_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_user_photos" / customer_id / f"{payload.user_photo_id}.png"
+        if not user_photo_path.is_file():
+            raise HTTPException(404, "Your selected identity photo is no longer available. Upload it again.")
+    elif payload.preserve_identity:
         anchor_versions = keyframes.get("0") or []
         if payload.scene_index == 0:
             identity_reference = anchor_versions[-1] if anchor_versions else None
@@ -2563,7 +2568,14 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
     negative_prompt = str(scene.get("negative_prompt") or "")
     if payload.avoid.strip():
         negative_prompt += " Customer exclusions: " + " ".join(payload.avoid.split())
-    if identity_reference:
+    if user_photo_path:
+        prompt = (
+            "USER PHOTO IDENTITY LOCK: use the supplied consented photo as the exact identity reference for the featured person. "
+            "Preserve their recognizable face, facial geometry, age, skin tone, hair, and distinguishing features. "
+            "Do not beautify, age-shift, gender-swap, or replace them. Adapt wardrobe, pose, action, camera, lighting, and environment only as required by the storyboard. "
+            "Create a new composition; do not copy the source photo background or pose. " + prompt
+        )
+    elif identity_reference:
         prompt = (
             "IDENTITY LOCK: preserve the exact same person's face, facial geometry, age, skin tone, hair, "
             "body proportions, wardrobe, and distinguishing features from the supplied approved reference. "
@@ -2574,7 +2586,9 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
             + prompt
         )
     try:
-        if identity_reference:
+        if user_photo_path:
+            image_bytes = await generate_reference_image(user_photo_path.read_bytes(), prompt, "image/png")
+        elif identity_reference:
             reference_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(identity_reference.get("filename") or "")
             if not reference_path.is_file():
                 raise HTTPException(404, "The approved identity reference image is missing.")
@@ -2595,10 +2609,36 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
         "image_url": f"/api/autopilot/concepts/{concept_id}/keyframes/{payload.scene_index}/{version_number}",
         "prompt": prompt, "negative_prompt": negative_prompt,
         "user_direction": " ".join(payload.user_direction.split()), "user_avoid": " ".join(payload.avoid.split()),
-        "identity_lock": "reference_preserved" if identity_reference else "identity_anchor",
-        "identity_reference_sha256": str((identity_reference or {}).get("sha256") or digest),
+        "identity_lock": "user_photo_preserved" if user_photo_path else ("reference_preserved" if identity_reference else "identity_anchor"),
+        "identity_reference_sha256": hashlib.sha256(user_photo_path.read_bytes()).hexdigest() if user_photo_path else str((identity_reference or {}).get("sha256") or digest),
+        "user_photo_id": payload.user_photo_id,
     })
     return {"keyframe": keyframe}
+
+
+@app.post("/api/autopilot/user-photos")
+async def upload_autopilot_user_photo(request: Request, photo: UploadFile = File(...), consent_confirmed: bool = Form(...)):
+    """Store a private, customer-scoped identity reference after explicit consent."""
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    if not consent_confirmed:
+        raise HTTPException(422, "Confirm that you have permission to use this person's photo.")
+    if photo.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise HTTPException(415, "Upload a JPEG, PNG, or WebP photo.")
+    raw = await photo.read(10 * 1024 * 1024 + 1)
+    if not raw or len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "The identity photo must be smaller than 10 MB.")
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            normalized = ImageOps.exif_transpose(source).convert("RGB")
+            normalized.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            output = io.BytesIO(); normalized.save(output, format="PNG", optimize=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(422, "The uploaded photo is not a valid image.") from exc
+    photo_id = uuid.uuid4().hex
+    directory = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_user_photos" / customer_id
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{photo_id}.png"; path.write_bytes(output.getvalue())
+    return {"photo_id": photo_id, "filename": Path(photo.filename or "user-photo").name, "status": "private_identity_reference"}
 
 
 @app.get("/api/autopilot/concepts/{concept_id}/keyframes/{scene_index}/{version}")

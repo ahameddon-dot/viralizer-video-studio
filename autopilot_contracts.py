@@ -84,6 +84,7 @@ class BrandSourceAnalyzeRequest(BaseModel):
 class KeyframeGenerateRequest(BaseModel):
     scene_index: int = Field(ge=0, le=2)
     preserve_identity: bool = True
+    user_photo_id: str = Field(default="", pattern=r"^[a-f0-9]{32}$|^$")
     user_direction: str = Field(default="", max_length=2_000)
     avoid: str = Field(default="", max_length=1_000)
 
