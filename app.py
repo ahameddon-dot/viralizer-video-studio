@@ -100,7 +100,7 @@ from autopilot_intelligence import archive_other_opportunities, generate_concept
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_publishing import FakePublishingAdapter, submit_publication
-from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, verify_post_for_me_webhook, verify_shopify_webhook
+from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
 from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
 from hybrid_contracts import SceneRevisionCreate
@@ -2986,13 +2986,14 @@ class _PostForMeRelayAdapter:
             "media_sha256": digest.hexdigest(),
             "idempotency_key": idempotency_key,
         }
-        async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client, path.open("rb") as media:
-            response = await client.post(
-                f"{_post_for_me_proxy_url()}/api/autopilot/provider-relay/publications",
-                data=fields,
-                files={"media": (path.name, media, "video/mp4")},
-                headers={"X-Viralizer-Relay-Secret": secret, "Idempotency-Key": idempotency_key},
-            )
+        async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client:
+            with path.open("rb") as media:
+                response = await client.post(
+                    f"{_post_for_me_proxy_url()}/api/autopilot/provider-relay/publications",
+                    data=fields,
+                    files={"media": (path.name, media, "video/mp4")},
+                    headers={"X-Viralizer-Relay-Secret": secret, "Idempotency-Key": idempotency_key},
+                )
         if response.status_code >= 400:
             try:
                 detail = str(response.json().get("detail") or "Provider relay rejected the publication.")
