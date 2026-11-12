@@ -12,20 +12,24 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-MAX_BYTES = 1_000_000
+MAX_BYTES = 4_000_000
 SOCIAL_HOSTS = {"youtube.com", "www.youtube.com", "instagram.com", "www.instagram.com", "tiktok.com", "www.tiktok.com", "linkedin.com", "www.linkedin.com", "x.com", "www.x.com"}
-STOP = {"about","after","also","and","are","been","being","best","but","can","from","have","into","more","our","that","the","their","this","through","use","using","what","when","where","which","with","you","your"}
+STOP = {"about","after","also","and","are","been","being","best","but","can","contact","copyright","creator","featured","from","have","into","join","more","our","press","that","the","their","this","through","use","using","videos","want","what","when","where","which","with","you","your","youtube"}
 
 
 class PageSignals(HTMLParser):
     def __init__(self) -> None:
-        super().__init__(); self.title=""; self.description=""; self.headings=[]; self.text=[]; self._tag=""; self._skip=0
+        super().__init__(); self.title=""; self.description=""; self.image=""; self.author=""; self.keywords=""; self.headings=[]; self.text=[]; self._tag=""; self._skip=0
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self._tag=tag
         if tag in {"script","style","svg","noscript"}: self._skip += 1
         values={k.lower():v or "" for k,v in attrs}
         if tag=="meta" and values.get("name","").lower() in {"description","twitter:description"}: self.description=values.get("content","")[:1000]
         if tag=="meta" and values.get("property","").lower()=="og:description" and not self.description: self.description=values.get("content","")[:1000]
+        if tag=="meta" and values.get("property","").lower()=="og:title" and not self.title: self.title=values.get("content","")[:300]
+        if tag=="meta" and values.get("property","").lower()=="og:image" and not self.image: self.image=values.get("content","")[:1000]
+        if tag=="meta" and values.get("name","").lower()=="author": self.author=values.get("content","")[:300]
+        if tag=="meta" and values.get("name","").lower()=="keywords": self.keywords=values.get("content","")[:1000]
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script","style","svg","noscript"} and self._skip: self._skip-=1
         self._tag=""
@@ -71,17 +75,65 @@ async def _fetch(url: str, client: httpx.AsyncClient) -> tuple[str,str]:
     raise ValueError("Too many redirects.")
 
 
+def _clean_json_text(value: str) -> str:
+    try:
+        import json
+        return " ".join(json.loads(f'"{value}"').split())
+    except Exception:
+        return " ".join(value.replace("\\n", " ").replace("\\u0026", "&").split())
+
+
+def _youtube_signals(html: str) -> dict[str, Any]:
+    channel_id = next(iter(re.findall(r'"channelId"\s*:\s*"([A-Za-z0-9_-]{10,})"', html)), "")
+    owner = next(iter(re.findall(r'"ownerChannelName"\s*:\s*"((?:\\.|[^"\\])*)"', html)), "")
+    descriptions = re.findall(r'"description"\s*:\s*"((?:\\.|[^"\\]){20,2000})"', html)
+    titles = re.findall(r'"title"\s*:\s*\{\s*"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"((?:\\.|[^"\\]){3,240})"', html)
+    return {
+        "channel_id": channel_id,
+        "owner_name": _clean_json_text(owner),
+        "channel_description": _clean_json_text(descriptions[0]) if descriptions else "",
+        "recent_content": list(dict.fromkeys(_clean_json_text(value) for value in titles))[:12],
+    }
+
+
+CATEGORY_TERMS = {
+    "Food & Cooking": {"food","recipe","cooking","restaurant","biryani","chicken","kitchen","chef","streetfood","cuisine","eat"},
+    "Technology": {"technology","tech","ai","software","gadget","phone","computer","digital","app","coding"},
+    "Business & Finance": {"business","finance","marketing","sales","entrepreneur","founder","founders","investment","money","startup","commerce","ecommerce","conversion","store"},
+    "Travel & Places": {"travel","tour","trip","hotel","destination","places","vlog","vacation"},
+    "Entertainment": {"movie","cinema","music","comedy","celebrity","entertainment","show","reaction"},
+    "Education": {"education","learn","tutorial","course","student","teaching","guide","explained"},
+    "Health & Fitness": {"health","fitness","workout","wellness","medical","nutrition","gym"},
+    "Beauty & Fashion": {"beauty","fashion","makeup","style","skincare","clothing"},
+    "Home & Design": {"home","interior","design","decor","architecture","furniture","granite"},
+    "Gaming": {"gaming","game","gamer","esports","playstation","xbox"},
+}
+
+
+def _category(words: list[str]) -> tuple[str, int]:
+    counts={name:sum(words.count(term) for term in terms) for name,terms in CATEGORY_TERMS.items()}
+    name,score=max(counts.items(),key=lambda item:item[1])
+    return (name,score) if score else ("General content",0)
+
+
 def _analyse(url: str, html: str) -> dict[str, Any]:
     parser=PageSignals(); parser.feed(html)
-    text=" ".join(parser.text)[:120_000]
+    host=(urlparse(url).hostname or "").casefold()
+    youtube=_youtube_signals(html) if "youtube.com" in host else {}
+    recent=youtube.get("recent_content",[])
+    text=" ".join([*parser.text, parser.keywords, youtube.get("channel_description",""), *recent])[:300_000]
     words=[w for w in re.findall(r"[a-z][a-z0-9-]{2,}",text.casefold()) if w not in STOP]
     themes=[word for word,_ in Counter(words).most_common(12)]
     combined=" ".join([parser.title,parser.description,*parser.headings[:8]]).strip()
     tone=[]
     lower=text.casefold()
-    for label,terms in {"professional":["expert","professional","solutions","industry"],"educational":["learn","guide","how to","insights"],"energetic":["exciting","fast","power","transform"],"friendly":["welcome","community","together","help"]}.items():
+    for label,terms in {"professional":["expert","professional","solutions","industry"],"educational":["learn","guide","how to","insights","review"],"energetic":["exciting","celebration","fast","power","transform"],"friendly":["welcome","community","together","help","vlog","living"]}.items():
         if any(term in lower for term in terms): tone.append(label)
-    return {"url":url,"title":parser.title,"description":parser.description,"positioning_evidence":combined[:1200],"content_themes":themes,"interests":themes[:8],"voice_signals":tone or ["not confidently detected"],"heading_samples":parser.headings[:8],"text_characters_analyzed":len(text)}
+    category,category_score=_category(words)
+    brand_name=youtube.get("owner_name") or parser.author or re.sub(r"\s*[-|–].*$", "", parser.title).strip()
+    description=youtube.get("channel_description") or parser.description
+    audience_map={"Food & Cooking":"food lovers, home cooks, and restaurant explorers","Technology":"technology enthusiasts, creators, and digital professionals","Business & Finance":"business owners, founders, and growth-focused professionals","Travel & Places":"travelers and destination explorers","Entertainment":"entertainment audiences and pop-culture followers","Education":"learners seeking practical guidance","Health & Fitness":"health-conscious and fitness-focused audiences","Beauty & Fashion":"beauty and style audiences","Home & Design":"homeowners, designers, and renovation audiences","Gaming":"gamers and gaming communities"}
+    return {"url":url,"title":parser.title,"brand_name":brand_name,"description":description,"image_url":parser.image,"channel_id":youtube.get("channel_id",""),"recent_content":recent,"category":category,"category_score":category_score,"suggested_audience":audience_map.get(category,"people interested in " + ", ".join(themes[:3])),"positioning_evidence":combined[:1200],"content_themes":themes,"interests":themes[:8],"voice_signals":tone or ["not confidently detected"],"heading_samples":parser.headings[:8],"text_characters_analyzed":len(text)}
 
 
 async def analyze_brand_sources(website_url: str, social_urls: list[str], client: httpx.AsyncClient | None=None) -> dict[str, Any]:
@@ -103,4 +155,12 @@ async def analyze_brand_sources(website_url: str, social_urls: list[str], client
     themes=list(dict.fromkeys(theme for source in analyzed for theme in source.get("content_themes",[])))[:15]
     voices=list(dict.fromkeys(tone for source in analyzed for tone in source.get("voice_signals",[]) if tone!="not confidently detected"))[:8]
     descriptions=[s.get("description") or s.get("title") for s in analyzed if s.get("description") or s.get("title")]
-    return {"status":"draft_requires_confirmation","sources":sources,"draft":{"positioning":" ".join(descriptions)[:1500],"content_themes":themes,"areas_of_interest":themes[:10],"voice":voices},"disclosure":"This is evidence-based extraction, not a verified fact. The customer must review and confirm every field."}
+    categories=Counter(s.get("category") for s in analyzed if s.get("category"))
+    category=categories.most_common(1)[0][0] if categories else "Unknown"
+    brand_name=next((s.get("brand_name") for s in analyzed if s.get("brand_name")),"")
+    audiences=list(dict.fromkeys(s.get("suggested_audience") for s in analyzed if s.get("suggested_audience")))
+    recent=list(dict.fromkeys(item for source in analyzed for item in source.get("recent_content",[])))[:12]
+    hashtags=["#"+re.sub(r"[^A-Za-z0-9]","",theme.title()) for theme in themes[:8] if theme]
+    confidence="high" if len(analyzed)>1 else "medium" if analyzed else "none"
+    offer=(descriptions[0] if descriptions else (f"{category} content focused on {', '.join(themes[:5])}" if themes else ""))[:500]
+    return {"status":"draft_requires_confirmation","sources":sources,"draft":{"brand_name":brand_name,"identity_type":"creator" if any(s.get("source_type")=="social" for s in analyzed) else "business","category":category,"positioning":offer,"products_services":[offer] if offer else [],"audiences":audiences,"content_themes":themes,"areas_of_interest":themes[:10],"voice":voices,"keywords":themes[:12],"hashtags":hashtags,"recent_content":recent,"confidence":confidence},"disclosure":"This is evidence-based extraction, not a verified fact. The customer must review and confirm every field."}

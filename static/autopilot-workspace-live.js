@@ -122,9 +122,18 @@
       const draft = data.draft || {};
       if (draft.positioning) $('#onboardOffer').value = draft.positioning;
       if (draft.voice?.length) $('#onboardVoice').value = draft.voice.join(', ');
-      if (draft.areas_of_interest?.length && !$('#onboardAudience').value) $('#onboardAudience').value = draft.areas_of_interest.join(', ');
+      if (draft.audiences?.length) $('#onboardAudience').value = draft.audiences.join(', ');
+      else if (draft.areas_of_interest?.length && !$('#onboardAudience').value) $('#onboardAudience').value = draft.areas_of_interest.join(', ');
+      if (draft.identity_type === 'creator') {
+        state.onboardingType = 'creator';
+        $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item.dataset.customerType === 'creator'));
+      }
       const analyzed = (data.sources || []).filter(source => source.status === 'analyzed').length;
-      status.textContent = `Draft prepared from ${analyzed} public source${analyzed === 1 ? '' : 's'}. Review and confirm it.`;
+      const identity = [draft.brand_name, draft.category].filter(Boolean).join(' · ');
+      const themes = (draft.content_themes || []).slice(0, 5).join(', ');
+      status.textContent = analyzed
+        ? `Found ${identity || 'public brand'} from ${analyzed} public source${analyzed === 1 ? '' : 's'}. ${themes ? `Content themes: ${themes}. ` : ''}Confidence: ${draft.confidence || 'medium'}. Review and confirm.`
+        : `This profile could not be read publicly. Connect the social account or enter the brand details manually.`;
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
   }

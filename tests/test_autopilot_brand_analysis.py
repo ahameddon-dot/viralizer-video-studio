@@ -17,7 +17,19 @@ class BrandAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("draft_requires_confirmation",result["status"])
         self.assertEqual("analyzed",result["sources"][0]["status"])
         self.assertIn("ecommerce",result["draft"]["areas_of_interest"])
+        self.assertEqual("Business & Finance",result["draft"]["category"])
         self.assertIn("customer must review",result["disclosure"].lower())
+
+    async def test_extracts_youtube_creator_identity_category_and_audience(self):
+        html=b'''<html><head><meta property="og:title" content="Irfan's view"><meta property="og:description" content="I love Food and Living. I vlog and do Food Reviews."></head><body><script>{"channelId":"UChL9x-Q75LCuYHIFRDT_T1A","ownerChannelName":"Irfan's view","description":"I love Food and Living. I vlog and do Food Reviews.","title":{"runs":[{"text":"Street food review in Chennai"}]}}</script></body></html>'''
+        transport=httpx.MockTransport(lambda request:httpx.Response(200,headers={"content-type":"text/html"},content=html))
+        with patch("autopilot_brand_analysis.socket.getaddrinfo",return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",("142.250.1.1",443))]):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result=await analyze_brand_sources("https://youtube.com/@irfansview1",[],client)
+        self.assertEqual("Irfan's view",result["draft"]["brand_name"])
+        self.assertEqual("creator",result["draft"]["identity_type"])
+        self.assertEqual("Food & Cooking",result["draft"]["category"])
+        self.assertIn("food lovers",result["draft"]["audiences"][0])
 
     async def test_blocks_private_network_targets(self):
         with patch("autopilot_brand_analysis.socket.getaddrinfo",return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",("127.0.0.1",80))]):
