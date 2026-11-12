@@ -575,7 +575,7 @@ async def require_password(request: Request, call_next):
         for key, value in cors_headers.items():
             response.headers[key] = value
         return response
-    public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
+    public_paths = {"/login", "/auth/email", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     is_public_demo = request.url.path in {"/demos", "/creatorthon/demos", "/api/creatorthon/demos"} or request.url.path.startswith("/api/creatorthon/demos/")
     # This route authenticates with a scoped developer API key in the endpoint.
     # Do not require an interactive browser session as well.

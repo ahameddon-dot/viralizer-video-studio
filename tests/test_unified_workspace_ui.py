@@ -94,6 +94,7 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Continue with email", self.app)
         self.assertIn("Create account", self.app)
         self.assertIn('action="/auth/email"', self.app)
+        self.assertIn('"/auth/email", "/about"', self.app)
         self.assertIn("Passwords are salted and hashed", self.app)
         self.assertIn("Sign-in could not continue.", self.app)
         self.assertIn("Email authentication rejected: reason=%s", self.app)
