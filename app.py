@@ -483,6 +483,7 @@ _viralizer_report_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _viralizer_report_locks: dict[str, asyncio.Lock] = {}
 
 AUTH_COOKIE = "viralizer_access"
+EMAIL_AUTH_COOKIE = "viralizer_email_session"
 LOGOUT_COOKIE = "viralizer_logged_out"
 ADMIN_COOKIE = "viralizer_admin_access"
 GOOGLE_STATE_COOKIE = "viralizer_google_state"
@@ -498,7 +499,8 @@ def access_token(password: str) -> str:
 
 def is_authenticated(request: Request) -> bool:
     supplied = request.cookies.get(AUTH_COOKIE, "")
-    if read_google_session(supplied) or read_email_session(supplied):
+    email_supplied = request.cookies.get(EMAIL_AUTH_COOKIE, "")
+    if read_google_session(supplied) or read_email_session(email_supplied) or read_email_session(supplied):
         return True
     password = configured_password()
     if password and hmac.compare_digest(supplied, access_token(password)):
@@ -744,7 +746,7 @@ async def email_account_auth(request: Request, email: str = Form(...), password:
     destination = "/autopilot-workspace?view=today" if profile_confirmed else "/autopilot-workspace?onboarding=1"
     response = RedirectResponse(destination, status_code=303)
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
-    response.set_cookie(AUTH_COOKIE, token, max_age=7 * 86400, httponly=True, secure=forwarded_proto == "https", samesite="lax")
+    response.set_cookie(EMAIL_AUTH_COOKIE, token, max_age=7 * 86400, path="/", httponly=True, secure=forwarded_proto == "https", samesite="lax")
     response.delete_cookie(LOGOUT_COOKIE, path="/", secure=forwarded_proto == "https", samesite="lax")
     return response
 
@@ -759,6 +761,7 @@ async def logout(request: Request, next: str = "/login"):
     # marker makes logout deterministic even if a browser retained an older
     # host/domain variant of the access cookie.
     response.set_cookie(AUTH_COOKIE, "logged-out", max_age=0, expires=0, path="/", httponly=True, secure=secure, samesite="lax")
+    response.delete_cookie(EMAIL_AUTH_COOKIE, path="/", secure=secure, samesite="lax")
     response.delete_cookie(LOGOUT_COOKIE, path="/", secure=secure, samesite="lax")
     response.delete_cookie(GOOGLE_STATE_COOKIE, path="/", secure=secure, samesite="lax")
     return response
@@ -1719,7 +1722,7 @@ def autopilot_user(request: Request) -> dict[str, Any]:
     google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if google_user:
         return google_user
-    email_user = read_email_session(request.cookies.get(AUTH_COOKIE, ""))
+    email_user = read_email_session(request.cookies.get(EMAIL_AUTH_COOKIE, "")) or read_email_session(request.cookies.get(AUTH_COOKIE, ""))
     if email_user:
         return email_user
     if is_authenticated(request):
