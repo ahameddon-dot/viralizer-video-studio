@@ -483,6 +483,7 @@ _viralizer_report_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _viralizer_report_locks: dict[str, asyncio.Lock] = {}
 
 AUTH_COOKIE = "viralizer_access"
+LOGOUT_COOKIE = "viralizer_logged_out"
 ADMIN_COOKIE = "viralizer_admin_access"
 GOOGLE_STATE_COOKIE = "viralizer_google_state"
 
@@ -496,6 +497,8 @@ def access_token(password: str) -> str:
 
 
 def is_authenticated(request: Request) -> bool:
+    if request.cookies.get(LOGOUT_COOKIE) == "1":
+        return False
     supplied = request.cookies.get(AUTH_COOKIE, "")
     if read_google_session(supplied) or read_email_session(supplied):
         return True
@@ -701,6 +704,7 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
         return RedirectResponse("/login?error=google_not_allowed", status_code=303)
     response = RedirectResponse(str(state_payload.get("next") or "/"), status_code=303)
     response.set_cookie(AUTH_COOKIE, google_session_token(user), max_age=7 * 86400, httponly=True, secure=scheme == "https", samesite="lax")
+    response.delete_cookie(LOGOUT_COOKIE, path="/", secure=scheme == "https", samesite="lax")
     response.delete_cookie(GOOGLE_STATE_COOKIE)
     return response
 
@@ -719,6 +723,7 @@ async def login(request: Request, password: str = Form(...), email: str = Form("
         secure=forwarded_proto == "https",
         samesite="lax",
     )
+    response.delete_cookie(LOGOUT_COOKIE, path="/", secure=forwarded_proto == "https", samesite="lax")
     return response
 
 
@@ -739,15 +744,22 @@ async def email_account_auth(request: Request, email: str = Form(...), password:
     response = RedirectResponse("/autopilot-workspace", status_code=303)
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     response.set_cookie(AUTH_COOKIE, token, max_age=7 * 86400, httponly=True, secure=forwarded_proto == "https", samesite="lax")
+    response.delete_cookie(LOGOUT_COOKIE, path="/", secure=forwarded_proto == "https", samesite="lax")
     return response
 
 
 @app.api_route("/logout", methods=["GET", "POST"])
-async def logout(next: str = "/login"):
+async def logout(request: Request, next: str = "/login"):
     destination = next if next.startswith("/") and not next.startswith("//") else "/login"
     response = RedirectResponse(destination, status_code=303)
-    response.delete_cookie(AUTH_COOKIE)
-    response.delete_cookie(GOOGLE_STATE_COOKIE)
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    secure = scheme == "https"
+    # Overwrite as well as expire the access cookie. The explicit logged-out
+    # marker makes logout deterministic even if a browser retained an older
+    # host/domain variant of the access cookie.
+    response.set_cookie(AUTH_COOKIE, "logged-out", max_age=0, expires=0, path="/", httponly=True, secure=secure, samesite="lax")
+    response.set_cookie(LOGOUT_COOKIE, "1", max_age=7 * 86400, path="/", httponly=True, secure=secure, samesite="lax")
+    response.delete_cookie(GOOGLE_STATE_COOKIE, path="/", secure=secure, samesite="lax")
     return response
 
 
@@ -1703,6 +1715,8 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
 
 def autopilot_user(request: Request) -> dict[str, Any]:
     """Authenticate the standalone product independently of Creatorthon enrollment."""
+    if request.cookies.get(LOGOUT_COOKIE) == "1":
+        raise HTTPException(401, "Sign in to use Growth Autopilot.")
     google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if google_user:
         return google_user
