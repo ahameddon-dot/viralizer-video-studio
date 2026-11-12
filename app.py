@@ -850,6 +850,8 @@ async def admin_rollback(request: Request, payload: ReleaseActionRequest):
 
 @app.on_event("startup")
 async def start_daily_scheduler():
+    if os.getenv("VIRALIZER_MCP_API_KEY", "").strip():
+        asyncio.create_task(_log_mcp_service_status())
     asyncio.create_task(daily_trends.scheduler())
     global CREATORTHON_PREFETCH_TASK, PREDICTION_MARKET_PREFETCH_TASK, CHANNEL_AUTOMATION_TASK
     if os.getenv("CREATORTHON_PREFETCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
@@ -857,6 +859,18 @@ async def start_daily_scheduler():
     PREDICTION_MARKET_PREFETCH_TASK = asyncio.create_task(_prefetch_prediction_market_topics())
     if os.getenv("CHANNEL_AUTOMATION_SCHEDULER_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}:
         CHANNEL_AUTOMATION_TASK = asyncio.create_task(CHANNEL_AUTOMATION.scheduler())
+
+
+async def _log_mcp_service_status():
+    """Verify the service key at startup while logging no credentials or balances."""
+    try:
+        balance = await check_mcp_credit_balance()
+        LOGGER.info(
+            "Viralizer MCP service key verified unmetered=%s",
+            balance.get("unmetered") is True,
+        )
+    except MCPOutlineError as exc:
+        LOGGER.warning("Viralizer MCP service key verification failed: %s", exc)
 
 
 @app.get("/health")
