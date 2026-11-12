@@ -92,6 +92,9 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Continue with Google", self.app)
         self.assertIn("Continue with Apple", self.app)
         self.assertIn("Continue with email", self.app)
+        self.assertIn("Create account", self.app)
+        self.assertIn('action="/auth/email"', self.app)
+        self.assertIn("Passwords are salted and hashed", self.app)
         self.assertIn('RedirectResponse("/autopilot-workspace"', self.app)
 
     def test_workspace_profile_menu_has_logout(self):
