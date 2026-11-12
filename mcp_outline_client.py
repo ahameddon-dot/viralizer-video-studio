@@ -138,6 +138,40 @@ def _mcp_config() -> tuple[str, dict[str, str]]:
     return url, headers
 
 
+async def check_mcp_credit_balance() -> dict[str, Any]:
+    """Return the provider's credit status without exposing authentication data."""
+    url, headers = _mcp_config()
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=30.0) as http_client:
+            async with streamable_http_client(url, http_client=http_client) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool("check_credit_balance", {})
+    except BaseException as exc:
+        raise MCPOutlineError(_connection_error(exc, url)) from exc
+
+    if getattr(result, "isError", False):
+        raise MCPOutlineError("The MCP credit balance check returned an error.")
+
+    text_parts = [
+        str(getattr(item, "text", "")).strip()
+        for item in (getattr(result, "content", None) or [])
+        if str(getattr(item, "text", "")).strip()
+    ]
+    structured = getattr(result, "structuredContent", None)
+    payload: dict[str, Any] = dict(structured) if isinstance(structured, dict) else {}
+    for text_part in text_parts:
+        try:
+            decoded = json.loads(text_part)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(decoded, dict):
+            payload.update(decoded)
+    if not payload:
+        payload = {"message": " ".join(text_parts)}
+    return payload
+
+
 def _pro_api_config() -> tuple[str, dict[str, str]] | None:
     """Return the direct Viralizer Pro API configuration when enabled."""
     enabled = os.getenv("VIRALIZER_PRO_API_ENABLED", "true").strip().lower()

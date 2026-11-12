@@ -49,6 +49,7 @@ from daily_trends import daily_trends
 from global_sources import annotate_topic_taxonomy, build_category_discovery_queries, discover_category_topics, discover_global_sources, suggest_logos_for_content
 from mcp_outline_client import (
     MCPOutlineError,
+    check_mcp_credit_balance,
     get_full_report_from_mcp,
     get_hot_topic_details_from_mcp,
     get_hot_topics_from_mcp,
@@ -864,6 +865,32 @@ async def health():
         "status": "ok",
         "service": "viralizer-video-studio",
         "release": os.getenv("RENDER_GIT_COMMIT", os.getenv("APP_VERSION", "local")),
+    }
+
+
+@app.get("/health/mcp")
+async def mcp_health():
+    """Verify service-key MCP access without returning credentials."""
+    if not os.getenv("VIRALIZER_MCP_API_KEY", "").strip():
+        return JSONResponse(
+            {"status": "error", "configured": False, "unmetered": False},
+            status_code=503,
+        )
+    try:
+        balance = await check_mcp_credit_balance()
+    except MCPOutlineError as exc:
+        return JSONResponse(
+            {"status": "error", "configured": True, "unmetered": False, "detail": str(exc)},
+            status_code=503,
+        )
+    return {
+        "status": "ok",
+        "configured": True,
+        "unmetered": balance.get("unmetered") is True,
+        "balance": {
+            key: value for key, value in balance.items()
+            if key.lower() not in {"api_key", "token", "authorization", "secret"}
+        },
     }
 
 
