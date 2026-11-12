@@ -540,11 +540,6 @@ async def get_full_report_from_mcp(topic: str) -> dict[str, Any]:
             return direct
     except ViralizerProPendingError:
         raise
-
-
-async def get_full_report_from_mcp_service(topic: str) -> dict[str, Any]:
-    """Run analysis through MCP explicitly, using the unmetered service key."""
-    return await _get_full_report_from_mcp_only(topic)
     except (MCPOutlineError, httpx.HTTPError, ValueError, TypeError) as exc:
         pro_error = exc
 
@@ -556,6 +551,11 @@ async def get_full_report_from_mcp_service(topic: str) -> dict[str, Any]:
                 f"Direct Viralizer Pro API failed: {pro_error} MCP fallback failed: {mcp_error}"
             ) from mcp_error
         raise
+
+
+async def get_full_report_from_mcp_service(topic: str) -> dict[str, Any]:
+    """Run analysis through MCP explicitly, using the unmetered service key."""
+    return await _get_full_report_from_mcp_only(topic)
 
 
 async def get_outline_from_mcp(topic: str) -> dict[str, Any]:
