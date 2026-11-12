@@ -473,13 +473,14 @@
   async function init() {
     bind(); showScreen(new URLSearchParams(location.search).get('view') || 'today');
     const data = await api('/api/autopilot/brand-profile'); state.profile = data.brand_profile; renderBrand();
+    const forceOnboarding = new URLSearchParams(window.location.search).get('onboarding') === '1';
     const confirmed = Boolean(
       state.profile?.status === 'confirmed' ||
       Number(state.profile?.confirmed_at || 0) > 0 ||
       state.profile?.confirmed === true ||
       profileData().confirmed === true
     );
-    if (!state.profile || !confirmed) showOnboarding(); else await refreshTopics(false);
+    if (forceOnboarding || !state.profile || !confirmed) showOnboarding(); else await refreshTopics(false);
     if (new URLSearchParams(location.search).has('connected')) toast('Connection returned. Refreshing provider accounts…');
   }
   init().catch(error => { toast(error.message); showOnboarding(); });

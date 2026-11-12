@@ -95,7 +95,9 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Create account", self.app)
         self.assertIn('action="/auth/email"', self.app)
         self.assertIn("Passwords are salted and hashed", self.app)
-        self.assertIn('RedirectResponse("/autopilot-workspace"', self.app)
+        self.assertIn('"/autopilot-workspace?view=today" if profile_confirmed', self.app)
+        self.assertIn('"/autopilot-workspace?onboarding=1"', self.app)
+        self.assertIn("forceOnboarding", self.script)
 
     def test_workspace_profile_menu_has_logout(self):
         self.assertIn('id="userMenuToggle"', self.page)

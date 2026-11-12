@@ -741,7 +741,11 @@ async def email_account_auth(request: Request, email: str = Form(...), password:
         message = str(exc).casefold()
         error = "email_exists" if "already exists" in message else "email_password" if "10 characters" in message else "email_config" if "not configured" in message else "email_invalid"
         return RedirectResponse(f"/login?error={error}&email_mode={'signup' if mode == 'signup' else 'signin'}", status_code=303)
-    response = RedirectResponse("/autopilot-workspace", status_code=303)
+    customer_id = f"email:{account['id']}"
+    profile = get_brand_profile(ROOT, customer_id)
+    profile_confirmed = bool(profile and profile.get("status") == "confirmed")
+    destination = "/autopilot-workspace?view=today" if profile_confirmed else "/autopilot-workspace?onboarding=1"
+    response = RedirectResponse(destination, status_code=303)
     forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     response.set_cookie(AUTH_COOKIE, token, max_age=7 * 86400, httponly=True, secure=forwarded_proto == "https", samesite="lax")
     response.delete_cookie(LOGOUT_COOKIE, path="/", secure=forwarded_proto == "https", samesite="lax")
