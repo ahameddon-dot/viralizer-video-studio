@@ -119,6 +119,12 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         for legacy_icon in ("<i>⌂</i>", "<i>▣</i>", "<i>⚙</i>", ">♢</button>"):
             self.assertNotIn(legacy_icon, self.page)
 
+    def test_topic_loading_has_large_progress_animation_and_verified_rank_fast_path(self):
+        self.assertIn("topic-discovery-loader", self.script)
+        self.assertIn("topicLoadingTime", self.script)
+        self.assertIn("Verifying Viral Rank evidence", self.script)
+        self.assertIn('source["viral_rank_source"] = "mcp_hot_topics"', self.app)
+
 
 if __name__ == "__main__":
     unittest.main()

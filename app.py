@@ -2472,6 +2472,7 @@ async def bootstrap_autopilot_demo(request: Request):
     source = "Viralizer MCP Hot Topic Engine + Viral Rank"
     try:
         raw_topics = await get_hot_topics_from_mcp()
+        mcp_feed_available = True
         topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
         if not topics:
             raise MCPOutlineError("No usable topics")
@@ -2514,6 +2515,7 @@ async def refresh_autopilot_topics(request: Request):
         if not topics:
             raise MCPOutlineError("Viralizer MCP returned no usable English-language topics.")
     except MCPOutlineError as exc:
+        mcp_feed_available = False
         # Keep onboarding usable with real, last-known public trend evidence while
         # Viralizer account/billing configuration is repaired. Never invent rank.
         raw_topics = await discover_global_sources()
@@ -2528,6 +2530,11 @@ async def refresh_autopilot_topics(request: Request):
 
         async def enrich(candidate: dict[str, Any]) -> dict[str, Any]:
             source = dict(candidate.get("source") or {})
+            existing_rank = next((source.get(key) for key in ("viral_rank", "viral_score", "score") if source.get(key) not in (None, "")), None)
+            if mcp_feed_available and existing_rank is not None:
+                source["viralizer_detail_status"] = "verified"
+                source["viral_rank_source"] = "mcp_hot_topics"
+                return source
             topic_id = str(source.get("topic_id") or "").strip()
             if not topic_id:
                 return source

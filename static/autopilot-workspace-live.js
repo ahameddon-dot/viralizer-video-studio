@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
+  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -193,19 +193,35 @@
     $('#briefTitle').textContent = `${best.title} is your strongest current opportunity`;
     $('#briefCopy').textContent = 'Ranked from Viralizer topic evidence and your confirmed brand profile—not a random worldwide feed.';
   }
+  function startTopicLoading(force) {
+    clearInterval(state.topicLoadingTimer);
+    const stages = ['Reading your confirmed brand profile', 'Fetching worldwide hot topics from Viralizer MCP', 'Matching topics to your audience and content themes', 'Verifying Viral Rank evidence', 'Preparing your best opportunities'];
+    let elapsed = 0, stage = 0;
+    $('#topicGrid').innerHTML = `<div class="topic-discovery-loader"><div class="discovery-orbit"><i></i><i></i><i></i><b>V.</b></div><div><span>AI TOPIC DISCOVERY</span><h2>${force ? 'Finding fresh opportunities for your brand' : 'Loading your opportunities'}</h2><p id="topicLoadingStage">${stages[0]}</p><strong id="topicLoadingTime">0s elapsed</strong><div class="discovery-progress"><i></i></div><small>Real MCP analysis may take a few moments. You can leave this screen open.</small></div></div>`;
+    state.topicLoadingTimer = setInterval(() => {
+      elapsed += 1;
+      if (elapsed % 3 === 0 && stage < stages.length - 1) stage += 1;
+      const stageNode = $('#topicLoadingStage'), timeNode = $('#topicLoadingTime');
+      if (stageNode) stageNode.textContent = stages[stage];
+      if (timeNode) timeNode.textContent = `${elapsed}s elapsed`;
+    }, 1000);
+  }
+  function stopTopicLoading() { clearInterval(state.topicLoadingTimer); state.topicLoadingTimer = null; }
   async function refreshTopics(force = false) {
     $('#briefTitle').textContent = force ? 'Matching worldwide trends to your brand…' : 'Loading saved opportunities…';
+    startTopicLoading(force);
     try {
       let data = await api('/api/autopilot/opportunities?limit=5');
       if (force || !(data.opportunities || []).length) data = await api('/api/autopilot/topics/refresh', { method: 'POST' });
       state.opportunities = data.opportunities || [];
+      stopTopicLoading();
       renderTopics();
       if (data.source) {
         $('#briefCopy').textContent = data.source.includes('MCP temporarily unavailable')
           ? 'Showing real worldwide public trend evidence while the Viralizer MCP account mapping is repaired. Unverified Viral Rank is shown as unavailable.'
           : 'Ranked from Viralizer topic evidence and your confirmed brand profile—not a random worldwide feed.';
       }
-    } catch (error) { $('#topicGrid').innerHTML = `<div class="production-error">${esc(error.message)}</div>`; }
+    } catch (error) { stopTopicLoading(); $('#topicGrid').innerHTML = `<div class="production-error">${esc(error.message)}</div>`; }
   }
 
   function sceneItems() {
