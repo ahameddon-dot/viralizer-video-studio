@@ -741,6 +741,44 @@ def get_cached_category_topics(
     return topics if isinstance(topics, list) else []
 
 
+def list_cached_category_topics(
+    root: Path,
+    *,
+    allow_stale: bool = False,
+    stale_max_age_seconds: int = 604800,
+    max_categories: int = 40,
+    max_topics: int = 250,
+) -> list[dict[str, Any]]:
+    """Return the shared V3 topic catalog for server-side personalization."""
+    now = int(time.time())
+    with _connect(root) as db:
+        rows = db.execute(
+            "SELECT topics_json,fetched_at,expires_at FROM creatorthon_category_topic_cache "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (max(1, int(max_categories)),),
+        ).fetchall()
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        item = dict(row)
+        if not allow_stale and int(item.get("expires_at") or 0) <= now:
+            continue
+        if allow_stale and now - int(item.get("fetched_at") or 0) > max(300, int(stale_max_age_seconds)):
+            continue
+        for topic in _json_load(item.get("topics_json"), []):
+            if not isinstance(topic, dict):
+                continue
+            title = " ".join(str(topic.get("topic") or topic.get("title") or "").split())
+            key = title.casefold()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(topic)
+            if len(result) >= max(1, int(max_topics)):
+                return result
+    return result
+
+
 def save_cached_category_topics(root: Path, category: str, topics: list[dict[str, Any]], ttl_seconds: int = 86400) -> None:
     clean_category = " ".join(str(category).split())
     now = int(time.time())

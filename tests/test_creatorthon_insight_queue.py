@@ -12,6 +12,7 @@ from creatorthon_store import (
     finish_insight_job,
     get_cached_category_topics,
     get_cached_topic_insight,
+    list_cached_category_topics,
     list_active_profile_interests,
     list_insight_jobs,
     retry_insight_job,
@@ -80,6 +81,19 @@ class CreatorthonInsightQueueTests(unittest.TestCase):
         cached = get_cached_topic_insight(self.root, "  a FASHION topic ")
         self.assertEqual(cached["metrics"]["viral_topic_rank"], 17)
         self.assertTrue(cached["cached"])
+
+    def test_shared_category_catalog_deduplicates_topics_across_v3_users(self):
+        save_cached_category_topics(
+            self.root, "Technology", [{"topic": "Shared verified topic", "category": "Technology"}], ttl_seconds=3600
+        )
+        save_cached_category_topics(
+            self.root, "AI", [
+                {"topic": "Shared verified topic", "category": "AI"},
+                {"topic": "Second verified topic", "category": "AI"},
+            ], ttl_seconds=3600
+        )
+        catalog = list_cached_category_topics(self.root, allow_stale=True)
+        self.assertEqual({item["topic"] for item in catalog}, {"Shared verified topic", "Second verified topic"})
 
     def test_expired_cache_can_be_served_stale_for_only_24_hours(self):
         result = {"parser_version": 2, "metrics": {"viral_topic_rank": 9}}

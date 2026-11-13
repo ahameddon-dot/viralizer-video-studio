@@ -83,6 +83,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
     def test_workspace_reuses_verified_v3_viral_rank(self):
         self.assertIn("def _v3_viral_rank", self.app)
         self.assertIn("def _v3_cached_topics", self.app)
+        self.assertIn("list_cached_category_topics", self.app)
+        self.assertIn("AUTOPILOT_V3_CACHE_STALE_SECONDS", self.app)
         self.assertIn('source["viral_rank_source"] = "v3_mcp_cache"', self.app)
         self.assertIn("V3's last verified Viralizer MCP topics and real Viral Rank", self.script)
 

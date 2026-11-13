@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
@@ -30,6 +30,7 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
                 "image": "https://images.test/ai.jpg",
                 "groups": ["Technology", "United States"],
                 "group_keys": ["technology", "US"],
+                "viral_rank": 12,
             },
             {
                 "topic_id": "food-1",
@@ -50,6 +51,28 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["topics"][0]["id"], "ai-1")
         self.assertEqual(payload["topics"][0]["title"], "AI changes retail")
         self.assertEqual(payload["topics"][0]["thumbnail_url"], "https://images.test/ai.jpg")
+        self.assertEqual(payload["topics"][0]["viral_rank"], 12)
+
+    async def test_autopilot_v3_client_uses_server_key_and_preserves_rank(self):
+        response = httpx.Response(
+            200,
+            request=httpx.Request("GET", "https://v3.test/api/v1/hot-topics"),
+            json={"source": "Viralizer MCP", "topics": [{"title": "AI retail", "viral_rank": 7}]},
+        )
+        session = AsyncMock()
+        session.get.return_value = response
+        manager = MagicMock()
+        manager.__aenter__ = AsyncMock(return_value=session)
+        manager.__aexit__ = AsyncMock(return_value=None)
+        with patch.dict(os.environ, {
+            "VIRALIZER_V3_TOPICS_API_KEY": "server-only-key",
+            "VIRALIZER_V3_TOPICS_API_URL": "https://v3.test/api/v1/hot-topics",
+        }, clear=False), patch("app.httpx.AsyncClient", return_value=manager):
+            topics, source = await viralizer_app._v3_worldwide_topics()
+        self.assertEqual(source, "Viralizer MCP")
+        self.assertEqual(topics[0]["topic"], "AI retail")
+        self.assertEqual(topics[0]["viral_rank"], 7)
+        self.assertEqual(session.get.await_args.kwargs["headers"]["X-API-Key"], "server-only-key")
 
     async def test_api_uses_public_source_fallback_with_same_contract(self):
         raw = [{

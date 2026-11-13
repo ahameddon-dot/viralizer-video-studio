@@ -83,7 +83,7 @@ from creatorthon_store import (
     list_assets, list_participant_videos, list_projects, list_reports, release_event_generation, reserve_event_generation,
     get_workflow_state, save_profile, save_report, save_workflow_state, save_youtube_connection, update_project, workspace,
     claim_next_insight_job, delete_insight_job, enqueue_insight_job, finish_insight_job, list_insight_jobs, retry_insight_job,
-    get_cached_category_topics, get_cached_topic_insight,
+    get_cached_category_topics, get_cached_topic_insight, list_cached_category_topics,
     save_cached_category_topics, save_cached_topic_insight,
 )
 from social_publisher import MANDATORY_HASHTAG, SocialPublishError, build_hashtags, publish_all, publishing_status
@@ -2520,7 +2520,7 @@ def _v3_viral_rank(title: str) -> tuple[float | None, str]:
         ROOT,
         title,
         allow_stale=True,
-        stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+        stale_max_age_seconds=int(os.getenv("AUTOPILOT_V3_CACHE_STALE_SECONDS", "604800")),
     )
     metrics = insight.get("metrics") if isinstance(insight, dict) and isinstance(insight.get("metrics"), dict) else {}
     raw = metrics.get("viral_topic_rank") or (insight or {}).get("viral_topic_rank")
@@ -2538,7 +2538,7 @@ def _v3_viral_rank(title: str) -> tuple[float | None, str]:
 
 
 def _v3_cached_topics(user: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return the current user's V3 category topics, deduplicated by title."""
+    """Return shared V3 topics, prioritizing this user's prior V3 interests."""
     profile = get_profile(ROOT, user)
     interests = [str(value).strip() for value in profile.get("interests", []) if str(value).strip()][:4]
     result: list[dict[str, Any]] = []
@@ -2548,13 +2548,62 @@ def _v3_cached_topics(user: dict[str, Any]) -> list[dict[str, Any]]:
             ROOT,
             interest,
             allow_stale=True,
-            stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+            stale_max_age_seconds=int(os.getenv("AUTOPILOT_V3_CACHE_STALE_SECONDS", "604800")),
         ):
             title = _topic_title_value(topic)
             key = title.casefold()
             if title and key not in seen:
                 seen.add(key); result.append(topic)
+    # V3 is a server-owned topic source. New Autopilot users do not need their
+    # own V3 profile: the confirmed brand matcher filters this shared catalog.
+    for topic in list_cached_category_topics(
+        ROOT,
+        allow_stale=True,
+        stale_max_age_seconds=int(os.getenv("AUTOPILOT_V3_CACHE_STALE_SECONDS", "604800")),
+    ):
+        title = _topic_title_value(topic)
+        key = title.casefold()
+        if title and key not in seen:
+            seen.add(key); result.append(topic)
     return result
+
+
+async def _v3_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
+    """Fetch the canonical V3 feed with a server-owned developer credential."""
+    key = os.getenv("VIRALIZER_V3_TOPICS_API_KEY", "").strip()
+    if not key:
+        raise MCPOutlineError("V3 topics API key is not configured.")
+    url = os.getenv("VIRALIZER_V3_TOPICS_API_URL", "https://v3.viralizer.ai/api/v1/hot-topics").strip()
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+            response = await client.get(
+                url,
+                params={"country": "worldwide", "limit": 100},
+                headers={"X-API-Key": key, "Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        raise MCPOutlineError(f"V3 topics API request failed: {exc}") from exc
+    if response.status_code != 200:
+        raise MCPOutlineError(f"V3 topics API returned HTTP {response.status_code}.")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise MCPOutlineError("V3 topics API returned invalid JSON.") from exc
+    rows = payload.get("topics") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or not rows:
+        raise MCPOutlineError("V3 topics API returned no topics.")
+    topics: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        item["topic"] = str(item.get("topic") or item.get("title") or "").strip()
+        if item.get("viral_rank") in (None, "") and item.get("viral_score") not in (None, ""):
+            item["viral_rank"] = item["viral_score"]
+        topics.append(item)
+    if not topics:
+        raise MCPOutlineError("V3 topics API returned no usable topics.")
+    return topics, str(payload.get("source") or "Viralizer V3")
 
 
 @app.post("/api/autopilot/topics/refresh")
@@ -2571,16 +2620,20 @@ async def refresh_autopilot_topics(request: Request):
             raise MCPOutlineError("Viralizer MCP returned no usable English-language topics.")
     except MCPOutlineError as exc:
         mcp_feed_available = False
-        # Reuse the working V3 topic intelligence before falling back to public
-        # discovery. V3 and Autopilot share one backend and one verified MCP cache.
-        raw_topics = _v3_cached_topics(user)
-        if raw_topics:
-            source_label = "Viralizer V3 topic intelligence cache + verified Viral Rank"
-            provider_notice = "Live MCP refresh was unavailable; using V3's last verified MCP intelligence."
-        else:
-            raw_topics = await discover_global_sources()
-            source_label = "Worldwide public trend sources · Viralizer MCP temporarily unavailable"
-            provider_notice = str(exc)[:300]
+        try:
+            raw_topics, v3_source = await _v3_worldwide_topics()
+            mcp_feed_available = "mcp" in v3_source.casefold()
+            source_label = "Viralizer V3 worldwide topics" + (" + verified Viral Rank" if mcp_feed_available else "")
+            provider_notice = "Using the canonical V3 backend feed for this customer."
+        except MCPOutlineError as v3_exc:
+            raw_topics = _v3_cached_topics(user)
+            if raw_topics:
+                source_label = "Viralizer V3 topic intelligence cache + verified Viral Rank"
+                provider_notice = "Live V3 refresh was unavailable; using V3's last verified intelligence."
+            else:
+                raw_topics = await discover_global_sources()
+                source_label = "Worldwide public trend sources · Viralizer MCP temporarily unavailable"
+                provider_notice = f"{exc}; {v3_exc}"[:300]
         topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
         if not topics:
             raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
@@ -5342,7 +5395,8 @@ def _normalize_developer_topic(item: dict[str, Any], rank: int) -> dict[str, Any
         "languages": [str(value) for value in languages],
         "published_at": _topic_text(item, "published_at") or None,
         "trend_score": _topic_number(item, "trend_score", "score"),
-        "viral_score": _topic_number(item, "viral_score", "viral_rank"),
+        "viral_score": _topic_number(item, "viral_score"),
+        "viral_rank": _topic_number(item, "viral_rank"),
         "global_mentions": mentions,
         "keywords": [str(value) for value in keywords],
         "thumbnail_url": image or None,
