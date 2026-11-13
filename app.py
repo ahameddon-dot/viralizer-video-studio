@@ -107,10 +107,10 @@ from autopilot_retention import apply_retention, delete_customer_data, deletion_
 from hybrid_contracts import SceneRevisionCreate
 from hybrid_project_state import RevisionConflictError, ensure_autopilot_project, get_project_context, list_project_events, revise_storyboard_scene
 from conversation import MODEL_ORCHESTRATION_ENABLED
-from conversation.contracts import ConversationCreate, ConversationRespond, MemoryFactConfirmation, MemoryFactCreate, MessageCreate, ToolExecutionPropose
+from conversation.contracts import ConversationCreate, ConversationRespond, MemoryFactConfirmation, MemoryFactCreate, MessageCreate, ToolExecutionConfirmation, ToolExecutionPropose
 from conversation.orchestrator import respond as orchestrate_conversation
 from conversation.registry import public_registry
-from conversation.store import append_message, confirm_memory_fact, confirmed_memory, create_conversation, get_conversation, list_conversations, propose_memory_fact, propose_tool_execution
+from conversation.store import append_message, complete_tool_execution, confirm_memory_fact, confirmed_memory, confirm_tool_execution, create_conversation, get_conversation, list_conversations, propose_memory_fact, propose_tool_execution
 
 # Short-lived, authenticated V1 post-production jobs. Keeping media finishing out
 # of the browser request prevents proxy timeouts while narration is rendered.
@@ -2383,6 +2383,68 @@ async def propose_conversation_tool_execution(request: Request, conversation_id:
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"execution": execution, "executed": False, "model_orchestration_enabled": False}
+
+
+@app.post("/api/conversations/{conversation_id}/tool-executions/{execution_id}/confirm")
+async def confirm_conversation_tool_execution(request: Request, conversation_id: str, execution_id: str, payload: ToolExecutionConfirmation):
+    """Execute one explicitly confirmed, customer-scoped generation action from chat."""
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    if not payload.confirm_provider_cost:
+        raise HTTPException(422, "Confirm the provider-cost action before continuing.")
+    try:
+        execution = confirm_tool_execution(ROOT, customer_id, conversation_id, execution_id)
+        arguments = execution.get("arguments") or {}; name = str(execution.get("tool_name") or "")
+        concept_id = str(arguments.get("concept_id") or "")
+        if name == "generate_storyboard":
+            concept = get_concept(ROOT, customer_id, concept_id)
+            if not concept:
+                raise ValueError("Creative concept was not found.")
+            result = {"storyboard": concept.get("content", {}).get("storyboard") or [], "concept_id": concept_id}
+            summary = "The storyboard is ready. Review the three scenes here or open the visual canvas."
+        elif name == "generate_keyframe":
+            scene_index = int(arguments.get("scene_index") or 0)
+            result = await generate_autopilot_keyframe(request, concept_id, KeyframeGenerateRequest(
+                scene_index=scene_index, preserve_identity=True,
+                user_direction=str(arguments.get("direction") or ""), avoid="",
+            ))
+            keyframe = result.get("keyframe") or {}; result["media_url"] = keyframe.get("image_url") or ""
+            summary = f"Scene {scene_index + 1} is generated. Review the image before asking me to animate it."
+        elif name == "animate_scene":
+            scene_index = int(arguments.get("scene_index") or 0)
+            result = await animate_autopilot_keyframe(request, concept_id, KeyframeAnimateRequest(scene_index=scene_index))
+            summary = f"PixVerse started Scene {scene_index + 1}. The job is saved and can continue in the background."
+        elif name == "finalize_video":
+            concept = get_concept(ROOT, customer_id, concept_id)
+            if not concept:
+                raise ValueError("Creative concept was not found.")
+            workflow = start_content_workflow(ROOT, customer_id, concept_id)
+            content = concept.get("content") or {}
+            result = await finalize_autopilot_concept(request, concept_id, AutopilotDemoAssetRequest(
+                workflow_run_id=workflow["id"], concept_id=concept_id,
+                title=str(content.get("title") or "Viralizer video"),
+                caption="\n\n".join(filter(None, [str(content.get("narrative") or ""), str(content.get("cta") or "")])),
+                hashtags=["#Viralizer"],
+            ))
+            result["media_url"] = result.get("video_url") or ""
+            summary = "Your final video is ready. The next step is exact-content approval; nothing has been published."
+        else:
+            raise ValueError("This action still requires the visual approval workflow.")
+        complete_tool_execution(ROOT, customer_id, execution_id, result=result)
+        message = append_message(ROOT, customer_id, conversation_id, "assistant", {
+            "type": "tool_result", "text": summary, "tool": name,
+            "media_url": str(result.get("media_url") or ""), "result": result,
+        })
+        return {"execution_id": execution_id, "status": "completed", "result": result, "message": message}
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except HTTPException as exc:
+        try: complete_tool_execution(ROOT, customer_id, execution_id, error={"message": str(exc.detail)})
+        except ValueError: pass
+        raise
+    except ValueError as exc:
+        try: complete_tool_execution(ROOT, customer_id, execution_id, error={"message": str(exc)})
+        except ValueError: pass
+        raise HTTPException(409, str(exc)) from exc
 
 
 @app.post("/api/autopilot/brand-profile/analyze")

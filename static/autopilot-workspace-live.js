@@ -240,7 +240,7 @@
     $('#finishWorkspaceOnboarding').disabled = !ready;
     $('#finishWorkspaceOnboarding').textContent = ready ? `Continue with ${creationModeLabel(state.creationMode)} →` : confirmed ? 'Choose how you want to create' : 'Confirm profile to continue';
   }
-  function creationModeLabel(mode) { return ({ quick: 'Quick Create', guided: 'Guided Create', advanced: 'Advanced Studio' })[mode] || 'Viralizer'; }
+  function creationModeLabel(mode) { return ({ chat: 'Full AI Chat', quick: 'Quick Create', guided: 'Guided Create', advanced: 'Advanced Studio' })[mode] || 'Viralizer'; }
   function showOnboarding() {
     const profile = profileData();
     state.onboardingType = state.profile?.customer_type || 'business'; state.creationMode = '';
@@ -301,6 +301,7 @@
       }) });
       state.profile = data.brand_profile; localStorage.setItem('viralizer_creation_mode', state.creationMode);
       renderBrand(); $('#workspaceOnboarding').hidden = true;
+      if (state.creationMode === 'chat') { location.assign('/autopilot-chat?welcome=1'); return; }
       const cleanUrl = new URL(location.href); cleanUrl.searchParams.delete('onboarding'); cleanUrl.searchParams.set('view', 'today');
       history.replaceState({ view: 'today' }, '', cleanUrl);
       await refreshTopics(true);
@@ -440,6 +441,11 @@
       if (!(data.concepts || []).length) data = await api('/api/autopilot/concepts/generate', { method: 'POST', body: JSON.stringify({ opportunity_id: id, platform: 'instagram', goal: (profileData().goals || [])[0] || 'Grow audience' }) });
       state.concepts = data.concepts || []; state.concept = state.concepts[0];
       if (!state.concept) throw new Error('The Creative Director did not return a concept.');
+      try {
+        const shared = await api(`/api/hybrid/projects/autopilot-concept/${encodeURIComponent(state.concept.id)}`);
+        const project = shared.project || {};
+        localStorage.setItem('viralizer.activeProject', JSON.stringify({ id: project.id, concept_id: state.concept.id, revision: project.revision || 1, title: state.topic.title }));
+      } catch {}
       renderConcept(); showScreen('create');
     } catch (error) { toast(error.message); }
     finally { if (card) card.classList.remove('loading'); }
@@ -677,7 +683,7 @@
     $('#closeInspiration').onclick = closeInspiration; $('#continueInspiration').onclick = continueInspiration;
     $('#explainTopics').onclick = () => { $('#assistantDrawer').classList.add('open'); sendAssistant('Explain why these opportunities match my confirmed profile.'); };
     $('#openAssistant').onclick = () => $('#assistantDrawer').classList.add('open'); $('#closeAssistant').onclick = () => $('#assistantDrawer').classList.remove('open');
-    $('#openAssistantNav').onclick = () => $('#assistantDrawer').classList.add('open');
+    $('#openAssistantNav').onclick = () => location.assign('/autopilot-chat');
     $('#openAssistantMobile').onclick = () => $('#assistantDrawer').classList.add('open');
     $('#assistantForm').onsubmit = event => { event.preventDefault(); const input = $('#assistantForm textarea'); sendAssistant(input.value); input.value = ''; };
     $$('[data-customer-type]').forEach(button => button.onclick = () => { state.onboardingType = button.dataset.customerType; $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item === button)); updateOnboardingReadiness(); });

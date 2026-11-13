@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Viralizer · Chat workspace</title>
-  <link rel="stylesheet" href="/static/autopilot-chat.css?v=1">
-  <script defer src="/static/autopilot-chat.js?v=1"></script>
+  <link rel="stylesheet" href="/static/autopilot-chat.css?v=3">
+  <script defer src="/static/autopilot-chat.js?v=3"></script>
 </head>
 <body>
   <div class="workspace">
     <aside class="rail">
-      <a class="brand" href="/autopilot-review" aria-label="Viralizer home">Viralizer<small>AI Growth Assistant</small></a>
+      <a class="brand" href="/autopilot-workspace" aria-label="Viralizer home"><span>V.</span> Viralizer AI<small>Growth Autopilot</small></a>
       <button class="new-chat" id="newConversation">＋ New conversation</button>
       <div class="rail-label">Conversations</div>
       <nav class="thread-list" id="conversationList" aria-label="Conversations"><div class="muted">Loading…</div></nav>
@@ -22,22 +22,22 @@
         <div><span class="eyebrow">CONVERSATIONAL WORKSPACE</span><h1 id="conversationTitle">New conversation</h1></div>
         <nav class="mode-switch" aria-label="Workspace mode">
           <a class="active" href="/autopilot-chat">Chat</a>
-          <a href="/autopilot-review">UI</a>
-          <a href="/autopilot-review?mode=hybrid">Hybrid</a>
+          <a href="/autopilot-workspace">Visual</a>
         </nav>
       </header>
 
       <section class="context-strip" id="projectContext">
         <div class="context-icon">◇</div>
         <div><b>No active project</b><small>Open a topic in UI Mode to connect its storyboard here.</small></div>
-        <a href="/autopilot-review">Open UI Mode →</a>
+        <a href="/autopilot-workspace">Open visual workspace →</a>
       </section>
 
       <section class="messages" id="messages" aria-live="polite">
         <div class="welcome">
           <div class="spark">✦</div>
-          <h2>Work with your Viralizer AI team.</h2>
-          <p>Ask about a topic, storyboard, scene, or publication. Your request will be stored with the active project.</p>
+          <h2>What should we create today?</h2>
+          <p>Describe the outcome in plain language. Viralizer can research a topic, build the story, create the visuals, produce the video, and prepare it for your approval.</p>
+          <div class="starter-grid" id="starterPrompts"><button data-prompt="Find the best live topic for my brand and recommend one video idea."><b>Find a viral opportunity</b><span>Use my profile and real Viral Rank</span></button><button data-prompt="Create a 15-second video from my strongest opportunity. Guide me through approvals."><b>Create a video for me</b><span>Topic → storyboard → production</span></button><button data-prompt="Show my current project and tell me the next action."><b>Continue my project</b><span>Resume exactly where I stopped</span></button><button data-prompt="Show my real publication performance and recommend what to do next."><b>Analyze performance</b><span>Provider data only—never fake metrics</span></button></div>
           <div class="notice"><b>Approval-safe AI workspace</b><span>Low-risk tools can run here. Generation costs and publishing always stop for your approval.</span></div>
         </div>
       </section>
@@ -51,7 +51,9 @@
     </main>
 
     <aside class="tools-panel">
-      <div class="panel-title"><span>AI team</span><small>POLICY CONTROLLED</small></div>
+      <div class="panel-title"><span>Creation journey</span><small>LIVE STATE</small></div>
+      <div class="journey-stack" id="journeyStack"><div class="active"><i>1</i><span><b>Discover</b><small>Find the right opportunity</small></span></div><div><i>2</i><span><b>Create</b><small>Concept and storyboard</small></span></div><div><i>3</i><span><b>Produce</b><small>Images and PixVerse video</small></span></div><div><i>4</i><span><b>Approve</b><small>Exact content and accounts</small></span></div><div><i>5</i><span><b>Learn</b><small>Performance and next action</small></span></div></div>
+      <div class="panel-title tools-heading"><span>Authorized AI tools</span><small id="toolCount">CHECKING</small></div>
       <div id="toolList" class="tool-list"><div class="muted">Loading registry…</div></div>
       <div class="guardrail"><b>Human approval stays mandatory</b><p>Nothing can publish from chat without exact-content approval.</p></div>
     </aside>

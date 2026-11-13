@@ -12,6 +12,9 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         cls.page = (ROOT / "static" / "autopilot-workspace.html").read_text(encoding="utf-8")
         cls.script = (ROOT / "static" / "autopilot-workspace-live.js").read_text(encoding="utf-8")
         cls.premium = (ROOT / "static" / "autopilot-workspace-premium.css").read_text(encoding="utf-8")
+        cls.chat_page = (ROOT / "static" / "autopilot-chat.html").read_text(encoding="utf-8")
+        cls.chat_script = (ROOT / "static" / "autopilot-chat.js").read_text(encoding="utf-8")
+        cls.chat_css = (ROOT / "static" / "autopilot-chat.css").read_text(encoding="utf-8")
 
     def test_opportunity_cards_show_real_rank_with_crisp_images(self):
         self.assertIn("bestTopicImage", self.script)
@@ -24,6 +27,23 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn(".viral-rank-badge", self.premium)
         self.assertIn(".brand-fit strong", self.premium)
         self.assertIn("button:focus-visible", self.premium)
+
+    def test_onboarding_can_enter_full_chat_creation(self):
+        self.assertIn('data-creation-mode="chat"', self.page)
+        self.assertIn("Full AI Chat", self.page)
+        self.assertIn("location.assign('/autopilot-chat?welcome=1')", self.script)
+
+    def test_chat_is_a_shared_project_creation_workspace(self):
+        self.assertIn("What should we create today?", self.chat_page)
+        self.assertIn("Creation journey", self.chat_page)
+        self.assertIn("Find a viral opportunity", self.chat_page)
+        self.assertIn("viralizer.activeProject", self.chat_script)
+        self.assertIn("approval_cards", self.chat_script)
+        self.assertIn("confirm_provider_cost", self.chat_script)
+        self.assertIn("tool-executions/${button.dataset.confirmExecution}/confirm", self.chat_script)
+        self.assertIn('/tool-executions/{execution_id}/confirm', self.app)
+        self.assertIn("action-card", self.chat_css)
+        self.assertIn("starter-grid", self.chat_css)
         self.assertIn("image-rendering:auto", self.premium)
 
     def test_separate_workspace_route_preserves_existing_product(self):

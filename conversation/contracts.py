@@ -41,4 +41,8 @@ class ToolExecutionPropose(BaseModel):
     correlation_id: str = Field(min_length=1, max_length=128)
 
 
+class ToolExecutionConfirmation(BaseModel):
+    confirm_provider_cost: bool = False
+
+
 MessageRole = Literal["user", "assistant", "system", "tool"]

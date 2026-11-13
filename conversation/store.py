@@ -206,6 +206,35 @@ def complete_tool_execution(root: Path, customer_id: str, execution_id: str, res
     return item
 
 
+def confirm_tool_execution(root: Path, customer_id: str, conversation_id: str, execution_id: str) -> dict[str, Any]:
+    """Convert one blocked provider-cost proposal into an executable audited action."""
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT * FROM conversation_tool_executions WHERE id=? AND customer_id=? AND conversation_id=?",
+            (execution_id, customer_id, conversation_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("Tool execution was not found for this conversation.")
+        current = dict(row)
+        authorization = _load(current.get("authorization_json"), {})
+        if current.get("status") != "blocked" or authorization.get("code") != "cost_confirmation_required":
+            raise ValueError("This action is not awaiting provider-cost confirmation.")
+        decision = authorize_tool(root, customer_id, str(current.get("tool_name") or ""), str(current.get("project_context_id") or ""), cost_confirmed=True)
+        if not decision.get("execution_enabled"):
+            raise PermissionError(str(decision.get("reason") or "The action is not authorized."))
+        updated = db.execute(
+            """UPDATE conversation_tool_executions SET authorization_json=?,approval_status='approved',status='proposed',updated_at=?
+            WHERE id=? AND customer_id=? AND conversation_id=? AND status='blocked' RETURNING *""",
+            (_json(decision), int(time.time()), execution_id, customer_id, conversation_id),
+        ).fetchone()
+    if not updated:
+        raise ValueError("This action has already been handled.")
+    result = dict(updated)
+    for source, target in (("arguments_json", "arguments"), ("authorization_json", "authorization"), ("result_json", "result"), ("error_json", "error")):
+        result[target] = _load(result.pop(source), {})
+    return result
+
+
 def link_workflow(root: Path, customer_id: str, conversation_id: str, workflow_run_id: str, project_context_id: str = "", purpose: str = "") -> dict[str, Any]:
     get_conversation(root, customer_id, conversation_id, include_messages=False)
     if project_context_id:
