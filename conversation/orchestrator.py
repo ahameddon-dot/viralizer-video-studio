@@ -11,7 +11,7 @@ import httpx
 
 from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_growth import growth_dashboard
-from autopilot_intelligence import generate_concepts, get_brand_profile, rank_opportunities
+from autopilot_intelligence import generate_concepts, get_brand_profile, list_opportunities, rank_opportunities
 from conversation import MODEL_ORCHESTRATION_ENABLED
 from conversation.redaction import redact
 from conversation.registry import TOOL_REGISTRY
@@ -56,6 +56,16 @@ def _function_calls(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def _history(root: Path, customer_id: str, conversation: dict[str, Any]) -> list[dict[str, str]]:
     result = []
     for message in (conversation.get("messages") or [])[-20:]:
+        if message.get("role") == "tool":
+            content = message.get("content") or {}
+            output = content.get("output") or {}
+            if output.get("status") == "completed" and content.get("tool") in {"rank_opportunities", "create_concepts"}:
+                result.append({
+                    "role": "user",
+                    "content": "Saved Viralizer workflow state (use these exact IDs; do not show IDs to the customer):\n"
+                    + json.dumps({"tool": content.get("tool"), "data": output.get("data") or {}}, ensure_ascii=False, default=str)[:30000],
+                })
+            continue
         if message.get("role") not in {"user", "assistant"}:
             continue
         content = message.get("content") or {}
@@ -82,7 +92,19 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "rank_opportunities":
         return {"opportunities": rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})}
     if name == "create_concepts":
-        concepts = generate_concepts(root, customer_id, {"opportunity_id": arguments.get("opportunity_id"), "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or ""})
+        requested = str(arguments.get("opportunity_id") or "").strip()
+        opportunities = list_opportunities(root, customer_id, 25)
+        opportunity_id = requested
+        if requested.isdigit() and 1 <= int(requested) <= len(opportunities):
+            opportunity_id = str(opportunities[int(requested) - 1]["id"])
+        elif requested and not any(str(item.get("id")) == requested for item in opportunities):
+            needle = requested.casefold()
+            matched = next((item for item in opportunities if needle in str(item.get("title") or "").casefold() or str(item.get("title") or "").casefold() in needle), None)
+            if matched:
+                opportunity_id = str(matched["id"])
+        if not opportunity_id or not any(str(item.get("id")) == opportunity_id for item in opportunities):
+            raise ValueError("Select one of the displayed opportunities before creating the storyboard.")
+        concepts = generate_concepts(root, customer_id, {"opportunity_id": opportunity_id, "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or ""})
         project = None
         if concepts:
             project = ensure_autopilot_project(root, customer_id, str(concepts[0]["id"]), actor_id)
@@ -133,8 +155,13 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                         result = redact(await _execute(root, customer_id, name, arguments, conversation_id, actor_id))
                         complete_tool_execution(root, customer_id, execution["id"], result=result)
                         tool_output = {"status": "completed", "tool": name, "data": result}
+                    except (ValueError, RuntimeError) as exc:
+                        safe_message = " ".join(str(exc).split())[:300] or "The workflow step could not complete."
+                        error = {"code": "tool_failed", "message": safe_message}
+                        complete_tool_execution(root, customer_id, execution["id"], error=error)
+                        tool_output = {"status": "failed", "tool": name, "error": error["message"]}
                     except Exception:
-                        error = {"code": "tool_failed", "message": "The tool could not complete safely."}
+                        error = {"code": "tool_failed", "message": "The workflow step could not complete. Please retry or choose another saved opportunity."}
                         complete_tool_execution(root, customer_id, execution["id"], error=error)
                         tool_output = {"status": "failed", "tool": name, "error": error["message"]}
                 else:

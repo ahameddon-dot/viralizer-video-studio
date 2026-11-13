@@ -80,6 +80,7 @@ class ConversationOrchestratorTests(unittest.TestCase):
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
         with patch("conversation.orchestrator.generate_concepts", return_value=concepts), \
+             patch("conversation.orchestrator.list_opportunities", return_value=[{"id": "opportunity-1", "title": "Creator growth"}]), \
              patch("conversation.orchestrator.ensure_autopilot_project", return_value={"id": "project-1", "revision": 1}), \
              patch("conversation.orchestrator.attach_project") as attach:
             result = asyncio.run(_execute(
@@ -88,6 +89,19 @@ class ConversationOrchestratorTests(unittest.TestCase):
             ))
         self.assertEqual("project-1", result["project"]["id"])
         attach.assert_called_once_with(self.root, "customer-1", self.thread["id"], "project-1")
+
+    def test_numeric_topic_selection_resolves_to_saved_opportunity(self):
+        concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
+        opportunities = [
+            {"id": "opportunity-1", "title": "First topic"},
+            {"id": "opportunity-2", "title": "Second topic"},
+        ]
+        with patch("conversation.orchestrator.list_opportunities", return_value=opportunities), \
+             patch("conversation.orchestrator.generate_concepts", return_value=concepts) as generate, \
+             patch("conversation.orchestrator.ensure_autopilot_project", return_value={"id": "project-1", "revision": 1}), \
+             patch("conversation.orchestrator.attach_project"):
+            asyncio.run(_execute(self.root, "customer-1", "create_concepts", {"opportunity_id": "1"}, self.thread["id"], "owner"))
+        self.assertEqual("opportunity-1", generate.call_args.args[2]["opportunity_id"])
 
 
 if __name__ == "__main__":
