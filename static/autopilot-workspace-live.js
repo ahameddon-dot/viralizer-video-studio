@@ -84,6 +84,7 @@
     if (name === 'results') loadResults();
     if (name === 'connections') loadConnections();
     if (name === 'approve' && state.asset) renderApproval(postFromAsset());
+    if (name === 'produce' && state.asset && !state.productionRunning) renderRestoredProduction();
   }
 
   function profileData() { return state.profile?.profile || state.profile || {}; }
@@ -282,6 +283,13 @@
     paint(); state.productionTimer = setInterval(paint, 1000);
   }
   function stopProductionTimer() { clearInterval(state.productionTimer); state.productionTimer = null; }
+  function renderRestoredProduction() {
+    const video = state.asset?.media_url || state.asset?.video_url || state.asset?.url || '';
+    if (!video) return;
+    $('#productionVisual').innerHTML = `<video controls playsinline preload="metadata" src="${esc(video)}" aria-label="Saved final video"></video>`;
+    updateProgress(100, 'Your real video is ready', 'Saved final video restored · review the exact asset before publishing', 3);
+    markTask('#taskOne', 'complete', 'Approved'); markTask('#taskTwo', 'complete', 'Complete'); markTask('#taskThree', 'complete', 'Complete');
+  }
   function startImageTimer() {
     clearInterval(state.imageTimer); state.imageStartedAt = Date.now(); $('#imageGenerationStatus').hidden = false; $('#imageGenerationBar').style.width = '5%'; $('#imageElapsed').textContent = '00:00';
     state.imageTimer = setInterval(() => { $('#imageElapsed').textContent = formatElapsed(Math.floor((Date.now() - state.imageStartedAt) / 1000)); }, 1000);
@@ -530,7 +538,10 @@
         state.concept = restored.concept || state.concepts[0]; state.workflow = restored.workflow; state.asset = restored.asset;
         renderConcept();
         if ([0, 1, 2].every(index => currentKeyframe(index))) renderProductionKeyframes();
-        if (state.asset && state.current === 'approve') renderApproval(postFromAsset());
+        if (state.asset) {
+          renderRestoredProduction();
+          if (state.current === 'approve') renderApproval(postFromAsset());
+        }
         toast('Your saved project has been restored.');
       }
     }

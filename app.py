@@ -2607,6 +2607,8 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
     if payload.user_photo_id:
         user_photo_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_user_photos" / customer_id / f"{payload.user_photo_id}.png"
         if not user_photo_path.is_file():
+            await restore_object_file(user_photo_path, f"autopilot_user_photos/{customer_id}/{payload.user_photo_id}.png")
+        if not user_photo_path.is_file():
             raise HTTPException(404, "Your selected identity photo is no longer available. Upload it again.")
     elif payload.preserve_identity:
         anchor_versions = keyframes.get("0") or []
@@ -2645,6 +2647,8 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
         elif identity_reference:
             reference_path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(identity_reference.get("filename") or "")
             if not reference_path.is_file():
+                await restore_object_file(reference_path, f"autopilot_keyframes/{customer_id}/{concept_id}/{reference_path.name}")
+            if not reference_path.is_file():
                 raise HTTPException(404, "The approved identity reference image is missing.")
             image_bytes = await generate_reference_image(reference_path.read_bytes(), prompt, "image/png")
         else:
@@ -2658,6 +2662,10 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
     filename = f"scene-{payload.scene_index}-v{version_number}-{digest[:12]}.png"
     path = keyframe_root / filename
     path.write_bytes(image_bytes)
+    try:
+        await upload_object_file(path, f"autopilot_keyframes/{customer_id}/{concept_id}/{filename}", "image/png")
+    except ObjectStoreError as exc:
+        raise HTTPException(503, "The keyframe was generated but could not be saved durably. Please retry.") from exc
     keyframe = record_keyframe(ROOT, customer_id, concept_id, payload.scene_index, {
         "filename": filename, "sha256": digest, "status": "generated", "provider": "openai_image",
         "image_url": f"/api/autopilot/concepts/{concept_id}/keyframes/{payload.scene_index}/{version_number}",
@@ -2692,6 +2700,10 @@ async def upload_autopilot_user_photo(request: Request, photo: UploadFile = File
     directory = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_user_photos" / customer_id
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{photo_id}.png"; path.write_bytes(output.getvalue())
+    try:
+        await upload_object_file(path, f"autopilot_user_photos/{customer_id}/{photo_id}.png", "image/png")
+    except ObjectStoreError as exc:
+        raise HTTPException(503, "The identity photo could not be saved durably. Please retry.") from exc
     return {"photo_id": photo_id, "filename": Path(photo.filename or "user-photo").name, "status": "private_identity_reference"}
 
 
@@ -2704,6 +2716,8 @@ async def autopilot_keyframe_image(request: Request, concept_id: str, scene_inde
         raise HTTPException(404, "Keyframe version was not found.")
     filename = str(versions[version - 1].get("filename") or "")
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / filename
+    if filename and not path.is_file():
+        await restore_object_file(path, f"autopilot_keyframes/{customer_id}/{concept_id}/{filename}")
     if not filename or not path.is_file():
         raise HTTPException(404, "Keyframe image file was not found.")
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "private, no-store"})
@@ -2721,6 +2735,8 @@ async def animate_autopilot_keyframe(request: Request, concept_id: str, payload:
         raise HTTPException(409, "Generate the scene keyframe before animation.")
     latest = versions[-1]
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(latest.get("filename") or "")
+    if not path.is_file():
+        await restore_object_file(path, f"autopilot_keyframes/{customer_id}/{concept_id}/{path.name}")
     if not path.is_file():
         raise HTTPException(404, "Keyframe image file was not found.")
     scene = scenes[payload.scene_index]

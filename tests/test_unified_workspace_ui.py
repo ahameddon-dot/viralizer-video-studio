@@ -50,6 +50,14 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn('renderProductionKeyframes()', self.script)
         self.assertIn('assetMatchesPost(asset, post)', self.script)
         self.assertIn('@app.get("/api/autopilot/projects/current")', self.app)
+        self.assertIn('renderRestoredProduction()', self.script)
+        self.assertIn('Saved final video restored', self.script)
+
+    def test_keyframes_and_identity_photos_use_durable_storage(self):
+        self.assertIn('autopilot_keyframes/{customer_id}/{concept_id}/{filename}', self.app)
+        self.assertIn('autopilot_user_photos/{customer_id}/{photo_id}.png', self.app)
+        self.assertIn('await restore_object_file(reference_path', self.app)
+        self.assertIn('await restore_object_file(user_photo_path', self.app)
 
     def test_concept_generation_uses_supported_platform(self):
         self.assertIn("platform: 'instagram'", self.script)
