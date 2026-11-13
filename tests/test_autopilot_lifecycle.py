@@ -12,6 +12,7 @@ from autopilot_lifecycle import (
     create_asset_version,
     get_active_project,
     list_asset_versions,
+    list_autopilot_projects,
     list_publications,
     record_metric_snapshot,
     start_content_workflow,
@@ -71,6 +72,32 @@ class AutopilotLifecycleTests(unittest.TestCase):
         self.assertEqual(asset["id"], restored["asset"]["id"])
         self.assertEqual(["#saved"], restored["asset"]["hashtags"])
         self.assertIsNone(get_active_project(self.root, "customer-2"))
+
+    def test_projects_inventory_keeps_published_history_and_deduplicates_media(self):
+        first = self.asset()
+        duplicate = self.asset()
+        projects = list_autopilot_projects(self.root, "customer-1")
+        self.assertEqual(1, len(projects))
+        self.assertEqual(duplicate["id"], projects[0]["asset_id"])
+        self.assertEqual("Exact title", projects[0]["title"])
+        self.assertEqual([], list_autopilot_projects(self.root, "customer-2"))
+
+        result = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": duplicate["id"],
+            "destination_id": "instagram-1", "caption": "Exact caption",
+        })
+        with _connect(self.root) as db:
+            db.execute("UPDATE autopilot_publications SET status='published' WHERE id=?", (result["publication"]["id"],))
+        projects = list_autopilot_projects(self.root, "customer-1")
+        self.assertEqual(1, projects[0]["published_count"])
+
+        # A publication attached to an older retry version still belongs to the one
+        # visible video card because both assets contain identical final media.
+        with _connect(self.root) as db:
+            db.execute("UPDATE autopilot_publications SET asset_version_id=? WHERE id=?", (first["id"], result["publication"]["id"]))
+        projects = list_autopilot_projects(self.root, "customer-1")
+        self.assertEqual(1, len(projects))
+        self.assertEqual(1, projects[0]["published_count"])
 
     def test_required_qc_blocks_invalid_asset(self):
         with self.assertRaises(ValueError):

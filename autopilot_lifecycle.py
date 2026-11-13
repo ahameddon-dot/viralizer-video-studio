@@ -174,6 +174,81 @@ def get_active_project(root: Path, customer_id: str) -> dict[str, Any] | None:
     }
 
 
+def list_autopilot_projects(root: Path, customer_id: str) -> list[dict[str, Any]]:
+    """Return distinct customer-owned video projects, including published history.
+
+    Asset retries can create more than one database row for the same final media.  The
+    Projects screen should show the video once while retaining all of its publication
+    destinations and statuses.
+    """
+    with _connect(root) as db:
+        rows = db.execute(
+            """SELECT a.*,c.opportunity_id,o.title AS opportunity_title,
+                      o.category AS opportunity_category
+               FROM autopilot_asset_versions a
+               JOIN autopilot_creative_concepts c
+                 ON c.id=a.concept_id AND c.customer_id=a.customer_id
+               JOIN autopilot_opportunities o
+                 ON o.id=c.opportunity_id AND o.customer_id=a.customer_id
+              WHERE a.customer_id=?
+              ORDER BY a.created_at DESC,a.version DESC""",
+            (customer_id,),
+        ).fetchall()
+        publications = db.execute(
+            """SELECT * FROM autopilot_publications
+               WHERE customer_id=? ORDER BY created_at DESC""",
+            (customer_id,),
+        ).fetchall()
+
+    publications_by_asset: dict[str, list[dict[str, Any]]] = {}
+    for row in publications:
+        item = dict(row)
+        # Provider payloads are already sanitized before persistence. Keep the project
+        # inventory deliberately small and never expose raw provider response JSON.
+        publications_by_asset.setdefault(str(item.get("asset_version_id") or ""), []).append({
+            "id": item.get("id"),
+            "destination_id": item.get("destination_id"),
+            "provider": item.get("provider"),
+            "status": item.get("status"),
+            "provider_post_id": item.get("provider_post_id"),
+            "published_at": item.get("published_at"),
+            "created_at": item.get("created_at"),
+        })
+
+    projects: list[dict[str, Any]] = []
+    projects_by_media: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        item = dict(row)
+        media_key = str(item.get("media_sha256") or item.get("media_url") or item.get("id"))
+        asset_publications = publications_by_asset.get(str(item["id"]), [])
+        if media_key in projects_by_media:
+            project = projects_by_media[media_key]
+            project["publications"].extend(asset_publications)
+            project["published_count"] = sum(
+                1 for publication in project["publications"] if publication.get("status") == "published"
+            )
+            continue
+        project = {
+            "id": item["id"],
+            "asset_id": item["id"],
+            "concept_id": item["concept_id"],
+            "opportunity_id": item["opportunity_id"],
+            "workflow_run_id": item["workflow_run_id"],
+            "title": item.get("title") or item.get("opportunity_title") or "Untitled video",
+            "opportunity_title": item.get("opportunity_title"),
+            "category": item.get("opportunity_category"),
+            "media_url": item.get("media_url"),
+            "status": item.get("status"),
+            "version": item.get("version"),
+            "created_at": item.get("created_at"),
+            "publications": asset_publications,
+            "published_count": sum(1 for publication in asset_publications if publication.get("status") == "published"),
+        }
+        projects_by_media[media_key] = project
+        projects.append(project)
+    return projects
+
+
 def approve_and_queue_publication(root: Path, customer_id: str, approved_by: str, request: PublicationApprovalRequest | dict[str, Any]) -> dict[str, Any]:
     model = request if isinstance(request, PublicationApprovalRequest) else PublicationApprovalRequest.model_validate(request)
     with _connect(root) as db:

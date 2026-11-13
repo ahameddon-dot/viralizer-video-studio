@@ -53,6 +53,13 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn('renderRestoredProduction()', self.script)
         self.assertIn('Saved final video restored', self.script)
 
+    def test_projects_screen_lists_saved_customer_videos(self):
+        self.assertIn('@app.get("/api/autopilot/projects")', self.app)
+        self.assertIn("loadProjects()", self.script)
+        self.assertIn("/api/autopilot/projects", self.script)
+        self.assertIn("project-video", self.script)
+        self.assertIn("Every saved video and its real publishing status", self.page)
+
     def test_keyframes_and_identity_photos_use_durable_storage(self):
         self.assertIn('autopilot_keyframes/{customer_id}/{concept_id}/{filename}', self.app)
         self.assertIn('autopilot_user_photos/{customer_id}/{photo_id}.png', self.app)

@@ -82,9 +82,34 @@
     $('#quickPrompts').innerHTML = prompts.map(prompt => `<button type="button">${esc(prompt)}</button>`).join('');
     $$('#quickPrompts button').forEach(button => button.onclick = () => sendAssistant(button.textContent));
     if (name === 'results') loadResults();
+    if (name === 'projects') loadProjects();
     if (name === 'connections') loadConnections();
     if (name === 'approve' && state.asset) renderApproval(postFromAsset());
     if (name === 'produce' && state.asset && !state.productionRunning) renderRestoredProduction();
+  }
+
+  async function loadProjects() {
+    const gallery = $('#projectGallery');
+    if (!gallery) return;
+    gallery.innerHTML = '<article><div><b>Loading your projects…</b><small>Checking saved videos and publication history.</small></div></article>';
+    try {
+      const projects = (await api('/api/autopilot/projects')).projects || [];
+      if (!projects.length) {
+        gallery.innerHTML = '<article><div><b>No saved videos yet</b><small>Select a topic to create your first project.</small><button class="secondary" data-go="today">Choose a topic →</button></div></article>';
+      } else {
+        gallery.innerHTML = projects.map(project => {
+          const published = Number(project.published_count || 0);
+          const label = published ? `Published to ${published} destination${published === 1 ? '' : 's'}` : 'Not published yet';
+          const media = project.media_url ? `<video class="project-video" src="${esc(project.media_url)}" preload="metadata" controls playsinline></video>` : '<div class="project-thumb"><span>VIDEO</span></div>';
+          return `<article>${media}<div><b>${esc(project.title || project.opportunity_title || 'Untitled video')}</b><small>${esc(label)} · Version ${esc(project.version || 1)}</small><button class="secondary" type="button" data-project-results="${esc(project.asset_id)}">View publishing results →</button></div></article>`;
+        }).join('');
+        $$('[data-project-results]').forEach(button => button.onclick = () => showScreen('results'));
+      }
+      $$('[data-go]', gallery).forEach(button => button.onclick = () => showScreen(button.dataset.go));
+    } catch (error) {
+      gallery.innerHTML = `<article><div><b>Projects could not be loaded</b><small>${esc(error.message)}</small><button class="secondary" type="button" id="retryProjects">Retry</button></div></article>`;
+      $('#retryProjects').onclick = loadProjects;
+    }
   }
 
   function profileData() { return state.profile?.profile || state.profile || {}; }
