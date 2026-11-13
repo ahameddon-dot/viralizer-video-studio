@@ -300,7 +300,7 @@
   }
   function renderTopics() {
     const host = $('#topicGrid');
-    if (!state.opportunities.length) { host.innerHTML = '<div class="production-error">No ranked opportunities are ready yet. Refresh to ask the Hot Topic engine for new matches.</div>'; return; }
+    if (!state.opportunities.length) { host.innerHTML = '<div class="empty-opportunities"><span>✦</span><div><b>No verified trend matches your brand right now.</b><p>Viralizer rejected unrelated topics instead of filling your feed with noise. Start from your idea, image, URL, or business above—or refresh later.</p></div><button type="button" data-empty-idea>Start with an idea →</button></div>'; $('[data-empty-idea]').onclick = () => openInspiration('idea'); return; }
     host.innerHTML = state.opportunities.map((topic, index) => {
       const score = scoreFor(topic), viralRank = viralRankFor(topic), why = topic.reason || topic.explanation || topic.brand_match_reason || 'Matched against your confirmed audience, offer, and goal.', image = topic.source?.image || topic.source?.thumbnail_url || topic.image || topic.thumbnail_url || topicFallbackImage(topic);
       return `<article class="topic-card ${index === 0 ? 'recommended' : ''}" data-topic="${esc(topic.id)}"><div class="topic-image"><img src="${esc(image)}" alt="${esc(topic.title)}" loading="lazy"><b>${score || '—'}</b><span>${index === 0 ? 'BEST MATCH' : esc(topic.category || 'OPPORTUNITY')}</span></div><h2>${esc(topic.title)}</h2><p>${esc(why)}</p><div class="topic-footer"><span>Viral Rank: ${viralRank ?? 'not available'}</span><button>Select topic →</button></div></article>`;
@@ -333,6 +333,7 @@
       state.opportunities = data.opportunities || [];
       stopTopicLoading();
       renderTopics();
+      if (!state.opportunities.length && data.message) $('#briefTitle').textContent = data.message;
       if (data.source) {
         $('#briefCopy').textContent = data.source.includes('MCP temporarily unavailable')
           ? 'Showing real worldwide public trend evidence while the Viralizer MCP account mapping is repaired. Unverified Viral Rank is shown as unavailable.'

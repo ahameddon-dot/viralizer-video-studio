@@ -2533,6 +2533,19 @@ async def refresh_autopilot_topics(request: Request):
         customer_id = str(user.get("sub", ""))
         preliminary = rank_opportunities(ROOT, customer_id, {"topics": topics, "limit": 5})
 
+        if not preliminary:
+            archive_other_opportunities(ROOT, customer_id, [])
+            return {
+                "opportunities": [],
+                "count": 0,
+                "source": source_label,
+                "received": len(raw_topics),
+                "eligible": len(topics),
+                "viral_rank_verified": 0,
+                "provider_notice": provider_notice,
+                "message": "No current worldwide topic passed your confirmed brand-relevance checks. Start from an idea, image, URL, or business brief instead.",
+            }
+
         async def enrich(candidate: dict[str, Any]) -> dict[str, Any]:
             source = dict(candidate.get("source") or {})
             existing_rank = next((source.get(key) for key in ("viral_rank", "viral_score", "score") if source.get(key) not in (None, "")), None)

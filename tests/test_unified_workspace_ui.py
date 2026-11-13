@@ -156,6 +156,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("topicLoadingTime", self.script)
         self.assertIn("Verifying Viral Rank evidence", self.script)
         self.assertIn('source["viral_rank_source"] = "mcp_hot_topics"', self.app)
+        self.assertIn("No current worldwide topic passed your confirmed brand-relevance checks", self.app)
+        self.assertIn("No verified trend matches your brand right now", self.script)
 
     def test_home_supports_five_real_inspiration_entry_points(self):
         for mode in ('trend', 'upload', 'url', 'business', 'idea'):
