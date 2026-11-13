@@ -66,7 +66,8 @@
     connections: ['Connection guide', 'Provider connections', ['How do I connect Instagram?', 'What data does Viralizer store?']]
     ,projects: ['Project guide', 'Your projects', ['Open my active project', 'Start from a new topic']]
   };
-  function showScreen(name) {
+  function showScreen(name, { historyMode = 'push' } = {}) {
+    if (!screenContext[name]) name = 'today';
     state.current = name;
     $$('.screen').forEach(node => node.classList.toggle('active', node.id === `screen-${name}`));
     $$('#primaryNav [data-screen]').forEach(node => node.classList.toggle('active', node.dataset.screen === name));
@@ -86,6 +87,13 @@
     if (name === 'connections') loadConnections();
     if (name === 'approve' && state.asset) renderApproval(postFromAsset());
     if (name === 'produce' && state.asset && !state.productionRunning) renderRestoredProduction();
+    if (historyMode !== 'none') {
+      const url = new URL(location.href);
+      const previous = url.searchParams.get('view');
+      url.searchParams.set('view', name);
+      if (historyMode === 'replace' || previous === name) history.replaceState({ view: name }, '', url);
+      else history.pushState({ view: name }, '', url);
+    }
   }
 
   async function loadProjects() {
@@ -557,9 +565,12 @@
     $('#exactApproval').onchange = event => { $('#publishApproved').disabled = !event.target.checked; };
     ['#approvalTitle', '#approvalCaption', '#approvalHashtags'].forEach(selector => $(selector).addEventListener('input', invalidateApproval));
     $('#publishApproved').onclick = publishApproved; $('#editBrand').onclick = showOnboarding;
+    window.addEventListener('popstate', () => {
+      showScreen(new URLSearchParams(location.search).get('view') || 'today', { historyMode: 'none' });
+    });
   }
   async function init() {
-    bind(); showScreen(new URLSearchParams(location.search).get('view') || 'today');
+    bind(); showScreen(new URLSearchParams(location.search).get('view') || 'today', { historyMode: 'replace' });
     const data = await api('/api/autopilot/brand-profile'); state.profile = data.brand_profile; renderBrand();
     const forceOnboarding = new URLSearchParams(window.location.search).get('onboarding') === '1';
     const confirmed = Boolean(

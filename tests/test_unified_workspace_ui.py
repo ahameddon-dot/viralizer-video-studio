@@ -62,6 +62,13 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Publish this video", self.script)
         self.assertIn("Every saved video and its real publishing status", self.page)
 
+    def test_active_page_survives_refresh_and_browser_navigation(self):
+        self.assertIn("url.searchParams.set('view', name)", self.script)
+        self.assertIn("history.replaceState", self.script)
+        self.assertIn("history.pushState", self.script)
+        self.assertIn("window.addEventListener('popstate'", self.script)
+        self.assertIn("historyMode: 'replace'", self.script)
+
     def test_keyframes_and_identity_photos_use_durable_storage(self):
         self.assertIn('autopilot_keyframes/{customer_id}/{concept_id}/{filename}', self.app)
         self.assertIn('autopilot_user_photos/{customer_id}/{photo_id}.png', self.app)
