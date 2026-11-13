@@ -83,6 +83,7 @@
     $$('#quickPrompts button').forEach(button => button.onclick = () => sendAssistant(button.textContent));
     if (name === 'results') loadResults();
     if (name === 'connections') loadConnections();
+    if (name === 'approve' && state.asset) renderApproval(postFromAsset());
   }
 
   function profileData() { return state.profile?.profile || state.profile || {}; }
@@ -402,6 +403,17 @@
     } catch (error) { host.innerHTML = `<b>Publish to</b><p>${esc(error.message)}</p>`; }
     $('#exactApproval').checked = false; $('#publishApproved').disabled = true;
   }
+  function postFromAsset() {
+    const asset = state.asset || {};
+    return { title: asset.title || state.topic?.title || '', caption: asset.caption || '', hashtags: asset.hashtags || parse(asset.hashtags_json || '[]') };
+  }
+  function assetMatchesPost(asset, post) {
+    if (!asset?.id) return false;
+    const existingTags = asset.hashtags || parse(asset.hashtags_json || '[]');
+    return String(asset.title || '').trim() === post.title
+      && String(asset.caption || '').trim() === post.caption
+      && JSON.stringify(existingTags) === JSON.stringify(post.hashtags);
+  }
   function invalidateApproval() { $('#exactApproval').checked = false; $('#publishApproved').disabled = true; }
   async function publishApproved() {
     const button = $('#publishApproved'), destinations = $$('[data-account]:checked').map(node => node.value);
@@ -409,8 +421,11 @@
     button.disabled = true; button.textContent = 'Recording exact approval…';
     const post = { title: $('#approvalTitle').value.trim(), caption: $('#approvalCaption').value.trim(), hashtags: list($('#approvalHashtags').value) };
     try {
-      const exactAsset = await api(`/api/autopilot/concepts/${encodeURIComponent(state.concept.id)}/finalize`, { method: 'POST', body: JSON.stringify({ workflow_run_id: state.workflow.id, concept_id: state.concept.id, ...post }) });
-      let asset = exactAsset.asset;
+      let asset = state.asset;
+      if (!assetMatchesPost(asset, post)) {
+        const exactAsset = await api(`/api/autopilot/concepts/${encodeURIComponent(state.concept.id)}/finalize`, { method: 'POST', body: JSON.stringify({ workflow_run_id: state.workflow.id, concept_id: state.concept.id, ...post }) });
+        asset = exactAsset.asset; state.asset = asset;
+      }
       for (const destination_id of destinations) {
         const approved = await api('/api/autopilot/publications/approve', { method: 'POST', body: JSON.stringify({ workflow_run_id: state.workflow.id, asset_version_id: asset.id, destination_id, scheduled_at: 0, ...post }) });
         button.textContent = 'Submitting to Post for Me…';
@@ -506,7 +521,19 @@
       state.profile?.confirmed === true ||
       profileData().confirmed === true
     );
-    if (forceOnboarding || !state.profile || !confirmed) showOnboarding(); else await refreshTopics(false);
+    if (forceOnboarding || !state.profile || !confirmed) showOnboarding();
+    else {
+      await refreshTopics(false);
+      const restored = (await api('/api/autopilot/projects/current')).project;
+      if (restored) {
+        state.topic = restored.opportunity; state.concepts = restored.concepts || [];
+        state.concept = restored.concept || state.concepts[0]; state.workflow = restored.workflow; state.asset = restored.asset;
+        renderConcept();
+        if ([0, 1, 2].every(index => currentKeyframe(index))) renderProductionKeyframes();
+        if (state.asset && state.current === 'approve') renderApproval(postFromAsset());
+        toast('Your saved project has been restored.');
+      }
+    }
     if (new URLSearchParams(location.search).has('connected')) toast('Connection returned. Refreshing provider accounts…');
   }
   init().catch(error => { toast(error.message); showOnboarding(); });

@@ -98,6 +98,82 @@ def list_asset_versions(root: Path, customer_id: str, workflow_run_id: str = "")
     return [dict(row) for row in rows]
 
 
+def get_active_project(root: Path, customer_id: str) -> dict[str, Any] | None:
+    """Restore the latest customer-owned creative state after refresh or login."""
+    with _connect(root) as db:
+        opportunity = db.execute(
+            """SELECT o.* FROM autopilot_opportunities o
+            WHERE o.customer_id=? AND EXISTS (
+              SELECT 1 FROM autopilot_creative_concepts c
+              WHERE c.opportunity_id=o.id AND c.customer_id=o.customer_id
+            ) ORDER BY o.updated_at DESC LIMIT 1""",
+            (customer_id,),
+        ).fetchone()
+        if not opportunity:
+            return None
+        opportunity_item = dict(opportunity)
+        concept_rows = db.execute(
+            "SELECT * FROM autopilot_creative_concepts WHERE customer_id=? AND opportunity_id=? ORDER BY variant_number",
+            (customer_id, opportunity_item["id"]),
+        ).fetchall()
+        concepts = [dict(row) for row in concept_rows]
+        concept_ids = {item["id"] for item in concepts}
+        asset = db.execute(
+            """SELECT a.* FROM autopilot_asset_versions a
+            JOIN autopilot_creative_concepts c ON c.id=a.concept_id AND c.customer_id=a.customer_id
+            WHERE a.customer_id=? AND c.opportunity_id=? AND a.status='ready_review'
+            ORDER BY a.created_at DESC,a.version DESC LIMIT 1""",
+            (customer_id, opportunity_item["id"]),
+        ).fetchone()
+        workflow = None
+        selected_concept_id = str(dict(asset).get("concept_id") or "") if asset else ""
+        if asset:
+            workflow_row = db.execute(
+                "SELECT * FROM autopilot_workflow_runs WHERE id=? AND customer_id=?",
+                (dict(asset)["workflow_run_id"], customer_id),
+            ).fetchone()
+            workflow = dict(workflow_row) if workflow_row else None
+        if not workflow:
+            for row in db.execute(
+                "SELECT * FROM autopilot_workflow_runs WHERE customer_id=? AND workflow_type='content_growth' ORDER BY updated_at DESC,id DESC",
+                (customer_id,),
+            ).fetchall():
+                candidate = dict(row)
+                try:
+                    input_data = json.loads(candidate.get("input_json") or "{}")
+                except (TypeError, ValueError):
+                    input_data = {}
+                if input_data.get("concept_id") in concept_ids:
+                    workflow = candidate
+                    selected_concept_id = str(input_data.get("concept_id") or "")
+                    break
+        selected_concept = next((item for item in concepts if item["id"] == selected_concept_id), concepts[0])
+    for item in concepts:
+        try:
+            item["content"] = json.loads(item.pop("content_json") or "{}")
+        except (TypeError, ValueError):
+            item["content"] = {}
+    for key, default in (("components_json", {}), ("source_json", {})):
+        try:
+            opportunity_item[key.removesuffix("_json")] = json.loads(opportunity_item.pop(key) or "{}")
+        except (TypeError, ValueError):
+            opportunity_item[key.removesuffix("_json")] = default
+    asset_item = dict(asset) if asset else None
+    if asset_item:
+        for key, default in (("hashtags_json", []), ("qc_json", {})):
+            try:
+                asset_item[key.removesuffix("_json")] = json.loads(asset_item.get(key) or json.dumps(default))
+            except (TypeError, ValueError):
+                asset_item[key.removesuffix("_json")] = default
+    return {
+        "opportunity": opportunity_item,
+        "concepts": concepts,
+        "concept": next(item for item in concepts if item["id"] == selected_concept["id"]),
+        "workflow": workflow,
+        "asset": asset_item,
+    }
+
+
 def approve_and_queue_publication(root: Path, customer_id: str, approved_by: str, request: PublicationApprovalRequest | dict[str, Any]) -> dict[str, Any]:
     model = request if isinstance(request, PublicationApprovalRequest) else PublicationApprovalRequest.model_validate(request)
     with _connect(root) as db:

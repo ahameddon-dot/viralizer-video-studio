@@ -10,6 +10,7 @@ from autopilot_intelligence import generate_concepts, rank_opportunities, save_b
 from autopilot_lifecycle import (
     approve_and_queue_publication,
     create_asset_version,
+    get_active_project,
     list_asset_versions,
     list_publications,
     record_metric_snapshot,
@@ -55,6 +56,21 @@ class AutopilotLifecycleTests(unittest.TestCase):
         self.assertEqual(2, second["version"])
         self.assertEqual("superseded", list_asset_versions(self.root, "customer-1")[-1]["status"])
         self.assertEqual([], list_asset_versions(self.root, "customer-2"))
+
+    def test_active_project_restores_customer_owned_images_workflow_and_asset(self):
+        workflow = start_content_workflow(self.root, "customer-1", self.concept["id"])
+        asset = create_asset_version(self.root, "customer-1", {
+            "workflow_run_id": workflow["id"], "concept_id": self.concept["id"],
+            "media_url": "/api/media/restored.mp4", "media_sha256": "c" * 64,
+            "duration_seconds": 15, "aspect_ratio": "9:16", "caption": "Saved caption",
+            "title": "Saved title", "hashtags": ["#saved"],
+        })
+        restored = get_active_project(self.root, "customer-1")
+        self.assertEqual(self.concept["id"], restored["concept"]["id"])
+        self.assertEqual(workflow["id"], restored["workflow"]["id"])
+        self.assertEqual(asset["id"], restored["asset"]["id"])
+        self.assertEqual(["#saved"], restored["asset"]["hashtags"])
+        self.assertIsNone(get_active_project(self.root, "customer-2"))
 
     def test_required_qc_blocks_invalid_asset(self):
         with self.assertRaises(ValueError):

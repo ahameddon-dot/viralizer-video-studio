@@ -44,6 +44,13 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("state.profile?.status === 'confirmed'", self.script)
         self.assertIn("state.profile?.confirmed_at", self.script)
 
+    def test_saved_project_images_and_publish_retry_survive_reload(self):
+        self.assertIn('/api/autopilot/projects/current', self.script)
+        self.assertIn('Your saved project has been restored.', self.script)
+        self.assertIn('renderProductionKeyframes()', self.script)
+        self.assertIn('assetMatchesPost(asset, post)', self.script)
+        self.assertIn('@app.get("/api/autopilot/projects/current")', self.app)
+
     def test_concept_generation_uses_supported_platform(self):
         self.assertIn("platform: 'instagram'", self.script)
         self.assertNotIn("platform: 'instagram_reels'", self.script)
