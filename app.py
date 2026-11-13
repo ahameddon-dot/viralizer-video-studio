@@ -2578,7 +2578,7 @@ async def _v3_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
             response = await client.get(
                 url,
-                params={"country": "worldwide", "limit": 100},
+                params={"country": "worldwide", "limit": 20},
                 headers={"X-API-Key": key, "Accept": "application/json"},
             )
     except httpx.HTTPError as exc:
