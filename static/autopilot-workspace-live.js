@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', inspirationMode: '', topicRefreshSeq: 0, productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
+  const state = { profile: null, accountProfile: {}, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', inspirationMode: '', topicRefreshSeq: 0, productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', onboardingStep: 0, creationMode: '', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -218,16 +218,46 @@
     $('.sidebar-bottom small').textContent = audiences || 'Personal workspace';
   }
 
+  const onboardingQuestions = [
+    { field: 'onboardName', prompt: 'What should I call you?' },
+    { field: 'onboardWebsite', prompt: 'Share your main website or public profile. I’ll use real public evidence to understand your brand.' },
+    { field: 'onboardSocial', prompt: 'Add one social profile too, or type “skip”. It is optional.' }
+  ];
+  function addOnboardingMessage(text, role = 'ai') {
+    const host = $('#onboardingMessages');
+    const message = document.createElement('div'); message.className = `onboarding-message ${role}`;
+    message.innerHTML = role === 'ai' ? `<b>Viralizer</b><p>${esc(text)}</p>` : `<p>${esc(text)}</p>`;
+    host.appendChild(message); host.scrollTop = host.scrollHeight;
+  }
+  function updateOnboardingReadiness() {
+    const required = ['onboardName', 'onboardWebsite', 'onboardOffer', 'onboardAudience'];
+    const filled = required.filter(id => $(`#${id}`).value.trim()).length;
+    const confirmed = $('#confirmOnboarding').checked;
+    const score = Math.min(100, 20 + filled * 15 + (state.brandAnalysisDraft.confidence ? 10 : 0) + (confirmed ? 10 : 0));
+    $('#onboardingReadiness').textContent = `${score}%`;
+    $('#onboardingCreationModes').hidden = !confirmed;
+    const ready = confirmed && Boolean(state.creationMode) && filled === required.length;
+    $('#finishWorkspaceOnboarding').disabled = !ready;
+    $('#finishWorkspaceOnboarding').textContent = ready ? `Continue with ${creationModeLabel(state.creationMode)} →` : confirmed ? 'Choose how you want to create' : 'Confirm profile to continue';
+  }
+  function creationModeLabel(mode) { return ({ quick: 'Quick Create', guided: 'Guided Create', advanced: 'Advanced Studio' })[mode] || 'Viralizer'; }
   function showOnboarding() {
     const profile = profileData();
-    state.onboardingType = state.profile?.customer_type || 'business';
+    state.onboardingType = state.profile?.customer_type || 'business'; state.creationMode = '';
+    $('#onboardingMessages').innerHTML = '<div class="onboarding-message ai"><b>Viralizer</b><p>Welcome. I only need the essentials to personalize your content.</p></div>';
     $$('[data-customer-type]').forEach(button => button.classList.toggle('selected', button.dataset.customerType === state.onboardingType));
+    $('#onboardName').value = state.accountProfile.name || state.profile?.brand_name || '';
+    $('#onboardEmail').value = state.accountProfile.email || '';
     $('#onboardWebsite').value = state.profile?.website_url || profile.website_url || '';
+    $('#onboardSocial').value = (state.profile?.social_urls || profile.social_urls || [])[0] || '';
     $('#onboardOffer').value = (profile.products_services || []).join(', ') || profile.positioning || '';
     $('#onboardAudience').value = (profile.audiences || []).join(', ');
     $('#onboardVoice').value = (profile.voice || []).join(', ');
     $('#onboardGoal').value = (profile.goals || [])[0] || 'Grow audience';
-    $('#workspaceOnboarding').hidden = false;
+    $('#confirmOnboarding').checked = false; $('#onboardingCreationModes').hidden = true;
+    state.onboardingStep = $('#onboardName').value ? 1 : 0;
+    addOnboardingMessage(onboardingQuestions[state.onboardingStep]?.prompt || 'Review your profile, then analyze the public brand source.');
+    updateOnboardingReadiness(); $('#workspaceOnboarding').hidden = false;
   }
   async function analyzeBrand() {
     const button = $('#analyzeOnboardBrand'), status = $('#onboardingStatus');
@@ -235,7 +265,8 @@
     try {
       const website = $('#onboardWebsite').value.trim();
       if (!website) throw new Error('Add a public website or profile first.');
-      const data = await api('/api/autopilot/brand-profile/analyze', { method: 'POST', body: JSON.stringify({ website_url: website, social_urls: [] }) });
+      const social = $('#onboardSocial').value.trim();
+      const data = await api('/api/autopilot/brand-profile/analyze', { method: 'POST', body: JSON.stringify({ website_url: website, social_urls: social ? [social] : [] }) });
       const draft = data.draft || {};
       state.brandAnalysisDraft = draft;
       if (draft.positioning) $('#onboardOffer').value = draft.positioning;
@@ -252,6 +283,7 @@
       status.textContent = analyzed
         ? `Found ${identity || 'public brand'} from ${analyzed} public source${analyzed === 1 ? '' : 's'}. ${themes ? `Content themes: ${themes}. ` : ''}Confidence: ${draft.confidence || 'medium'}. Review and confirm.`
         : `This profile could not be read publicly. Connect the social account or enter the brand details manually.`;
+      addOnboardingMessage(status.textContent); updateOnboardingReadiness();
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
   }
@@ -261,18 +293,26 @@
     try {
       if (!$('#onboardOffer').value.trim() || !$('#onboardAudience').value.trim()) throw new Error('Add what you offer and who you want to reach.');
       const data = await api('/api/autopilot/brand-profile', { method: 'PUT', body: JSON.stringify({
-        customer_type: state.onboardingType, brand_name: state.brandAnalysisDraft.brand_name || '', category: state.brandAnalysisDraft.category || '', website_url: $('#onboardWebsite').value.trim(), social_urls: [],
+        customer_type: state.onboardingType, brand_name: state.brandAnalysisDraft.brand_name || $('#onboardName').value.trim(), category: state.brandAnalysisDraft.category || '', website_url: $('#onboardWebsite').value.trim(), social_urls: $('#onboardSocial').value.trim() ? [$('#onboardSocial').value.trim()] : [],
         voice: list($('#onboardVoice').value), positioning: $('#onboardOffer').value.trim(),
         audiences: list($('#onboardAudience').value), goals: [$('#onboardGoal').value],
         products_services: list($('#onboardOffer').value), keywords: state.brandAnalysisDraft.keywords || [], hashtags: state.brandAnalysisDraft.hashtags || [], content_themes: state.brandAnalysisDraft.content_themes || [], recent_content: state.brandAnalysisDraft.recent_content || [], analysis_confidence: state.brandAnalysisDraft.confidence || '', competitor_urls: [], inspiration_urls: [], inspiration_notes: '',
         visual_style: ['cinematic', 'realistic'], constraints: ['Never publish without exact-content approval.'], confirmed: true
       }) });
-      state.profile = data.brand_profile;
+      state.profile = data.brand_profile; localStorage.setItem('viralizer_creation_mode', state.creationMode);
       renderBrand(); $('#workspaceOnboarding').hidden = true;
       const cleanUrl = new URL(location.href); cleanUrl.searchParams.delete('onboarding'); cleanUrl.searchParams.set('view', 'today');
       history.replaceState({ view: 'today' }, '', cleanUrl);
-      await refreshTopics(true); showScreen('today'); toast('Your AI growth workspace is ready.');
-    } catch (error) { status.textContent = error.message; button.disabled = false; button.textContent = 'Find my opportunities →'; }
+      await refreshTopics(true);
+      if (state.creationMode === 'quick' && state.opportunities[0]) {
+        toast('Quick Create is preparing your strongest opportunity.');
+        await selectTopic(state.opportunities[0].id);
+      } else {
+        showScreen('today');
+        if (state.creationMode === 'guided') { $('#assistantDrawer').classList.add('open'); $('#assistantMessages').insertAdjacentHTML('beforeend', '<div class="ai-message"><span>✦</span><p>Your profile is ready. Choose an opportunity and I’ll guide each important decision.</p></div>'); }
+        toast(state.creationMode === 'advanced' ? 'Advanced Studio is ready. Choose a topic to use the full controls.' : 'Your guided workspace is ready.');
+      }
+    } catch (error) { status.textContent = error.message; button.disabled = false; updateOnboardingReadiness(); }
   }
 
   function scoreFor(item) { return Math.round(Number(item.score ?? item.viral_score ?? item.source?.viral_rank ?? 0)); }
@@ -626,8 +666,20 @@
     $('#openAssistantNav').onclick = () => $('#assistantDrawer').classList.add('open');
     $('#openAssistantMobile').onclick = () => $('#assistantDrawer').classList.add('open');
     $('#assistantForm').onsubmit = event => { event.preventDefault(); const input = $('#assistantForm textarea'); sendAssistant(input.value); input.value = ''; };
-    $$('[data-customer-type]').forEach(button => button.onclick = () => { state.onboardingType = button.dataset.customerType; $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item === button)); });
-    $('#analyzeOnboardBrand').onclick = analyzeBrand; $('#confirmOnboarding').onchange = event => $('#finishWorkspaceOnboarding').disabled = !event.target.checked; $('#finishWorkspaceOnboarding').onclick = finishOnboarding;
+    $$('[data-customer-type]').forEach(button => button.onclick = () => { state.onboardingType = button.dataset.customerType; $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item === button)); updateOnboardingReadiness(); });
+    ['onboardName', 'onboardWebsite', 'onboardSocial', 'onboardOffer', 'onboardAudience', 'onboardVoice'].forEach(id => $(`#${id}`).addEventListener('input', updateOnboardingReadiness));
+    $('#onboardingChatForm').onsubmit = event => {
+      event.preventDefault(); const input = $('#onboardingChatInput'); const value = input.value.trim(); if (!value) return;
+      const question = onboardingQuestions[state.onboardingStep]; addOnboardingMessage(value, 'user');
+      if (question?.field) $(`#${question.field}`).value = value.toLowerCase() === 'skip' ? '' : value;
+      state.onboardingStep += 1; input.value = ''; updateOnboardingReadiness();
+      const next = onboardingQuestions[state.onboardingStep]; addOnboardingMessage(next?.prompt || 'Great. Analyze your public brand source, review the suggestions, then confirm the profile.');
+    };
+    $$('[data-creation-mode]').forEach(button => button.onclick = () => {
+      state.creationMode = button.dataset.creationMode; $$('[data-creation-mode]').forEach(item => item.classList.toggle('selected', item === button));
+      toast(`${creationModeLabel(state.creationMode)} selected.`); updateOnboardingReadiness();
+    });
+    $('#analyzeOnboardBrand').onclick = analyzeBrand; $('#confirmOnboarding').onchange = updateOnboardingReadiness; $('#finishWorkspaceOnboarding').onclick = finishOnboarding;
     $('#startRealProduction').onclick = () => {
       if ($('#useUserPhoto')?.checked && state.userPhotoDirty) { state.forceRegenerateKeyframes = true; state.keyframesApproved = false; $('#costConfirmation').hidden = false; return; }
       if ([0, 1, 2].every(index => currentKeyframe(index))) {
@@ -647,7 +699,7 @@
   }
   async function init() {
     bind(); showScreen(new URLSearchParams(location.search).get('view') || 'today', { historyMode: 'replace' });
-    const data = await api('/api/autopilot/brand-profile'); state.profile = data.brand_profile; renderBrand();
+    const data = await api('/api/autopilot/brand-profile'); state.profile = data.brand_profile; state.accountProfile = data.account_profile || {}; renderBrand();
     const forceOnboarding = new URLSearchParams(window.location.search).get('onboarding') === '1';
     const confirmed = Boolean(
       state.profile?.status === 'confirmed' ||

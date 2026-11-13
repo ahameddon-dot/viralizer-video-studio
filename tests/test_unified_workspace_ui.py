@@ -134,6 +134,24 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn('"/autopilot-workspace?onboarding=1"', self.app)
         self.assertIn("forceOnboarding", self.script)
 
+    def test_onboarding_chat_and_form_share_one_profile(self):
+        for field in ("onboardName", "onboardEmail", "onboardWebsite", "onboardSocial"):
+            self.assertIn(f'id="{field}"', self.page)
+        self.assertIn('id="onboardingChatForm"', self.page)
+        self.assertIn("onboardingQuestions", self.script)
+        self.assertIn("updateOnboardingReadiness", self.script)
+        self.assertIn('"account_profile"', self.app)
+        self.assertIn("social_urls: $('#onboardSocial').value.trim()", self.script)
+
+    def test_onboarding_creation_modes_route_into_existing_workflow(self):
+        for mode in ("quick", "guided", "advanced"):
+            self.assertIn(f'data-creation-mode="{mode}"', self.page)
+        self.assertIn("state.creationMode === 'quick'", self.script)
+        self.assertIn("await selectTopic(state.opportunities[0].id)", self.script)
+        self.assertIn("state.creationMode === 'guided'", self.script)
+        self.assertIn("Advanced Studio is ready", self.script)
+        self.assertIn("localStorage.setItem('viralizer_creation_mode'", self.script)
+
     def test_workspace_profile_menu_has_logout(self):
         self.assertIn('id="userMenuToggle"', self.page)
         self.assertIn('href="/logout?next=/login"', self.page)

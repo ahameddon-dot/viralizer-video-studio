@@ -2200,7 +2200,13 @@ async def update_creatorthon_profile(request: Request, payload: CreatorthonProfi
 @app.get("/api/autopilot/brand-profile")
 async def autopilot_brand_profile(request: Request):
     user = autopilot_user(request)
-    return {"brand_profile": get_brand_profile(ROOT, str(user.get("sub", "")))}
+    return {
+        "brand_profile": get_brand_profile(ROOT, str(user.get("sub", ""))),
+        "account_profile": {
+            "name": str(user.get("name") or "").strip(),
+            "email": str(user.get("email") or "").strip(),
+        },
+    }
 
 
 @app.get("/api/hybrid/projects/autopilot-concept/{concept_id}")
