@@ -169,6 +169,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         intelligence = (ROOT / "autopilot_intelligence.py").read_text(encoding="utf-8")
         self.assertIn('topic.get("user_directed")', intelligence)
         self.assertIn("Source-grounding evidence", intelligence)
+        self.assertIn("topicRefreshSeq", self.script)
+        self.assertIn("requestSeq !== state.topicRefreshSeq", self.script)
 
     def test_workspace_has_responsive_mobile_navigation(self):
         premium = (ROOT / "static" / "autopilot-workspace-premium.css").read_text(encoding="utf-8")

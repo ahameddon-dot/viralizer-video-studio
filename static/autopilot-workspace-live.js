@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', inspirationMode: '', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
+  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', inspirationMode: '', topicRefreshSeq: 0, productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -127,6 +127,7 @@
     if (mode === 'upload' && !file) return toast('Choose a JPG, PNG, or WebP image first.');
     const button = $('#continueInspiration'); button.disabled = true; button.innerHTML = 'Building opportunity <b>✦</b>';
     try {
+      state.topicRefreshSeq += 1;
       let groundedTitle = prompt, sourceUrl = url, sourceLabel = mode === 'url' ? url : (mode === 'upload' ? file.name : mode === 'business' ? 'Business brief' : 'Original idea');
       let sourceEvidence = '';
       if (mode === 'url') {
@@ -155,7 +156,8 @@
         source_type: mode, source_url: sourceUrl, source_name: sourceLabel, reference_description: sourceEvidence, user_directed: true
       }], limit: 1 }) });
       state.opportunities = result.opportunities || [];
-      renderTopics(); closeInspiration();
+      if (!state.opportunities.length) throw new Error('This brief could not be matched to your confirmed profile. Add a specific subject, audience, or product and try again.');
+      stopTopicLoading(); renderTopics(); closeInspiration();
       $('#trendOpportunitySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
       toast('Your opportunity is ready. Review it and choose Create.');
     } catch (error) { toast(error.message); }
@@ -325,11 +327,13 @@
   }
   function stopTopicLoading() { clearInterval(state.topicLoadingTimer); state.topicLoadingTimer = null; }
   async function refreshTopics(force = false) {
+    const requestSeq = ++state.topicRefreshSeq;
     $('#briefTitle').textContent = force ? 'Matching worldwide trends to your brand…' : 'Loading saved opportunities…';
     startTopicLoading(force);
     try {
       let data = await api('/api/autopilot/opportunities?limit=5');
       if (force || !(data.opportunities || []).length) data = await api('/api/autopilot/topics/refresh', { method: 'POST' });
+      if (requestSeq !== state.topicRefreshSeq) return;
       state.opportunities = data.opportunities || [];
       stopTopicLoading();
       renderTopics();
@@ -339,7 +343,7 @@
           ? 'Showing real worldwide public trend evidence while the Viralizer MCP account mapping is repaired. Unverified Viral Rank is shown as unavailable.'
           : 'Ranked from Viralizer topic evidence and your confirmed brand profile—not a random worldwide feed.';
       }
-    } catch (error) { stopTopicLoading(); $('#topicGrid').innerHTML = `<div class="production-error">${esc(error.message)}</div>`; }
+    } catch (error) { if (requestSeq === state.topicRefreshSeq) { stopTopicLoading(); $('#topicGrid').innerHTML = `<div class="production-error">${esc(error.message)}</div>`; } }
   }
 
   function sceneItems() {
