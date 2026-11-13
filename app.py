@@ -3888,7 +3888,13 @@ async def developer_hot_topics(request: Request, limit: int = 50):
             merged["topic"] = str(merged.get("suggested_title") or merged.get("hook") or merged.get("creator_angle") or current_title).strip()
         if not str(merged.get("category") or merged.get("category_label") or "").strip():
             evidence = str(merged.get("why_it_matters") or "")
-            category_match = re.search(r"Categories:\s*([^\n.]+)", evidence, flags=re.IGNORECASE)
+            subject_match = re.search(r"Within recent[^,]*,\s*(.+?)\s+is a hot topic", evidence, flags=re.IGNORECASE)
+            subject = subject_match.group(1).strip() if subject_match else ""
+            category_pattern = (
+                rf"Categories:\s*(.+?)\s+{re.escape(subject)}\s+is currently ranked"
+                if subject else r"Categories:\s*([^\n.]+)"
+            )
+            category_match = re.search(category_pattern, evidence, flags=re.IGNORECASE)
             if category_match:
                 merged["category"] = category_match.group(1).strip(" -")
         return merged

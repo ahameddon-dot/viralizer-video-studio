@@ -18,7 +18,7 @@ class V3TopicsApiTests(unittest.IsolatedAsyncioTestCase):
         details = {
             "viral_rank": 7,
             "suggested_title": "AI changes retail",
-            "why_it_matters": "A verified trend. Categories: Technology, Business",
+            "why_it_matters": "Within recent 2 days, AI retail is a hot topic for: - Categories: Technology, Business AI retail is currently ranked 7.",
         }
         with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "backend-key"}, clear=False), patch(
             "app.get_hot_topics_from_mcp", new=AsyncMock(return_value=raw)
