@@ -379,9 +379,11 @@
       renderTopics();
       if (!state.opportunities.length && data.message) $('#briefTitle').textContent = data.message;
       if (data.source) {
-        $('#briefCopy').textContent = data.source.includes('MCP temporarily unavailable')
-          ? 'Showing real worldwide public trend evidence while the Viralizer MCP account mapping is repaired. Unverified Viral Rank is shown as unavailable.'
-          : 'Ranked from Viralizer topic evidence and your confirmed brand profile—not a random worldwide feed.';
+        $('#briefCopy').textContent = data.source.includes('Viralizer V3')
+          ? "Using V3's last verified Viralizer MCP topics and real Viral Rank, personalized to your confirmed profile."
+          : data.source.includes('MCP temporarily unavailable')
+            ? 'Showing real worldwide public trend evidence while the Viralizer MCP account mapping is repaired. Unverified Viral Rank is shown as unavailable.'
+            : 'Ranked from Viralizer topic evidence and your confirmed brand profile—not a random worldwide feed.';
       }
     } catch (error) { if (requestSeq === state.topicRefreshSeq) { stopTopicLoading(); $('#topicGrid').innerHTML = `<div class="production-error">${esc(error.message)}</div>`; } }
   }

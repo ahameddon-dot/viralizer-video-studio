@@ -2514,6 +2514,49 @@ async def bootstrap_autopilot_demo(request: Request):
     return {"profile": profile, "opportunities": opportunities, "source": source, "demo": source.startswith("Stakeholder")}
 
 
+def _v3_viral_rank(title: str) -> tuple[float | None, str]:
+    """Reuse V3's verified MCP topic insight without inventing a score."""
+    insight = get_cached_topic_insight(
+        ROOT,
+        title,
+        allow_stale=True,
+        stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+    )
+    metrics = insight.get("metrics") if isinstance(insight, dict) and isinstance(insight.get("metrics"), dict) else {}
+    raw = metrics.get("viral_topic_rank") or (insight or {}).get("viral_topic_rank")
+    text = str(raw or "").strip().upper().replace(",", "")
+    if not text:
+        return None, ""
+    multiplier = 1_000_000 if text.endswith("M") else 1_000 if text.endswith("K") else 1
+    if multiplier != 1:
+        text = text[:-1]
+    try:
+        value = float(text) * multiplier
+    except ValueError:
+        return None, ""
+    return (value if value > 0 else None), str(raw)
+
+
+def _v3_cached_topics(user: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the current user's V3 category topics, deduplicated by title."""
+    profile = get_profile(ROOT, user)
+    interests = [str(value).strip() for value in profile.get("interests", []) if str(value).strip()][:4]
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for interest in interests:
+        for topic in get_cached_category_topics(
+            ROOT,
+            interest,
+            allow_stale=True,
+            stale_max_age_seconds=int(os.getenv("CREATORTHON_PREFETCH_STALE_SECONDS", "86400")),
+        ):
+            title = _topic_title_value(topic)
+            key = title.casefold()
+            if title and key not in seen:
+                seen.add(key); result.append(topic)
+    return result
+
+
 @app.post("/api/autopilot/topics/refresh")
 async def refresh_autopilot_topics(request: Request):
     """Pull the existing Viralizer MCP feed and personalize it against the confirmed brand profile."""
@@ -2522,17 +2565,23 @@ async def refresh_autopilot_topics(request: Request):
     provider_notice = ""
     try:
         raw_topics = await get_hot_topics_from_mcp()
+        mcp_feed_available = True
         topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
         if not topics:
             raise MCPOutlineError("Viralizer MCP returned no usable English-language topics.")
     except MCPOutlineError as exc:
         mcp_feed_available = False
-        # Keep onboarding usable with real, last-known public trend evidence while
-        # Viralizer account/billing configuration is repaired. Never invent rank.
-        raw_topics = await discover_global_sources()
+        # Reuse the working V3 topic intelligence before falling back to public
+        # discovery. V3 and Autopilot share one backend and one verified MCP cache.
+        raw_topics = _v3_cached_topics(user)
+        if raw_topics:
+            source_label = "Viralizer V3 topic intelligence cache + verified Viral Rank"
+            provider_notice = "Live MCP refresh was unavailable; using V3's last verified MCP intelligence."
+        else:
+            raw_topics = await discover_global_sources()
+            source_label = "Worldwide public trend sources · Viralizer MCP temporarily unavailable"
+            provider_notice = str(exc)[:300]
         topics = [topic for topic in raw_topics if _english_topic(topic)][:50]
-        source_label = "Worldwide public trend sources · Viralizer MCP temporarily unavailable"
-        provider_notice = str(exc)[:300]
         if not topics:
             raise HTTPException(502, f"The Viralizer topic engine is temporarily unavailable: {exc}") from exc
     try:
@@ -2559,10 +2608,17 @@ async def refresh_autopilot_topics(request: Request):
                 source["viralizer_detail_status"] = "verified"
                 source["viral_rank_source"] = "mcp_hot_topics"
                 return source
+            original_title = str(source.get("topic") or source.get("title") or candidate["title"])
+            v3_rank, v3_display = _v3_viral_rank(original_title)
+            if v3_rank is not None:
+                source["viral_rank"] = v3_rank
+                source["viral_rank_display"] = v3_display
+                source["viralizer_detail_status"] = "verified"
+                source["viral_rank_source"] = "v3_mcp_cache"
+                return source
             topic_id = str(source.get("topic_id") or "").strip()
             if not topic_id:
                 return source
-            original_title = str(source.get("topic") or source.get("title") or candidate["title"])
             try:
                 details = await get_hot_topic_details_from_mcp(topic_id)
             except MCPOutlineError as exc:

@@ -80,6 +80,12 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("platform: 'instagram'", self.script)
         self.assertNotIn("platform: 'instagram_reels'", self.script)
 
+    def test_workspace_reuses_verified_v3_viral_rank(self):
+        self.assertIn("def _v3_viral_rank", self.app)
+        self.assertIn("def _v3_cached_topics", self.app)
+        self.assertIn('source["viral_rank_source"] = "v3_mcp_cache"', self.app)
+        self.assertIn("V3's last verified Viralizer MCP topics and real Viral Rank", self.script)
+
     def test_keyframes_require_visible_review_before_animation(self):
         self.assertIn('id="productionKeyframes"', self.page)
         self.assertIn('id="approveKeyframes"', self.page)
