@@ -156,6 +156,24 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("Verifying Viral Rank evidence", self.script)
         self.assertIn('source["viral_rank_source"] = "mcp_hot_topics"', self.app)
 
+    def test_home_supports_five_real_inspiration_entry_points(self):
+        for mode in ('trend', 'upload', 'url', 'business', 'idea'):
+            self.assertIn(f'data-inspiration="{mode}"', self.page)
+        self.assertIn('/api/site-url/analyze', self.script)
+        self.assertIn('/api/thumbnail/prompts', self.script)
+        self.assertIn('/api/autopilot/opportunities/rank', self.script)
+        self.assertIn("Analyzing image", self.script)
+        intelligence = (ROOT / "autopilot_intelligence.py").read_text(encoding="utf-8")
+        self.assertIn('topic.get("user_directed")', intelligence)
+        self.assertIn("Source-grounding evidence", intelligence)
+
+    def test_workspace_has_responsive_mobile_navigation(self):
+        premium = (ROOT / "static" / "autopilot-workspace-premium.css").read_text(encoding="utf-8")
+        self.assertIn('class="mobile-nav"', self.page)
+        self.assertIn('@media(max-width:780px)', premium)
+        self.assertIn('grid-template-columns:repeat(5,1fr)', premium)
+        self.assertIn(".mobile-nav [data-screen]", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

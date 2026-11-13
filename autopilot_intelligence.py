@@ -15,7 +15,7 @@ from creatorthon_store import _connect
 
 
 OPPORTUNITY_MODEL_VERSION = "autopilot-opportunity-v4"
-CONCEPT_VERSION = "autopilot-concept-v4-distinct-scenes"
+CONCEPT_VERSION = "autopilot-concept-v5-source-grounded"
 
 
 def _json(value: Any) -> str:
@@ -156,6 +156,11 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     # customer's confirmed profile. Brand relevance must come only from actual
     # overlap with the customer's audience, offer, themes, and keywords.
     relevance = round(min(100, overlap * 20))
+    # A customer-supplied brief is relevant by explicit intent even when its
+    # wording does not repeat the saved brand keywords. Keep this provenance
+    # separate from provider-ranked trend evidence.
+    if topic.get("user_directed"):
+        relevance = max(relevance, 80)
     goals = _tokens(" ".join(brand.get("profile", {}).get("goals", [])))
     products = _tokens(" ".join(brand.get("profile", {}).get("products_services", [])))
     commercial_overlap = len((goals | products) & topic_tokens)
@@ -251,6 +256,9 @@ def archive_other_opportunities(root: Path, customer_id: str, keep_ids: list[str
 
 def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str, goal: str) -> list[dict[str, Any]]:
     title = opportunity["title"]
+    source = _load(opportunity.get("source_json"), {})
+    source_evidence = " ".join(str(source.get(key) or "").strip() for key in ("reference_description", "summary", "why_it_matters") if source.get(key)).strip()
+    evidence_lock = f" Source-grounding evidence: {source_evidence[:700]}. Do not invent details beyond it." if source_evidence else ""
     profile = brand.get("profile", {})
     audience = (profile.get("audiences") or ["your audience"])[0]
     tone = ", ".join((profile.get("voice") or ["clear", "credible"])[:2])
@@ -258,7 +266,7 @@ def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str,
     def scene(start: int, end: int, purpose: str, narration: str, visual: str, motion: str) -> dict[str, Any]:
         return {"start": start, "end": end, "purpose": purpose, "narration": narration,
                 "on_screen_text": narration[:60],
-                "keyframe_prompt": f"Vertical 9:16 premium editorial keyframe about {title}. {visual}. Brand tone: {tone}. Clean composition, one clear focal subject, safe text margins, realistic detail, consistent identity and color palette.",
+                "keyframe_prompt": f"Vertical 9:16 premium editorial keyframe about {title}. {visual}. Brand tone: {tone}.{evidence_lock} Clean composition, one clear focal subject, safe text margins, realistic detail, consistent identity and color palette.",
                 "negative_prompt": "No generated text, captions, logos, watermarks, distorted hands, duplicate people, invented statistics, or unsupported brand claims.",
                 "motion_prompt": f"Animate only from the approved keyframe. {motion}. Preserve identity, product geometry, wardrobe, lighting, background layout, and brand colors. No morphing, cuts, new objects, or generated text.",
                 "camera": motion, "transition": "clean motivated cut" if start else "opening frame"}

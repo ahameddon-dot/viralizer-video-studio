@@ -1,7 +1,7 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
+  const state = { profile: null, opportunities: [], topic: null, concepts: [], concept: null, workflow: null, asset: null, accounts: [], conversationId: '', current: 'today', inspirationMode: '', productionRunning: false, keyframesApproved: false, imageTimer: null, imageStartedAt: 0, productionTimer: null, productionStartedAt: 0, topicLoadingTimer: null, onboardingType: 'business', brandAnalysisDraft: {}, userPhotoId: '', userPhotoDirty: false, forceRegenerateKeyframes: false };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
@@ -71,6 +71,7 @@
     state.current = name;
     $$('.screen').forEach(node => node.classList.toggle('active', node.id === `screen-${name}`));
     $$('#primaryNav [data-screen]').forEach(node => node.classList.toggle('active', node.dataset.screen === name));
+    $$('.mobile-nav [data-screen]').forEach(node => node.classList.toggle('active', node.dataset.screen === name));
     const stages = ['today', 'create', 'produce', 'approve', 'results'];
     $$('#journey [data-screen]').forEach(node => {
       const currentIndex = stages.indexOf(name), nodeIndex = stages.indexOf(node.dataset.screen);
@@ -94,6 +95,71 @@
       if (historyMode === 'replace' || previous === name) history.replaceState({ view: name }, '', url);
       else history.pushState({ view: name }, '', url);
     }
+  }
+
+  const inspirationCopy = {
+    upload: ['YOUR IMAGE', 'Transform a visual into a campaign.', 'Upload a JPG, PNG, or WebP. AI will analyze the real image before building the brief.'],
+    url: ['SOURCE TO CONTENT', 'Turn a link into an original story.', 'Paste a public page and tell Viralizer what the content should achieve.'],
+    business: ['BUSINESS CAMPAIGN', 'What should we promote?', 'Describe the product, service, offer, review, or customer outcome you want to feature.'],
+    idea: ['ORIGINAL IDEA', 'Start with one thought.', 'A rough idea is enough. Viralizer will shape the hook, audience, and three creative directions.']
+  };
+  function openInspiration(mode) {
+    if (mode === 'trend') {
+      $('#trendOpportunitySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!state.opportunities.length) refreshTopics(true);
+      return;
+    }
+    state.inspirationMode = mode;
+    const copy = inspirationCopy[mode] || inspirationCopy.idea;
+    $('#inspirationEyebrow').textContent = copy[0]; $('#inspirationTitle').textContent = copy[1]; $('#inspirationHelp').textContent = copy[2];
+    $('#inspirationUrlWrap').hidden = mode !== 'url'; $('#inspirationFileWrap').hidden = mode !== 'upload';
+    $('#inspirationPrompt').placeholder = mode === 'business' ? 'Example: Promote our weekend family brunch to local parents with a warm, premium 15-second Reel.' : 'Example: Create a 15-second Instagram video with a strong opening and practical call to action.';
+    $('#inspirationComposer').hidden = false;
+    $('#inspirationComposer').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => (mode === 'url' ? $('#inspirationUrl') : $('#inspirationPrompt')).focus(), 350);
+  }
+  function closeInspiration() { $('#inspirationComposer').hidden = true; state.inspirationMode = ''; }
+  async function continueInspiration() {
+    const mode = state.inspirationMode || 'idea', prompt = $('#inspirationPrompt').value.trim();
+    const url = $('#inspirationUrl').value.trim(), file = $('#inspirationFile').files?.[0];
+    if (!prompt) return toast('Tell Viralizer what this content should achieve.');
+    if (mode === 'url' && !/^https:\/\//i.test(url)) return toast('Paste a complete public HTTPS URL.');
+    if (mode === 'upload' && !file) return toast('Choose a JPG, PNG, or WebP image first.');
+    const button = $('#continueInspiration'); button.disabled = true; button.innerHTML = 'Building opportunity <b>✦</b>';
+    try {
+      let groundedTitle = prompt, sourceUrl = url, sourceLabel = mode === 'url' ? url : (mode === 'upload' ? file.name : mode === 'business' ? 'Business brief' : 'Original idea');
+      let sourceEvidence = '';
+      if (mode === 'url') {
+        button.innerHTML = 'Reading source <b>✦</b>';
+        const analyzed = await api('/api/site-url/analyze', { method: 'POST', body: JSON.stringify({ url, duration: 15, aspect_ratio: '9:16' }) });
+        const content = analyzed.content || {};
+        sourceUrl = content.source_url || analyzed.source_url || url;
+        sourceLabel = content.source_site || analyzed.site_name || sourceLabel;
+        sourceEvidence = content.summary || content.why_it_matters || '';
+        groundedTitle = `${content.topic || content.suggested_title || 'Source story'} — ${prompt}`;
+      } else if (mode === 'upload') {
+        button.innerHTML = 'Analyzing image <b>✦</b>';
+        const form = new FormData();
+        form.append('content_json', JSON.stringify({ topic: prompt, video_idea: prompt }));
+        form.append('use_topic_context', 'true'); form.append('duration', '15'); form.append('image', file);
+        const response = await fetch('/api/thumbnail/prompts', { method: 'POST', body: form });
+        const analyzed = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(analyzed.detail || `Image analysis failed (${response.status})`);
+        sourceEvidence = analyzed.analysis || '';
+        groundedTitle = `${prompt} — Visual reference: ${sourceEvidence}`;
+      }
+      button.innerHTML = 'Matching your brand <b>✦</b>';
+      const result = await api('/api/autopilot/opportunities/rank', { method: 'POST', body: JSON.stringify({ topics: [{
+        topic: groundedTitle.slice(0, 480), title: groundedTitle.slice(0, 280), summary: sourceEvidence.slice(0, 1000), why_it_matters: prompt,
+        category: mode === 'business' ? 'Business campaign' : mode === 'url' ? 'Source transformation' : mode === 'upload' ? 'Visual inspiration' : 'Original concept',
+        source_type: mode, source_url: sourceUrl, source_name: sourceLabel, reference_description: sourceEvidence, user_directed: true
+      }], limit: 1 }) });
+      state.opportunities = result.opportunities || [];
+      renderTopics(); closeInspiration();
+      $('#trendOpportunitySection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Your opportunity is ready. Review it and choose Create.');
+    } catch (error) { toast(error.message); }
+    finally { button.disabled = false; button.innerHTML = 'Create opportunity <b>→</b>'; }
   }
 
   async function loadProjects() {
@@ -545,10 +611,13 @@
   function bind() {
     $$('[data-screen]').forEach(button => button.onclick = () => showScreen(button.dataset.screen));
     $$('[data-go]').forEach(button => button.onclick = () => showScreen(button.dataset.go));
-    $('.screen-head .secondary').onclick = () => refreshTopics(true);
+    $('#trendOpportunitySection .secondary').onclick = () => refreshTopics(true);
+    $$('[data-inspiration]').forEach(button => button.onclick = () => openInspiration(button.dataset.inspiration));
+    $('#closeInspiration').onclick = closeInspiration; $('#continueInspiration').onclick = continueInspiration;
     $('#explainTopics').onclick = () => { $('#assistantDrawer').classList.add('open'); sendAssistant('Explain why these opportunities match my confirmed profile.'); };
     $('#openAssistant').onclick = () => $('#assistantDrawer').classList.add('open'); $('#closeAssistant').onclick = () => $('#assistantDrawer').classList.remove('open');
     $('#openAssistantNav').onclick = () => $('#assistantDrawer').classList.add('open');
+    $('#openAssistantMobile').onclick = () => $('#assistantDrawer').classList.add('open');
     $('#assistantForm').onsubmit = event => { event.preventDefault(); const input = $('#assistantForm textarea'); sendAssistant(input.value); input.value = ''; };
     $$('[data-customer-type]').forEach(button => button.onclick = () => { state.onboardingType = button.dataset.customerType; $$('[data-customer-type]').forEach(item => item.classList.toggle('selected', item === button)); });
     $('#analyzeOnboardBrand').onclick = analyzeBrand; $('#confirmOnboarding').onchange = event => $('#finishWorkspaceOnboarding').disabled = !event.target.checked; $('#finishWorkspaceOnboarding').onclick = finishOnboarding;
