@@ -34,16 +34,25 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("location.assign('/autopilot-chat?welcome=1')", self.script)
 
     def test_chat_is_a_shared_project_creation_workspace(self):
-        self.assertIn("What should we create today?", self.chat_page)
         self.assertIn("Creation journey", self.chat_page)
-        self.assertIn("Find a viral opportunity", self.chat_page)
+        self.assertIn("How do you want to start?", self.chat_script)
+        for entry in ("Find trends for me", "Image to video", "Video to video", "URL to video", "Promote my business", "Start with an idea"):
+            self.assertIn(entry, self.chat_script)
+        self.assertIn("Best opportunities for your brand", self.chat_script)
+        self.assertIn("Generate all 3 images", self.chat_script)
+        self.assertIn("data-confirm-batch", self.chat_script)
+        self.assertIn("/api/site-url/analyze", self.chat_script)
+        self.assertIn("/api/thumbnail/prompts", self.chat_script)
+        self.assertIn("/api/autopilot/opportunities/rank", self.chat_script)
+        self.assertIn("Creation journey", self.chat_page)
         self.assertIn("viralizer.activeProject", self.chat_script)
         self.assertIn("approval_cards", self.chat_script)
         self.assertIn("confirm_provider_cost", self.chat_script)
-        self.assertIn("tool-executions/${button.dataset.confirmExecution}/confirm", self.chat_script)
+        self.assertIn("tool-executions/${ids[i]}/confirm", self.chat_script)
         self.assertIn('/tool-executions/{execution_id}/confirm', self.app)
         self.assertIn("action-card", self.chat_css)
-        self.assertIn("starter-grid", self.chat_css)
+        self.assertIn("creation-grid", self.chat_css)
+        self.assertNotIn("Authorized AI tools", self.chat_page)
         self.assertIn("image-rendering:auto", self.premium)
 
     def test_separate_workspace_route_preserves_existing_product(self):

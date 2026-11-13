@@ -77,6 +77,18 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual("viralizer_v3", result["provenance"]["data_source"])
         fetch.assert_called_once_with(5)
 
+    def test_concept_creation_attaches_shared_project_to_chat(self):
+        concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
+        with patch("conversation.orchestrator.generate_concepts", return_value=concepts), \
+             patch("conversation.orchestrator.ensure_autopilot_project", return_value={"id": "project-1", "revision": 1}), \
+             patch("conversation.orchestrator.attach_project") as attach:
+            result = asyncio.run(_execute(
+                self.root, "customer-1", "create_concepts",
+                {"opportunity_id": "opportunity-1"}, self.thread["id"], "owner",
+            ))
+        self.assertEqual("project-1", result["project"]["id"])
+        attach.assert_called_once_with(self.root, "customer-1", self.thread["id"], "project-1")
+
 
 if __name__ == "__main__":
     unittest.main()

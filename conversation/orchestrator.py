@@ -15,9 +15,9 @@ from autopilot_intelligence import generate_concepts, get_brand_profile, rank_op
 from conversation import MODEL_ORCHESTRATION_ENABLED
 from conversation.redaction import redact
 from conversation.registry import TOOL_REGISTRY
-from conversation.store import append_message, complete_tool_execution, get_conversation, propose_tool_execution
+from conversation.store import append_message, attach_project, complete_tool_execution, get_conversation, propose_tool_execution
 from conversation.tool_contracts import TOOL_DESCRIPTIONS, TOOL_SCHEMAS
-from hybrid_project_state import get_project_context
+from hybrid_project_state import ensure_autopilot_project, get_project_context
 from mcp_outline_client import get_hot_topics_from_mcp
 from viralizer_topic_source import fetch_v3_worldwide_topics
 
@@ -26,7 +26,11 @@ SYSTEM_INSTRUCTIONS = """You are Viralizer AI, a concise content-growth operator
 Use tools for customer or project facts; never invent trends, viral scores, publications, metrics, or provider results.
 Clearly distinguish live/provider data from simulated or unavailable data. Only take an action when the user asks for it.
 Provider-cost actions require an approval card. Publishing always requires the existing exact-content human approval UI; you cannot approve or publish.
-When a tool is blocked, explain the required human action. Keep answers practical and easy to understand."""
+When a tool is blocked, explain the required human action. Keep answers practical and easy to understand.
+Guide one visible step at a time: choose source, choose topic, review three-scene storyboard, generate all three images, create video, approve exact post, publish, learn.
+After ranking opportunities, ask the customer to select one. After concept creation, present the storyboard and ask whether to generate all three images.
+When the customer says yes to all three images, call generate_keyframe once for each scene index 0, 1 and 2. Do not ask them to confirm each scene separately.
+After three keyframes exist, ask whether to create the video. Never expose internal registry names, project IDs, tool names, or implementation details to the customer."""
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -66,7 +70,7 @@ def _history(root: Path, customer_id: str, conversation: dict[str, Any]) -> list
     return result
 
 
-async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str, Any]) -> Any:
+async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str, Any], conversation_id: str = "", actor_id: str = "") -> Any:
     if name == "get_brand_profile":
         return get_brand_profile(root, customer_id)
     if name == "analyze_brand_sources":
@@ -78,7 +82,13 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "rank_opportunities":
         return {"opportunities": rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})}
     if name == "create_concepts":
-        return {"concepts": generate_concepts(root, customer_id, {"opportunity_id": arguments.get("opportunity_id"), "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or ""})}
+        concepts = generate_concepts(root, customer_id, {"opportunity_id": arguments.get("opportunity_id"), "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or ""})
+        project = None
+        if concepts:
+            project = ensure_autopilot_project(root, customer_id, str(concepts[0]["id"]), actor_id)
+            if conversation_id:
+                attach_project(root, customer_id, conversation_id, str(project["id"]))
+        return {"concepts": concepts, "project": {"id": project["id"], "revision": project["revision"]} if project else None}
     if name == "get_growth_report":
         return growth_dashboard(root, customer_id)
     raise ValueError("This action requires its dedicated approved workflow.")
@@ -120,7 +130,7 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                 decision = execution.get("authorization") or {}
                 if decision.get("execution_enabled"):
                     try:
-                        result = redact(await _execute(root, customer_id, name, arguments))
+                        result = redact(await _execute(root, customer_id, name, arguments, conversation_id, actor_id))
                         complete_tool_execution(root, customer_id, execution["id"], result=result)
                         tool_output = {"status": "completed", "tool": name, "data": result}
                     except Exception:

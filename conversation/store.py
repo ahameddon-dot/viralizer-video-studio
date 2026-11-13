@@ -67,6 +67,20 @@ def get_conversation(root: Path, customer_id: str, conversation_id: str, include
     return result
 
 
+def attach_project(root: Path, customer_id: str, conversation_id: str, project_context_id: str) -> dict[str, Any]:
+    """Attach the shared Hybrid/UI project to a conversation after concept creation."""
+    get_project_context(root, customer_id, project_context_id)
+    with _connect(root) as db:
+        row = db.execute(
+            """UPDATE conversation_threads SET active_project_context_id=?,updated_at=?
+            WHERE id=? AND customer_id=? AND status='active' RETURNING *""",
+            (project_context_id, int(time.time()), conversation_id, customer_id),
+        ).fetchone()
+    if not row:
+        raise ValueError("Conversation was not found for this customer.")
+    return dict(row)
+
+
 def append_message(root: Path, customer_id: str, conversation_id: str, role: str, content: dict[str, Any], correlation_id: str = "") -> dict[str, Any]:
     if role not in {"user", "assistant", "system", "tool"}:
         raise ValueError("Unsupported conversation role.")
