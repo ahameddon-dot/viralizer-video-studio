@@ -19,6 +19,7 @@ from conversation.store import append_message, complete_tool_execution, get_conv
 from conversation.tool_contracts import TOOL_DESCRIPTIONS, TOOL_SCHEMAS
 from hybrid_project_state import get_project_context
 from mcp_outline_client import get_hot_topics_from_mcp
+from viralizer_topic_source import fetch_v3_worldwide_topics
 
 
 SYSTEM_INSTRUCTIONS = """You are Viralizer AI, a concise content-growth operator for individual creators and businesses.
@@ -71,9 +72,9 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "analyze_brand_sources":
         return await analyze_brand_sources(str(arguments.get("website_url") or ""), list(arguments.get("social_urls") or []))
     if name == "discover_topics":
-        topics = await get_hot_topics_from_mcp(str(arguments.get("option_keys") or "") or None)
         limit = max(1, min(25, int(arguments.get("limit") or 10)))
-        return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_mcp", "provider_mode": "live", "is_simulated": False}}
+        topics, source = await fetch_v3_worldwide_topics(limit)
+        return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
     if name == "rank_opportunities":
         return {"opportunities": rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})}
     if name == "create_concepts":

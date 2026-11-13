@@ -31,7 +31,7 @@ class ToolDescriptor:
 _TOOLS = (
     ToolDescriptor("get_brand_profile", "1", "autopilot_intelligence:get_brand_profile", "GetBrandProfileInput", "BrandProfileOutput", "customer_read", "none", "none", model_execution_enabled=True),
     ToolDescriptor("analyze_brand_sources", "1", "autopilot_brand_analysis:analyze_brand_sources", "AnalyzeBrandSourcesInput", "BrandSourceAnalysisOutput", "customer_read", "low", "none", model_execution_enabled=True),
-    ToolDescriptor("discover_topics", "1", "mcp_outline_client:get_hot_topics_from_mcp + global_sources", "DiscoverTopicsInput", "TopicsOutput", "customer_read", "low", "none", model_execution_enabled=True, wrapper_required=True),
+    ToolDescriptor("discover_topics", "2", "viralizer_topic_source:fetch_v3_worldwide_topics", "DiscoverTopicsInput", "TopicsOutput", "customer_read", "low", "none", model_execution_enabled=True),
     ToolDescriptor("rank_opportunities", "1", "autopilot_intelligence:rank_opportunities", "RankOpportunitiesInput", "OpportunitiesOutput", "customer_write", "none", "none", model_execution_enabled=True),
     ToolDescriptor("create_concepts", "1", "autopilot_intelligence:generate_concepts", "CreateConceptsInput", "ConceptsOutput", "customer_write", "none", "none", model_execution_enabled=True),
     ToolDescriptor("generate_storyboard", "1", "storyboard_director + autopilot_intelligence", "GenerateStoryboardInput", "StoryboardOutput", "costed_write", "low", "confirm_cost", True, True, model_execution_enabled=True, wrapper_required=True),

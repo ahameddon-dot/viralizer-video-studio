@@ -62,6 +62,7 @@ from mcp_outline_client import (
     get_outline_from_mcp,
     outline_from_full_report,
 )
+from viralizer_topic_source import fetch_v3_worldwide_topics
 from viralizer_pdf import build_viralizer_pdf
 from betting_topics import betting_report
 from regional_trends import regional_report
@@ -2632,40 +2633,7 @@ def _v3_cached_topics(user: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def _v3_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
     """Fetch the canonical V3 feed with a server-owned developer credential."""
-    key = os.getenv("VIRALIZER_V3_TOPICS_API_KEY", "").strip()
-    if not key:
-        raise MCPOutlineError("V3 topics API key is not configured.")
-    url = os.getenv("VIRALIZER_V3_TOPICS_API_URL", "https://v3.viralizer.ai/api/v1/hot-topics").strip()
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.get(
-                url,
-                params={"country": "worldwide", "limit": 20},
-                headers={"X-API-Key": key, "Accept": "application/json"},
-            )
-    except httpx.HTTPError as exc:
-        raise MCPOutlineError(f"V3 topics API request failed: {exc}") from exc
-    if response.status_code != 200:
-        raise MCPOutlineError(f"V3 topics API returned HTTP {response.status_code}.")
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise MCPOutlineError("V3 topics API returned invalid JSON.") from exc
-    rows = payload.get("topics") if isinstance(payload, dict) else None
-    if not isinstance(rows, list) or not rows:
-        raise MCPOutlineError("V3 topics API returned no topics.")
-    topics: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        item = dict(row)
-        item["topic"] = str(item.get("topic") or item.get("title") or "").strip()
-        if item.get("viral_rank") in (None, "") and item.get("viral_score") not in (None, ""):
-            item["viral_rank"] = item["viral_score"]
-        topics.append(item)
-    if not topics:
-        raise MCPOutlineError("V3 topics API returned no usable topics.")
-    return topics, str(payload.get("source") or "Viralizer V3")
+    return await fetch_v3_worldwide_topics(20)
 
 
 @app.post("/api/autopilot/topics/refresh")

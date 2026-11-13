@@ -21,7 +21,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 TOOL_DESCRIPTIONS = {
     "get_brand_profile": "Read this customer's confirmed or draft Viralizer brand profile.",
     "analyze_brand_sources": "Analyze customer-provided public website and social profile URLs. Returns an unconfirmed draft only.",
-    "discover_topics": "Fetch current worldwide hot topics from the configured Viralizer MCP service.",
+    "discover_topics": "Fetch current worldwide hot topics and verified Viral Rank from the canonical Viralizer V3 server account.",
     "rank_opportunities": "Rank supplied topics against the customer's confirmed brand profile and save the recommendations.",
     "create_concepts": "Create three storyboard concepts for a customer-owned opportunity.",
     "get_growth_report": "Read publication performance with explicit live or simulated provenance.",

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from autopilot_intelligence import save_brand_profile
-from conversation.orchestrator import respond, tool_definitions
+from conversation.orchestrator import _execute, respond, tool_definitions
 from conversation.store import append_message, create_conversation, get_conversation
 from creatorthon_store import _connect
 
@@ -68,6 +68,14 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertIn("generate_keyframe", definitions)
         self.assertIn("prepare_publication", definitions)
         self.assertFalse(definitions["prepare_publication"]["strict"])
+
+    def test_chat_discovery_uses_canonical_v3_topics(self):
+        topics = [{"topic": "Verified V3 topic", "viral_rank": 88}]
+        with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(topics, "Viralizer V3 MCP")) as fetch:
+            result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {"limit": 5}))
+        self.assertEqual(topics, result["topics"])
+        self.assertEqual("viralizer_v3", result["provenance"]["data_source"])
+        fetch.assert_called_once_with(5)
 
 
 if __name__ == "__main__":
