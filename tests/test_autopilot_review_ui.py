@@ -87,6 +87,9 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('publication.get("destination_id") != "demo-social-account"', self.app)
         self.assertIn("Demo completion cannot modify a real social publication.", self.app)
 
+    def test_direct_post_for_me_path_uploads_local_video_first(self):
+        self.assertIn("LocalMediaPostForMeAdapter(ROOT)", self.app)
+
 
 if __name__ == "__main__":
     unittest.main()

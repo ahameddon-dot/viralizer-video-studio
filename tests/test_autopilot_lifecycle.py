@@ -16,7 +16,7 @@ from autopilot_lifecycle import (
     record_metric_snapshot,
     start_content_workflow,
 )
-from autopilot_publishing import FakePublishingAdapter, submit_publication
+from autopilot_publishing import FakePublishingAdapter, LocalMediaPostForMeAdapter, submit_publication
 from autopilot_growth import reconcile_publication
 from creatorthon_store import _connect
 
@@ -197,6 +197,35 @@ class AutopilotLifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "verifiable post identifier"):
             asyncio.run(submit_publication(self.root, "customer-1", approved["publication"]["id"], EvidenceFreeAdapter()))
         self.assertEqual("failed", list_publications(self.root, "customer-1")[0]["status"])
+
+    def test_local_video_is_uploaded_before_post_for_me_publish(self):
+        class RecordingProvider:
+            def __init__(self):
+                self.uploaded = None
+                self.published = None
+
+            async def upload_media(self, path, content_type):
+                self.uploaded = (path, content_type)
+                return "https://media.postforme.test/approved.mp4"
+
+            async def publish(self, publication, idempotency_key):
+                self.published = (publication, idempotency_key)
+                return {"provider": "post_for_me", "status": "published", "provider_post_id": "post-1"}
+
+        video = b"immutable-approved-video"
+        filename = "viralizer-autopilot-" + "d" * 32 + ".mp4"
+        directory = self.root / "data" / "finished_videos"
+        directory.mkdir(parents=True)
+        (directory / filename).write_bytes(video)
+        provider = RecordingProvider()
+        result = asyncio.run(LocalMediaPostForMeAdapter(self.root, provider).publish({
+            "media_url": f"/api/finished-video/{filename}",
+            "asset_sha256": __import__("hashlib").sha256(video).hexdigest(),
+            "destination_id": "instagram-1", "caption": "Caption",
+        }, "publication:" + "e" * 32))
+        self.assertEqual("video/mp4", provider.uploaded[1])
+        self.assertEqual("https://media.postforme.test/approved.mp4", provider.published[0]["media_url"])
+        self.assertEqual("post-1", result["provider_post_id"])
 
     def test_provider_result_secrets_are_not_persisted(self):
         class UnsafeAdapter:

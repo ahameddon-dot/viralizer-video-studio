@@ -100,7 +100,7 @@ from autopilot_orchestrator import create_objective, make_selection
 from autopilot_intelligence import archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_concepts, list_opportunities, rank_opportunities, record_keyframe, save_brand_profile, update_keyframe_animation
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, get_active_project, list_asset_versions, list_publications, record_metric_snapshot, start_content_workflow
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
-from autopilot_publishing import FakePublishingAdapter, submit_publication
+from autopilot_publishing import FakePublishingAdapter, LocalMediaPostForMeAdapter, submit_publication
 from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
 from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
@@ -3234,7 +3234,7 @@ async def submit_autopilot_publication(request: Request, publication_id: str):
     elif not provider_readiness()["live_calls_enabled"]:
         raise HTTPException(409, "Live provider calls are disabled. The approved publication remains safely queued.")
     else:
-        adapter = PostForMeAdapter()
+        adapter = LocalMediaPostForMeAdapter(ROOT)
     try:
         publication = await submit_publication(ROOT, customer_id, publication_id, adapter)
     except ProviderConfigurationError as exc:

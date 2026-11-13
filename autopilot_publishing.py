@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Protocol
 
 from autopilot_contracts import PublicationPayload
-from autopilot_providers import sanitize_publication_result
+from autopilot_providers import PostForMeAdapter, sanitize_publication_result
 from autopilot_store import authorize_publication_step
 from creatorthon_store import _connect
 
@@ -30,6 +34,34 @@ class FakePublishingAdapter:
             "status": "published", "provider": "fake", "provider_post_id": idempotency_key,
             "data_source": "synthetic", "provider_mode": "fake", "is_simulated": True,
         }
+
+
+class LocalMediaPostForMeAdapter:
+    """Upload an approved local immutable MP4 before asking Post for Me to publish it."""
+
+    def __init__(self, root: Path, provider: PostForMeAdapter | None = None) -> None:
+        self.root = root
+        self.provider = provider or PostForMeAdapter()
+
+    async def publish(self, publication: dict[str, Any], idempotency_key: str) -> dict[str, Any]:
+        media_url = str(publication.get("media_url") or "")
+        if media_url.startswith("https://"):
+            return await self.provider.publish(publication, idempotency_key)
+        match = re.fullmatch(r"/api/finished-video/(viralizer-autopilot-[a-f0-9]{32}\.mp4)", media_url)
+        if not match:
+            raise ValueError("The approved video is not eligible for secure Post for Me upload.")
+        path = Path(os.getenv("APP_DATA_DIR", str(self.root / "data"))) / "finished_videos" / match.group(1)
+        if not path.is_file():
+            raise ValueError("The approved video file is unavailable. Restore the saved project and retry.")
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        expected = str(publication.get("asset_sha256") or "")
+        if expected and not hmac.compare_digest(digest.hexdigest(), expected):
+            raise PermissionError("The approved video changed after approval.")
+        public_media_url = await self.provider.upload_media(path, "video/mp4")
+        return await self.provider.publish({**publication, "media_url": public_media_url}, idempotency_key)
 
 
 def queue_approved_publication(root: Path, customer_id: str, run_id: str, approval_id: str, payload: PublicationPayload | dict[str, Any]) -> tuple[dict[str, Any], bool]:
