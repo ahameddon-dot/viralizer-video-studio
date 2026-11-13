@@ -19,7 +19,11 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("viral-rank-badge", self.script)
         self.assertIn("🔥", self.script)
         self.assertIn("Verified Viralizer signal", self.script)
+        self.assertIn("BRAND FIT", self.script)
+        self.assertIn("Select this topic", self.script)
         self.assertIn(".viral-rank-badge", self.premium)
+        self.assertIn(".brand-fit strong", self.premium)
+        self.assertIn("button:focus-visible", self.premium)
         self.assertIn("image-rendering:auto", self.premium)
 
     def test_separate_workspace_route_preserves_existing_product(self):
