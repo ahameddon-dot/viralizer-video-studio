@@ -90,6 +90,7 @@ class AutopilotLifecycleTests(unittest.TestCase):
             db.execute("UPDATE autopilot_publications SET status='published' WHERE id=?", (result["publication"]["id"],))
         projects = list_autopilot_projects(self.root, "customer-1")
         self.assertEqual(1, projects[0]["published_count"])
+        self.assertTrue(projects[0]["is_published"])
 
         # A publication attached to an older retry version still belongs to the one
         # visible video card because both assets contain identical final media.
@@ -98,6 +99,7 @@ class AutopilotLifecycleTests(unittest.TestCase):
         projects = list_autopilot_projects(self.root, "customer-1")
         self.assertEqual(1, len(projects))
         self.assertEqual(1, projects[0]["published_count"])
+
 
     def test_required_qc_blocks_invalid_asset(self):
         with self.assertRaises(ValueError):

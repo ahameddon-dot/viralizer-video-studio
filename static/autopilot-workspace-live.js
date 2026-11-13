@@ -98,8 +98,7 @@
         gallery.innerHTML = '<article><div><b>No saved videos yet</b><small>Select a topic to create your first project.</small><button class="secondary" data-go="today">Choose a topic →</button></div></article>';
       } else {
         gallery.innerHTML = projects.map(project => {
-          const published = Number(project.published_count || 0);
-          const label = published ? `Published to ${published} destination${published === 1 ? '' : 's'}` : 'Not published yet';
+          const label = project.is_published ? 'Published' : 'Not published';
           const media = project.media_url ? `<video class="project-video" src="${esc(project.media_url)}" preload="metadata" controls playsinline></video>` : '<div class="project-thumb"><span>VIDEO</span></div>';
           return `<article>${media}<div><b>${esc(project.title || project.opportunity_title || 'Untitled video')}</b><small>${esc(label)} · Version ${esc(project.version || 1)}</small><button class="secondary" type="button" data-project-results="${esc(project.asset_id)}">View publishing results →</button></div></article>`;
         }).join('');

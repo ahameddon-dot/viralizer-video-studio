@@ -246,6 +246,15 @@ def list_autopilot_projects(root: Path, customer_id: str) -> list[dict[str, Any]
         }
         projects_by_media[media_key] = project
         projects.append(project)
+    for project in projects:
+        published = [item for item in project["publications"] if item.get("status") == "published"]
+        project["is_published"] = bool(published)
+        project["published_destinations"] = sorted({
+            str(item.get("destination_id") or "") for item in published if item.get("destination_id")
+        })
+        # Kept for API compatibility. This is a unique destination count, not a count
+        # of provider retries or historical publication rows.
+        project["published_count"] = len(project["published_destinations"])
     return projects
 
 
