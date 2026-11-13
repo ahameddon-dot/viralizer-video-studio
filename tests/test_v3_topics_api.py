@@ -14,8 +14,12 @@ class V3TopicsApiTests(unittest.IsolatedAsyncioTestCase):
             return await client.get("/api/v1/hot-topics?limit=5", headers={"X-API-Key": key})
 
     async def test_endpoint_requires_scoped_key_and_returns_verified_rank(self):
-        raw = [{"topic_id": "topic-1", "topic": "AI retail"}]
-        details = {"viral_rank": 7, "summary": "Verified V3 detail"}
+        raw = [{"topic_id": "topic-1", "topic": "Current hot topic", "viral_rank": 7}]
+        details = {
+            "viral_rank": 7,
+            "suggested_title": "AI changes retail",
+            "why_it_matters": "A verified trend. Categories: Technology, Business",
+        }
         with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "backend-key"}, clear=False), patch(
             "app.get_hot_topics_from_mcp", new=AsyncMock(return_value=raw)
         ), patch("app.get_hot_topic_details_from_mcp", new=AsyncMock(return_value=details)):
@@ -26,6 +30,8 @@ class V3TopicsApiTests(unittest.IsolatedAsyncioTestCase):
         payload = response.json()
         self.assertEqual(payload["source"], "Viralizer MCP")
         self.assertEqual(payload["topics"][0]["viral_rank"], 7)
+        self.assertEqual(payload["topics"][0]["topic"], "AI changes retail")
+        self.assertEqual(payload["topics"][0]["category"], "Technology, Business")
 
 
 if __name__ == "__main__":

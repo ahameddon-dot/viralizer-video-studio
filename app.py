@@ -3873,17 +3873,24 @@ async def developer_hot_topics(request: Request, limit: int = 50):
     topics = [dict(item) for item in raw_topics[:max(1, min(100, limit))] if isinstance(item, dict)]
 
     async def enrich(item: dict[str, Any]) -> dict[str, Any]:
-        if any(item.get(key) not in (None, "") for key in ("viral_rank", "viral_score")):
-            return item
         topic_id = str(item.get("topic_id") or item.get("id") or "").strip()
-        if not topic_id:
-            return item
-        try:
-            details = await get_hot_topic_details_from_mcp(topic_id)
-        except MCPOutlineError:
-            return item
         merged = dict(item)
-        merged.update(details)
+        needs_details = not any(item.get(key) not in (None, "") for key in ("viral_rank", "viral_score"))
+        needs_identity = str(item.get("topic") or item.get("title") or "").strip().casefold() in {"", "current hot topic"}
+        if topic_id and (needs_details or needs_identity):
+            try:
+                details = await get_hot_topic_details_from_mcp(topic_id)
+            except MCPOutlineError:
+                details = {}
+            merged.update(details)
+        current_title = str(merged.get("topic") or merged.get("title") or "").strip()
+        if current_title.casefold() in {"", "current hot topic"}:
+            merged["topic"] = str(merged.get("suggested_title") or merged.get("hook") or merged.get("creator_angle") or current_title).strip()
+        if not str(merged.get("category") or merged.get("category_label") or "").strip():
+            evidence = str(merged.get("why_it_matters") or "")
+            category_match = re.search(r"Categories:\s*([^\n.]+)", evidence, flags=re.IGNORECASE)
+            if category_match:
+                merged["category"] = category_match.group(1).strip(" -")
         return merged
 
     enriched = await asyncio.gather(*(enrich(item) for item in topics))
