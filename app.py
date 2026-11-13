@@ -2973,6 +2973,11 @@ async def complete_autopilot_demo_publication(request: Request, publication_id: 
         raise HTTPException(404, "Local demo mode is disabled.")
     user = autopilot_user(request)
     customer_id = str(user.get("sub", ""))
+    publication = next((item for item in list_publications(ROOT, customer_id) if item.get("id") == publication_id), None)
+    if not publication:
+        raise HTTPException(404, "Publication was not found.")
+    if publication.get("destination_id") != "demo-social-account":
+        raise HTTPException(403, "Demo completion cannot modify a real social publication.")
     try:
         publication = await submit_publication(ROOT, customer_id, publication_id, FakePublishingAdapter())
         snapshot = record_metric_snapshot(ROOT, customer_id, {

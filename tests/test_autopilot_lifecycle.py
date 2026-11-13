@@ -116,7 +116,7 @@ class AutopilotLifecycleTests(unittest.TestCase):
         asset = self.asset()
         approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
             "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
-            "destination_id": "youtube-1", "caption": "Caption",
+            "destination_id": "demo-social-account", "caption": "Caption",
         })
         adapter = FakePublishingAdapter()
         published = asyncio.run(submit_publication(
@@ -132,6 +132,55 @@ class AutopilotLifecycleTests(unittest.TestCase):
         provenance = json.loads(published["result_json"])
         self.assertTrue(provenance["is_simulated"])
         self.assertEqual("synthetic", provenance["data_source"])
+
+    def test_fake_provider_cannot_complete_real_social_publication(self):
+        asset = self.asset()
+        approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "instagram-1", "caption": "Caption",
+        })
+        with self.assertRaises(PermissionError):
+            asyncio.run(submit_publication(
+                self.root, "customer-1", approved["publication"]["id"], FakePublishingAdapter(),
+            ))
+        publication = list_publications(self.root, "customer-1")[0]
+        self.assertNotEqual("published", publication["status"])
+        self.assertNotIn('"provider":"fake"', publication["result_json"])
+
+    def test_contaminated_fake_success_is_retried_through_real_provider(self):
+        class RealAdapter:
+            async def publish(self, publication, idempotency_key):
+                return {"provider": "post_for_me", "status": "published", "provider_post_id": "post-real-1"}
+
+        asset = self.asset()
+        approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "instagram-1", "caption": "Caption",
+        })
+        publication_id = approved["publication"]["id"]
+        with _connect(self.root) as db:
+            db.execute(
+                "UPDATE autopilot_publications SET status='published',result_json=?,published_at=1 WHERE id=?",
+                ('{"provider":"fake","status":"published"}', publication_id),
+            )
+        repaired = asyncio.run(submit_publication(self.root, "customer-1", publication_id, RealAdapter()))
+        self.assertEqual("published", repaired["status"])
+        self.assertEqual("post-real-1", repaired["provider_post_id"])
+        self.assertEqual("post_for_me", json.loads(repaired["result_json"])["provider"])
+
+    def test_real_provider_cannot_claim_published_without_evidence(self):
+        class EvidenceFreeAdapter:
+            async def publish(self, publication, idempotency_key):
+                return {"provider": "post_for_me", "status": "published"}
+
+        asset = self.asset()
+        approved = approve_and_queue_publication(self.root, "customer-1", "owner", {
+            "workflow_run_id": self.run["id"], "asset_version_id": asset["id"],
+            "destination_id": "youtube-1", "caption": "Caption",
+        })
+        with self.assertRaisesRegex(ValueError, "verifiable post identifier"):
+            asyncio.run(submit_publication(self.root, "customer-1", approved["publication"]["id"], EvidenceFreeAdapter()))
+        self.assertEqual("failed", list_publications(self.root, "customer-1")[0]["status"])
 
     def test_provider_result_secrets_are_not_persisted(self):
         class UnsafeAdapter:

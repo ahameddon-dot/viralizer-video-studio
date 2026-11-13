@@ -83,6 +83,10 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('autopilot_recovery', self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
+    def test_demo_completion_is_forbidden_for_real_social_destinations(self):
+        self.assertIn('publication.get("destination_id") != "demo-social-account"', self.app)
+        self.assertIn("Demo completion cannot modify a real social publication.", self.app)
+
 
 if __name__ == "__main__":
     unittest.main()

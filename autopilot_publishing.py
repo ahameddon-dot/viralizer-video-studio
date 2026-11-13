@@ -47,7 +47,25 @@ async def submit_publication(root: Path, customer_id: str, publication_id: str, 
         if not row:
             raise ValueError("Publication was not found for this customer.")
         publication = dict(row)
-        if publication["status"] in {"submitting", "processing", "published"}:
+        stored_result: dict[str, Any] = {}
+        try:
+            stored_result = json.loads(publication.get("result_json") or "{}")
+        except (TypeError, ValueError):
+            stored_result = {}
+        contaminated_fake_result = (
+            publication["status"] == "published"
+            and publication.get("provider") == "post_for_me"
+            and publication.get("destination_id") != "demo-social-account"
+            and stored_result.get("provider") == "fake"
+        )
+        if contaminated_fake_result:
+            publication["status"] = "failed"
+            db.execute(
+                "UPDATE autopilot_publications SET status='failed',published_at=0,next_metrics_at=0,error_json=?,updated_at=? WHERE id=? AND customer_id=?",
+                (json.dumps({"message": "A simulated result was rejected for this real publication. Retry through Post for Me."}, separators=(",", ":")),
+                 now, publication_id, customer_id),
+            )
+        elif publication["status"] in {"submitting", "processing", "published"}:
             return publication
         if publication["status"] not in {"queued", "scheduled", "failed"}:
             raise ValueError("Publication is not ready for submission.")
@@ -59,6 +77,8 @@ async def submit_publication(root: Path, customer_id: str, publication_id: str, 
         ).fetchone()
         if not approval or dict(approval)["status"] != "consumed":
             raise PermissionError("Publication does not have a consumed exact-content approval.")
+        if isinstance(adapter, FakePublishingAdapter) and publication.get("destination_id") != "demo-social-account":
+            raise PermissionError("Simulated publishing is not allowed for a real social account.")
         asset = db.execute(
             "SELECT media_url,media_sha256 FROM autopilot_asset_versions WHERE id=? AND customer_id=? AND status='ready_review'",
             (publication["asset_version_id"], customer_id),
@@ -78,6 +98,9 @@ async def submit_publication(root: Path, customer_id: str, publication_id: str, 
             raise ValueError("Publishing provider returned no safe provider identifier.")
         if not result.get("status"):
             raise ValueError("Publishing provider returned no safe status.")
+        if (result.get("status") == "published" and result.get("provider") != "fake"
+                and not any(result.get(key) for key in ("provider_post_id", "native_post_id", "native_url"))):
+            raise ValueError("Publishing provider returned no verifiable post identifier.")
     except Exception as exc:
         with _connect(root) as db:
             db.execute(
