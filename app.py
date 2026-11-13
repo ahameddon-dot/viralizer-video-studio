@@ -551,6 +551,8 @@ async def require_password(request: Request, call_next):
         return response
     public_paths = {"/login", "/about", "/privacy", "/terms", "/creatorthon/login", "/creatorthon-v2/login", "/creatorthon-v3/login", "/auth/google", "/auth/google/callback", "/health", "/health/storage", "/health/media", "/health/pixverse", "/health/pixverse-growth"}
     is_public_demo = request.url.path in {"/demos", "/creatorthon/demos", "/api/creatorthon/demos"} or request.url.path.startswith("/api/creatorthon/demos/")
+    # This read-only server API authenticates with its own scoped key.
+    is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
     public_login_assets = {
         "/static/viralizer-intro.css",
         "/static/viralizer-intro.js",
@@ -600,7 +602,7 @@ async def require_password(request: Request, call_next):
             else:
                 login_path = "/creatorthon/login?next=" + quote(request.url.path + (f"?{request.url.query}" if request.url.query else ""), safe="/?=&%")
             return RedirectResponse(login_path, status_code=303)
-    if request.url.path not in public_paths and not is_public_demo and request.url.path not in public_login_assets and not is_authenticated(request):
+    if request.url.path not in public_paths and not is_public_demo and not is_developer_topics_api and request.url.path not in public_login_assets and not is_authenticated(request):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Password required"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
@@ -3844,6 +3846,48 @@ async def analyze_site_url(request: SiteUrlVideoRequest):
     analysis["aspect_ratio"] = request.aspect_ratio
     analysis["transfer_version"] = 2
     return analysis
+
+
+def _require_developer_topic_key(request: Request) -> None:
+    keys = [value.strip() for value in os.getenv("VIRALIZER_TOPICS_API_KEYS", "").split(",") if value.strip()]
+    legacy = os.getenv("VIRALIZER_TOPICS_API_KEY", "").strip()
+    if legacy:
+        keys.append(legacy)
+    if not keys:
+        raise HTTPException(503, "The developer topics API is not configured.")
+    authorization = request.headers.get("authorization", "").strip()
+    bearer = authorization[7:].strip() if authorization.lower().startswith("bearer ") else ""
+    supplied = bearer or request.headers.get("x-api-key", "").strip()
+    if not supplied or not any(hmac.compare_digest(supplied, expected) for expected in keys):
+        raise HTTPException(401, "A valid developer API key is required.", headers={"WWW-Authenticate": "Bearer"})
+
+
+@app.get("/api/v1/hot-topics", tags=["Developer Topics"])
+async def developer_hot_topics(request: Request, limit: int = 50):
+    """Return V3's real MCP topics and verified rank to authorized backends."""
+    _require_developer_topic_key(request)
+    try:
+        raw_topics = await get_hot_topics_from_mcp()
+    except MCPOutlineError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    topics = [dict(item) for item in raw_topics[:max(1, min(100, limit))] if isinstance(item, dict)]
+
+    async def enrich(item: dict[str, Any]) -> dict[str, Any]:
+        if any(item.get(key) not in (None, "") for key in ("viral_rank", "viral_score")):
+            return item
+        topic_id = str(item.get("topic_id") or item.get("id") or "").strip()
+        if not topic_id:
+            return item
+        try:
+            details = await get_hot_topic_details_from_mcp(topic_id)
+        except MCPOutlineError:
+            return item
+        merged = dict(item)
+        merged.update(details)
+        return merged
+
+    enriched = await asyncio.gather(*(enrich(item) for item in topics))
+    return {"api_version": "v1", "source": "Viralizer MCP", "count": len(enriched), "topics": enriched}
 
 
 @app.get("/api/topics/hot")
