@@ -126,6 +126,13 @@ TOPIC_FAMILIES = (
     {"fitness", "workout", "health", "wellness", "nutrition", "gym"},
 )
 
+GENERIC_MATCH_TERMS = {
+    "about", "against", "audience", "brand", "businesses", "channel", "content",
+    "current", "daily", "from", "guide", "into", "latest", "media", "news", "online",
+    "people", "public", "short", "shorts", "social", "story", "that", "their", "this",
+    "trend", "trending", "update", "viewers", "website", "what", "with", "worldwide", "your",
+}
+
 
 def _expanded_tokens(tokens: set[str]) -> set[str]:
     expanded = set(tokens)
@@ -150,12 +157,18 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     viral = round(max(0, min(100, viral_value))) if (viral_score or viral_rank) else 0
     brand_text = " ".join(str(value) for value in brand.get("profile", {}).values())
     topic_text = " ".join(str(topic.get(key) or "") for key in ("topic", "title", "category", "summary", "description", "creator_angle"))
-    brand_tokens, topic_tokens = _expanded_tokens(_tokens(brand_text)), _expanded_tokens(_tokens(topic_text))
+    raw_brand_tokens = _tokens(brand_text) - GENERIC_MATCH_TERMS
+    raw_topic_tokens = _tokens(topic_text) - GENERIC_MATCH_TERMS
+    brand_tokens = _expanded_tokens(raw_brand_tokens)
+    topic_tokens = _expanded_tokens(raw_topic_tokens)
     overlap = len(brand_tokens & topic_tokens)
     # role_match_index is a provider-wide trend signal, not a match against this
     # customer's confirmed profile. Brand relevance must come only from actual
     # overlap with the customer's audience, offer, themes, and keywords.
     relevance = round(min(100, overlap * 20))
+    brand_families = [family for family in TOPIC_FAMILIES if raw_brand_tokens & family]
+    if brand_families and not any(raw_topic_tokens & family for family in brand_families):
+        relevance = 0
     # A customer-supplied brief is relevant by explicit intent even when its
     # wording does not repeat the saved brand keywords. Keep this provenance
     # separate from provider-ranked trend evidence.
@@ -178,6 +191,7 @@ def rank_opportunities(root: Path, customer_id: str, request: OpportunityRankReq
     if not brand or brand["status"] != "confirmed":
         raise ValueError("Confirm the Brand Intelligence Profile before ranking opportunities.")
     ranked = []
+    seen_trend_keys: set[str] = set()
     for topic in model.topics:
         title = " ".join(str(topic.get("topic") or topic.get("title") or "").split())[:500]
         if not title:
@@ -189,6 +203,9 @@ def rank_opportunities(root: Path, customer_id: str, request: OpportunityRankReq
             continue
         score = round(components["viralizer"] * .30 + components["brand_relevance"] * .25 + components["business_impact"] * .20 + components["freshness"] * .10 + components["production_feasibility"] * .15, 2)
         trend_key = hashlib.sha256(title.casefold().encode("utf-8")).hexdigest()[:32]
+        if trend_key in seen_trend_keys:
+            continue
+        seen_trend_keys.add(trend_key)
         rationale = (
             f"Brand relevance {components['brand_relevance']}/100, business impact {components['business_impact']}/100, freshness {components['freshness']}/100, "
             f"production feasibility {components['production_feasibility']}/100"
@@ -244,14 +261,18 @@ def list_opportunities(root: Path, customer_id: str, limit: int = 5) -> list[dic
 
 def archive_other_opportunities(root: Path, customer_id: str, keep_ids: list[str]) -> None:
     """Keep Today limited to the newest refresh without deleting historical evidence."""
-    if not keep_ids:
-        return
-    placeholders = ",".join("?" for _ in keep_ids)
     with _connect(root) as db:
-        db.execute(
-            f"UPDATE autopilot_opportunities SET status='archived',updated_at=? WHERE customer_id=? AND status IN ('recommended','selected') AND id NOT IN ({placeholders})",
-            (int(time.time()), customer_id, *keep_ids),
-        )
+        if keep_ids:
+            placeholders = ",".join("?" for _ in keep_ids)
+            db.execute(
+                f"UPDATE autopilot_opportunities SET status='archived',updated_at=? WHERE customer_id=? AND status IN ('recommended','selected') AND id NOT IN ({placeholders})",
+                (int(time.time()), customer_id, *keep_ids),
+            )
+        else:
+            db.execute(
+                "UPDATE autopilot_opportunities SET status='archived',updated_at=? WHERE customer_id=? AND status IN ('recommended','selected')",
+                (int(time.time()), customer_id),
+            )
 
 
 def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str, goal: str) -> list[dict[str, Any]]:

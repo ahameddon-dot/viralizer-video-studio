@@ -43,6 +43,7 @@ class UnifiedWorkspaceTests(unittest.TestCase):
     def test_confirmed_profile_survives_reload(self):
         self.assertIn("state.profile?.status === 'confirmed'", self.script)
         self.assertIn("state.profile?.confirmed_at", self.script)
+        self.assertIn("cleanUrl.searchParams.delete('onboarding')", self.script)
 
     def test_saved_project_images_and_publish_retry_survive_reload(self):
         self.assertIn('/api/autopilot/projects/current', self.script)

@@ -267,6 +267,8 @@
       }) });
       state.profile = data.brand_profile;
       renderBrand(); $('#workspaceOnboarding').hidden = true;
+      const cleanUrl = new URL(location.href); cleanUrl.searchParams.delete('onboarding'); cleanUrl.searchParams.set('view', 'today');
+      history.replaceState({ view: 'today' }, '', cleanUrl);
       await refreshTopics(true); showScreen('today'); toast('Your AI growth workspace is ready.');
     } catch (error) { status.textContent = error.message; button.disabled = false; button.textContent = 'Find my opportunities →'; }
   }

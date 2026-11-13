@@ -96,6 +96,25 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         ]})
         self.assertEqual(["Rottweiler puppy obedience mistakes"], [item["title"] for item in ranked])
 
+    def test_generic_content_words_do_not_make_irrelevant_topics_brand_relevant(self):
+        save_brand_profile(self.root, "dog-channel", {
+            "customer_type": "creator", "positioning": "Rottweiler videos for pet lovers",
+            "audiences": ["dog owners"], "products_services": ["puppy content"],
+            "keywords": ["rottweiler", "puppy", "shorts", "creators"], "confirmed": True,
+        })
+        ranked = rank_opportunities(self.root, "dog-channel", {"topics": [
+            {"topic": "Free Spins Bonuses Compared for Beginners", "summary": "Latest creator content guide", "viral_score": 99},
+            {"topic": "Rottweiler puppy socialization checklist", "viral_score": 70},
+            {"topic": "Rottweiler puppy socialization checklist", "viral_score": 70},
+        ]})
+        self.assertEqual(["Rottweiler puppy socialization checklist"], [item["title"] for item in ranked])
+
+    def test_empty_refresh_archives_stale_recommendations(self):
+        self.brand()
+        rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Ecommerce analytics update"}]})
+        archive_other_opportunities(self.root, "customer-1", [])
+        self.assertEqual([], list_opportunities(self.root, "customer-1"))
+
     def test_rank_over_one_hundred_is_available_even_when_normalized_signal_is_zero(self):
         self.brand()
         item = rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Commerce analytics", "viral_rank": 137}]})[0]
