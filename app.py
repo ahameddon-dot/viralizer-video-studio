@@ -98,7 +98,7 @@ from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersi
 from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_orchestrator import create_objective, make_selection
 from autopilot_intelligence import archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_concepts, list_opportunities, rank_opportunities, record_keyframe, save_brand_profile, update_keyframe_animation
-from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, get_active_project, list_asset_versions, list_autopilot_projects, list_publications, record_metric_snapshot, start_content_workflow
+from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, get_active_project, list_asset_versions, list_autopilot_projects, list_publications, prepare_project_publication, record_metric_snapshot, start_content_workflow
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_publishing import FakePublishingAdapter, LocalMediaPostForMeAdapter, submit_publication
 from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
@@ -2992,6 +2992,16 @@ async def autopilot_current_project(request: Request):
 async def autopilot_projects(request: Request):
     user = autopilot_user(request)
     return {"projects": list_autopilot_projects(ROOT, str(user.get("sub", "")))}
+
+
+@app.post("/api/autopilot/projects/{asset_id}/prepare-publication")
+async def autopilot_prepare_project_publication(request: Request, asset_id: str):
+    user = autopilot_user(request)
+    try:
+        asset = prepare_project_publication(ROOT, str(user.get("sub", "")), asset_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"asset": asset}
 
 
 @app.post("/api/autopilot/demo/publications/{publication_id}/complete")

@@ -98,11 +98,26 @@
         gallery.innerHTML = '<article><div><b>No saved videos yet</b><small>Select a topic to create your first project.</small><button class="secondary" data-go="today">Choose a topic →</button></div></article>';
       } else {
         gallery.innerHTML = projects.map(project => {
-          const label = project.is_published ? 'Published' : 'Not published';
+          const label = project.is_published ? 'Published on social' : (project.provider_submitted ? 'Submitted · social post not confirmed' : 'Not published');
           const media = project.media_url ? `<video class="project-video" src="${esc(project.media_url)}" preload="metadata" controls playsinline></video>` : '<div class="project-thumb"><span>VIDEO</span></div>';
-          return `<article>${media}<div><b>${esc(project.title || project.opportunity_title || 'Untitled video')}</b><small>${esc(label)} · Version ${esc(project.version || 1)}</small><button class="secondary" type="button" data-project-results="${esc(project.asset_id)}">View publishing results →</button></div></article>`;
+          const action = project.is_published
+            ? `<button class="secondary" type="button" data-project-results="${esc(project.asset_id)}">View publishing results →</button>`
+            : `<button class="primary" type="button" data-publish-project="${esc(project.asset_id)}" data-concept-id="${esc(project.concept_id)}" data-workflow-id="${esc(project.workflow_run_id)}">${project.provider_submitted ? 'Retry publishing' : 'Publish this video'} →</button>`;
+          return `<article>${media}<div><b>${esc(project.title || project.opportunity_title || 'Untitled video')}</b><small>${esc(label)} · Version ${esc(project.version || 1)}</small>${action}</div></article>`;
         }).join('');
         $$('[data-project-results]').forEach(button => button.onclick = () => showScreen('results'));
+        $$('[data-publish-project]').forEach(button => button.onclick = async () => {
+          const original = button.textContent; button.disabled = true; button.textContent = 'Preparing approval…';
+          try {
+            const prepared = await api(`/api/autopilot/projects/${encodeURIComponent(button.dataset.publishProject)}/prepare-publication`, { method: 'POST' });
+            state.asset = prepared.asset;
+            state.workflow = { id: button.dataset.workflowId };
+            state.concept = { id: button.dataset.conceptId };
+            state.topic = { title: prepared.asset.title || 'Saved video' };
+            await renderApproval(postFromAsset()); showScreen('approve');
+            toast('Review and approve this exact video before publishing.');
+          } catch (error) { button.disabled = false; button.textContent = original; toast(error.message); }
+        });
       }
       $$('[data-go]', gallery).forEach(button => button.onclick = () => showScreen(button.dataset.go));
     } catch (error) {

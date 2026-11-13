@@ -58,6 +58,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("loadProjects()", self.script)
         self.assertIn("/api/autopilot/projects", self.script)
         self.assertIn("project-video", self.script)
+        self.assertIn("prepare-publication", self.script)
+        self.assertIn("Publish this video", self.script)
         self.assertIn("Every saved video and its real publishing status", self.page)
 
     def test_keyframes_and_identity_photos_use_durable_storage(self):

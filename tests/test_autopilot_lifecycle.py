@@ -14,6 +14,7 @@ from autopilot_lifecycle import (
     list_asset_versions,
     list_autopilot_projects,
     list_publications,
+    prepare_project_publication,
     record_metric_snapshot,
     start_content_workflow,
 )
@@ -89,8 +90,9 @@ class AutopilotLifecycleTests(unittest.TestCase):
         with _connect(self.root) as db:
             db.execute("UPDATE autopilot_publications SET status='published' WHERE id=?", (result["publication"]["id"],))
         projects = list_autopilot_projects(self.root, "customer-1")
-        self.assertEqual(1, projects[0]["published_count"])
-        self.assertTrue(projects[0]["is_published"])
+        self.assertEqual(0, projects[0]["published_count"])
+        self.assertFalse(projects[0]["is_published"])
+        self.assertFalse(projects[0]["provider_submitted"])
 
         # A publication attached to an older retry version still belongs to the one
         # visible video card because both assets contain identical final media.
@@ -98,7 +100,26 @@ class AutopilotLifecycleTests(unittest.TestCase):
             db.execute("UPDATE autopilot_publications SET asset_version_id=? WHERE id=?", (first["id"], result["publication"]["id"]))
         projects = list_autopilot_projects(self.root, "customer-1")
         self.assertEqual(1, len(projects))
+        self.assertEqual(0, projects[0]["published_count"])
+
+        with _connect(self.root) as db:
+            db.execute(
+                "UPDATE autopilot_publications SET native_url=? WHERE id=?",
+                ("https://social.example/post/confirmed", result["publication"]["id"]),
+            )
+        projects = list_autopilot_projects(self.root, "customer-1")
+        self.assertTrue(projects[0]["is_published"])
         self.assertEqual(1, projects[0]["published_count"])
+
+    def test_saved_video_can_be_prepared_as_a_fresh_approval_version(self):
+        original = self.asset()
+        prepared = prepare_project_publication(self.root, "customer-1", original["id"])
+        self.assertNotEqual(original["id"], prepared["id"])
+        self.assertEqual(2, prepared["version"])
+        self.assertEqual("ready_review", prepared["status"])
+        self.assertEqual(original["media_sha256"], prepared["media_sha256"])
+        with self.assertRaises(ValueError):
+            prepare_project_publication(self.root, "customer-2", original["id"])
 
 
     def test_required_qc_blocks_invalid_asset(self):

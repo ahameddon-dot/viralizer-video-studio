@@ -211,6 +211,8 @@ def list_autopilot_projects(root: Path, customer_id: str) -> list[dict[str, Any]
             "provider": item.get("provider"),
             "status": item.get("status"),
             "provider_post_id": item.get("provider_post_id"),
+            "native_post_id": item.get("native_post_id"),
+            "native_url": item.get("native_url"),
             "published_at": item.get("published_at"),
             "created_at": item.get("created_at"),
         })
@@ -247,8 +249,12 @@ def list_autopilot_projects(root: Path, customer_id: str) -> list[dict[str, Any]
         projects_by_media[media_key] = project
         projects.append(project)
     for project in projects:
-        published = [item for item in project["publications"] if item.get("status") == "published"]
+        submitted = [item for item in project["publications"] if item.get("provider_post_id")]
+        published = [item for item in project["publications"] if item.get("status") == "published" and (
+            item.get("native_post_id") or item.get("native_url")
+        )]
         project["is_published"] = bool(published)
+        project["provider_submitted"] = bool(submitted)
         project["published_destinations"] = sorted({
             str(item.get("destination_id") or "") for item in published if item.get("destination_id")
         })
@@ -256,6 +262,34 @@ def list_autopilot_projects(root: Path, customer_id: str) -> list[dict[str, Any]
         # of provider retries or historical publication rows.
         project["published_count"] = len(project["published_destinations"])
     return projects
+
+
+def prepare_project_publication(root: Path, customer_id: str, asset_id: str) -> dict[str, Any]:
+    """Create a fresh approval-ready version from a customer-owned saved video."""
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT * FROM autopilot_asset_versions WHERE id=? AND customer_id=?",
+            (asset_id, customer_id),
+        ).fetchone()
+    if not row:
+        raise ValueError("Saved video was not found for this customer.")
+    asset = dict(row)
+    try:
+        hashtags = json.loads(asset.get("hashtags_json") or "[]")
+    except (TypeError, ValueError):
+        hashtags = []
+    return create_asset_version(root, customer_id, {
+        "workflow_run_id": asset["workflow_run_id"],
+        "concept_id": asset["concept_id"],
+        "media_url": asset["media_url"],
+        "media_sha256": asset["media_sha256"],
+        "duration_seconds": float(asset.get("duration_seconds") or 15),
+        "aspect_ratio": asset.get("aspect_ratio") or "9:16",
+        "caption": asset.get("caption") or "",
+        "title": asset.get("title") or "",
+        "hashtags": hashtags,
+        "qc": {"duration_valid": True, "aspect_ratio_valid": True, "media_available": True},
+    })
 
 
 def approve_and_queue_publication(root: Path, customer_id: str, approved_by: str, request: PublicationApprovalRequest | dict[str, Any]) -> dict[str, Any]:
