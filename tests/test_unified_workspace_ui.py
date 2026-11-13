@@ -11,6 +11,16 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         cls.app = (ROOT / "app.py").read_text(encoding="utf-8")
         cls.page = (ROOT / "static" / "autopilot-workspace.html").read_text(encoding="utf-8")
         cls.script = (ROOT / "static" / "autopilot-workspace-live.js").read_text(encoding="utf-8")
+        cls.premium = (ROOT / "static" / "autopilot-workspace-premium.css").read_text(encoding="utf-8")
+
+    def test_opportunity_cards_show_real_rank_with_crisp_images(self):
+        self.assertIn("bestTopicImage", self.script)
+        self.assertIn("hqdefault.jpg", self.script)
+        self.assertIn("viral-rank-badge", self.script)
+        self.assertIn("🔥", self.script)
+        self.assertIn("Verified Viralizer signal", self.script)
+        self.assertIn(".viral-rank-badge", self.premium)
+        self.assertIn("image-rendering:auto", self.premium)
 
     def test_separate_workspace_route_preserves_existing_product(self):
         self.assertIn('@app.get("/autopilot-workspace")', self.app)

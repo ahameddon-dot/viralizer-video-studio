@@ -340,13 +340,25 @@
     const match = categories.find(([, pattern]) => pattern.test(value));
     return `/static/category-images/${match ? match[0] : 'realtime'}.webp`;
   }
+  function bestTopicImage(topic) {
+    const source = topic.source || {}, thumbnails = [source.thumbnails, topic.thumbnails].filter(Array.isArray).flat();
+    const thumbnail = thumbnails.map(item => typeof item === 'string' ? item : item?.url).find(Boolean);
+    const selected = source.selected_thumbnail || topic.selected_thumbnail || source.thumbnail_url || topic.thumbnail_url || thumbnail || source.image || topic.image;
+    if (!selected) return topicFallbackImage(topic);
+    return String(selected).replace(/\/(?:default|mqdefault)\.jpg(?:\?.*)?$/i, '/hqdefault.jpg');
+  }
+  function compactCategory(topic) {
+    const value = String(topic.category || topic.source?.category || 'Trending now').split(',').map(part => part.trim()).filter(Boolean).slice(0, 2).join(' · ');
+    return value.length > 42 ? `${value.slice(0, 39)}…` : value;
+  }
   function renderTopics() {
     const host = $('#topicGrid');
     if (!state.opportunities.length) { host.innerHTML = '<div class="empty-opportunities"><span>✦</span><div><b>No verified trend matches your brand right now.</b><p>Viralizer rejected unrelated topics instead of filling your feed with noise. Start from your idea, image, URL, or business above—or refresh later.</p></div><button type="button" data-empty-idea>Start with an idea →</button></div>'; $('[data-empty-idea]').onclick = () => openInspiration('idea'); return; }
     host.innerHTML = state.opportunities.map((topic, index) => {
-      const score = scoreFor(topic), viralRank = viralRankFor(topic), why = topic.reason || topic.explanation || topic.brand_match_reason || 'Matched against your confirmed audience, offer, and goal.', image = topic.source?.image || topic.source?.thumbnail_url || topic.image || topic.thumbnail_url || topicFallbackImage(topic);
-      return `<article class="topic-card ${index === 0 ? 'recommended' : ''}" data-topic="${esc(topic.id)}"><div class="topic-image"><img src="${esc(image)}" alt="${esc(topic.title)}" loading="lazy"><b>${score || '—'}</b><span>${index === 0 ? 'BEST MATCH' : esc(topic.category || 'OPPORTUNITY')}</span></div><h2>${esc(topic.title)}</h2><p>${esc(why)}</p><div class="topic-footer"><span>Viral Rank: ${viralRank ?? 'not available'}</span><button>Select topic →</button></div></article>`;
+      const score = scoreFor(topic), viralRank = viralRankFor(topic), why = topic.reason || topic.explanation || topic.brand_match_reason || 'Matched against your confirmed audience, offer, and goal.', image = bestTopicImage(topic), fallback = topicFallbackImage(topic), category = compactCategory(topic);
+      return `<article class="topic-card ${index === 0 ? 'recommended' : ''}" data-topic="${esc(topic.id)}"><div class="topic-image"><img src="${esc(image)}" data-fallback="${esc(fallback)}" alt="${esc(topic.title)}" loading="lazy"><div class="viral-rank-badge"><span>🔥</span><div><small>VIRAL RANK</small><strong>${viralRank ?? '—'}</strong></div></div><span class="topic-category">${esc(index === 0 ? `Best match · ${category}` : category)}</span><em class="brand-fit">${score || '—'}% fit</em></div><div class="topic-card-body"><h2>${esc(topic.title)}</h2><p>${esc(why)}</p><div class="topic-footer"><span><i></i> Verified Viralizer signal</span><button>Select topic <b>→</b></button></div></div></article>`;
     }).join('');
+    $$('.topic-image img').forEach(image => image.addEventListener('error', () => { const fallback = image.dataset.fallback; if (fallback && image.src !== fallback) image.src = fallback; }));
     $$('[data-topic]').forEach(card => card.onclick = () => selectTopic(card.dataset.topic));
     const best = state.opportunities[0];
     $('#briefTitle').textContent = `${best.title} is your strongest current opportunity`;
