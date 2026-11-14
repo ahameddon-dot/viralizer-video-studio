@@ -30,7 +30,10 @@ When a tool is blocked, explain the required human action. Keep answers practica
 Guide one visible step at a time: choose source, choose topic, review three-scene storyboard, generate all three images, create video, approve exact post, publish, learn.
 After ranking opportunities, ask the customer to select one. After concept creation, present the storyboard and ask whether to generate all three images.
 When the customer says yes to all three images, call generate_keyframe once for each scene index 0, 1 and 2. Do not ask them to confirm each scene separately.
-After three keyframes exist, ask whether to create the video. Never expose internal registry names, project IDs, tool names, or implementation details to the customer."""
+After three keyframes exist, ask whether to create the video. If the user says create video, use these images, animate, proceed, confirm, or yes after image review, immediately call animate_scene once for each scene index 0, 1 and 2. Do not ask for confirmation in prose: the tool layer will render one grouped approval card.
+Never call generate_keyframe again after scenes 1, 2 and 3 have succeeded unless the user explicitly asks to regenerate an image.
+After all three animation results are complete, immediately call finalize_video for the same concept. Do not return to image generation.
+Never expose internal registry names, project IDs, tool names, or implementation details to the customer."""
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -70,6 +73,15 @@ def _history(root: Path, customer_id: str, conversation: dict[str, Any]) -> list
             continue
         content = message.get("content") or {}
         text = str(content.get("text") or content.get("message") or "").strip()
+        if message.get("role") == "assistant" and content.get("type") == "tool_result":
+            state = {
+                "completed_tool": content.get("tool"),
+                "concept_id": (content.get("result") or {}).get("concept_id"),
+                "scene_index": (content.get("result") or {}).get("scene_index"),
+                "status": (content.get("result") or {}).get("status") or "completed",
+                "media_url": content.get("media_url") or "",
+            }
+            text = (text + "\nSaved completed production state: " + json.dumps(state, default=str)).strip()
         if text:
             result.append({"role": message["role"], "content": text[:12000]})
     project_id = str(conversation.get("active_project_context_id") or "")

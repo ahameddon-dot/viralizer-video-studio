@@ -2409,10 +2409,12 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
                 user_direction=str(arguments.get("direction") or ""), avoid="",
             ))
             keyframe = result.get("keyframe") or {}; result["media_url"] = keyframe.get("image_url") or ""
+            result["concept_id"] = concept_id; result["scene_index"] = scene_index
             summary = f"Scene {scene_index + 1} is generated. Review the image before asking me to animate it."
         elif name == "animate_scene":
             scene_index = int(arguments.get("scene_index") or 0)
             result = await animate_autopilot_keyframe(request, concept_id, KeyframeAnimateRequest(scene_index=scene_index))
+            result["concept_id"] = concept_id; result["scene_index"] = scene_index
             summary = f"PixVerse started Scene {scene_index + 1}. The job is saved and can continue in the background."
         elif name == "finalize_video":
             concept = get_concept(ROOT, customer_id, concept_id)
