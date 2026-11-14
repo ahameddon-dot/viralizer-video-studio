@@ -2446,6 +2446,9 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
         try: complete_tool_execution(ROOT, customer_id, execution_id, error={"message": str(exc)})
         except ValueError: pass
         raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        LOGGER.exception("Chat tool confirmation failed execution_id=%s", execution_id)
+        raise HTTPException(500, "The approved generation could not start. No provider request was completed; please retry.") from exc
 
 
 @app.post("/api/autopilot/brand-profile/analyze")

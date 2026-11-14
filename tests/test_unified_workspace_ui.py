@@ -55,6 +55,13 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertNotIn("Authorized AI tools", self.chat_page)
         self.assertIn("image-rendering:auto", self.premium)
 
+    def test_chat_cost_confirmation_uses_database_allowed_status(self):
+        store = (ROOT / "conversation" / "store.py").read_text(encoding="utf-8")
+        migration = (ROOT / "migrations" / "20261112110000_conversation_foundation.sql").read_text(encoding="utf-8")
+        self.assertIn("approval_status='confirmed'", store)
+        self.assertIn("'not_required','required','confirmed','rejected'", migration)
+        self.assertNotIn("approval_status='approved'", store)
+
     def test_separate_workspace_route_preserves_existing_product(self):
         self.assertIn('@app.get("/autopilot-workspace")', self.app)
         self.assertIn('"autopilot-workspace.html"', self.app)

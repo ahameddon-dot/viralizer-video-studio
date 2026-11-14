@@ -237,7 +237,7 @@ def confirm_tool_execution(root: Path, customer_id: str, conversation_id: str, e
         if not decision.get("execution_enabled"):
             raise PermissionError(str(decision.get("reason") or "The action is not authorized."))
         updated = db.execute(
-            """UPDATE conversation_tool_executions SET authorization_json=?,approval_status='approved',status='proposed',updated_at=?
+            """UPDATE conversation_tool_executions SET authorization_json=?,approval_status='confirmed',status='proposed',updated_at=?
             WHERE id=? AND customer_id=? AND conversation_id=? AND status='blocked' RETURNING *""",
             (_json(decision), int(time.time()), execution_id, customer_id, conversation_id),
         ).fetchone()
