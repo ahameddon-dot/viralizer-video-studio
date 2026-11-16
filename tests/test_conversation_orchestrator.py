@@ -77,6 +77,29 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual("viralizer_v3", result["provenance"]["data_source"])
         fetch.assert_called_once_with(5)
 
+    def test_empty_rank_result_archives_stale_opportunities(self):
+        with patch("conversation.orchestrator.rank_opportunities", return_value=[]) as rank, \
+             patch("conversation.orchestrator.archive_other_opportunities") as archive:
+            result = asyncio.run(_execute(self.root, "customer-1", "rank_opportunities", {"topics": [{"topic": "Iran geopolitics"}]}))
+        self.assertEqual([], result["opportunities"])
+        rank.assert_called_once()
+        archive.assert_called_once_with(self.root, "customer-1", [])
+
+    def test_no_verified_matches_returns_contextual_actions_instead_of_raw_topics(self):
+        client = FakeClient([
+            FakeResponse({"id": "resp-1", "output": [{"type": "function_call", "name": "rank_opportunities", "call_id": "call-1", "arguments": "{\"topics\":[{\"topic\":\"Iran geopolitics\"}]}"}]}),
+        ])
+        with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True), \
+             patch("conversation.orchestrator.rank_opportunities", return_value=[]), \
+             patch("conversation.orchestrator.archive_other_opportunities"):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", self.user_message["id"], client=client))
+        self.assertIn("rejected the unrelated results", result["message"]["content"]["text"])
+        self.assertEqual(
+            ["Refresh relevant trends", "Re-analyze my brand", "Use my own idea"],
+            [item["label"] for item in result["suggestions"]],
+        )
+        self.assertEqual(1, len(client.requests))
+
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
         with patch("conversation.orchestrator.generate_concepts", return_value=concepts), \

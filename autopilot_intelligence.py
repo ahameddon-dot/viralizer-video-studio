@@ -134,7 +134,8 @@ GENERIC_MATCH_TERMS = {
     "about", "against", "audience", "brand", "businesses", "channel", "content",
     "current", "daily", "from", "guide", "into", "latest", "media", "news", "online",
     "people", "public", "short", "shorts", "social", "story", "that", "their", "this",
-    "trend", "trending", "update", "viewers", "website", "what", "with", "worldwide", "your",
+    "trend", "trending", "update", "view", "viewers", "perspective", "role", "essential",
+    "website", "what", "with", "worldwide", "your",
 }
 
 
@@ -171,8 +172,12 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     # overlap with the customer's audience, offer, themes, and keywords.
     relevance = round(min(100, overlap * 20))
     brand_families = [family for family in TOPIC_FAMILIES if raw_brand_tokens & family]
-    if brand_families and not any(raw_topic_tokens & family for family in brand_families):
-        relevance = 0
+    if not topic.get("user_directed"):
+        if brand_families and not any(raw_topic_tokens & family for family in brand_families):
+            relevance = 0
+        elif not brand_families and overlap < 2:
+            # One coincidental word is not enough to claim a brand match.
+            relevance = 0
     # A customer-supplied brief is relevant by explicit intent even when its
     # wording does not repeat the saved brand keywords. Keep this provenance
     # separate from provider-ranked trend evidence.

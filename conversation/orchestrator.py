@@ -11,7 +11,7 @@ import httpx
 
 from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_growth import growth_dashboard
-from autopilot_intelligence import apply_creative_brief, generate_concepts, get_brand_profile, get_concept, list_opportunities, rank_opportunities
+from autopilot_intelligence import apply_creative_brief, archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_opportunities, rank_opportunities
 from conversation import MODEL_ORCHESTRATION_ENABLED
 from conversation.director import brand_seed_topics, director_turn
 from conversation.onboarding import respond_onboarding
@@ -158,7 +158,9 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
             return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
         return _discovery_fallback(root, customer_id, limit, source)
     if name == "rank_opportunities":
-        return {"opportunities": rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})}
+        opportunities = rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})
+        archive_other_opportunities(root, customer_id, [str(item["id"]) for item in opportunities])
+        return {"opportunities": opportunities}
     if name == "create_from_idea":
         idea = " ".join(str(arguments.get("idea") or "").split())[:500]
         if len(idea) < 3:
@@ -323,6 +325,7 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                 message = append_message(root, customer_id, conversation_id, "assistant", {"type": "text", "text": text, "provider": "openai", "model": model, "response_id": response_id, "suggestions": suggestions, "stage": directed["state"].stage, "intent": directed["intent"]})
                 return {"message": message, "approval_cards": approvals, "model": model, "provider": "openai", "suggestions": suggestions}
             outputs = []
+            no_verified_matches = False
             for call in calls:
                 name, call_id = str(call.get("name") or ""), str(call.get("call_id") or uuid.uuid4().hex)
                 try:
@@ -337,6 +340,8 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                         result = redact(await _execute(root, customer_id, name, arguments, conversation_id, actor_id))
                         complete_tool_execution(root, customer_id, execution["id"], result=result)
                         tool_output = {"status": "completed", "tool": name, "data": result}
+                        if name == "rank_opportunities" and not (result.get("opportunities") or []):
+                            no_verified_matches = True
                     except (ValueError, RuntimeError) as exc:
                         safe_message = " ".join(str(exc).split())[:300] or "The workflow step could not complete."
                         error = {"code": "tool_failed", "message": safe_message}
@@ -351,6 +356,20 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                     approvals.append(card); tool_output = {"status": "approval_required", **card}
                 append_message(root, customer_id, conversation_id, "tool", {"tool": name, "call_id": call_id, "output": tool_output})
                 outputs.append({"type": "function_call_output", "call_id": call_id, "output": json.dumps(tool_output, ensure_ascii=False, default=str)[:60000]})
+            if no_verified_matches:
+                suggestions = [
+                    {"label": "Refresh relevant trends", "prompt": "Refresh live trends and show only topics that genuinely match my confirmed brand profile."},
+                    {"label": "Re-analyze my brand", "prompt": "Re-analyze my website and social profile before finding trends again."},
+                    {"label": "Use my own idea", "prompt": "I want to start with my own video idea."},
+                ]
+                message = append_message(root, customer_id, conversation_id, "assistant", {
+                    "type": "text",
+                    "text": "None of the current worldwide topics passed your confirmed brand-relevance checks. I rejected the unrelated results instead of presenting global popularity as a profile match. Refresh later, strengthen the Brand DNA, or start from your own idea.",
+                    "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
+                    "stage": "discover", "intent": "no_verified_brand_match",
+                })
+                return {"message": message, "approval_cards": approvals, "model": "deterministic",
+                        "provider": "viralizer_workflow", "suggestions": suggestions}
             body = {"model": model, "instructions": instructions, "previous_response_id": response_id, "input": outputs, "tools": tool_definitions(), "max_output_tokens": 1400}
         message = append_message(root, customer_id, conversation_id, "assistant", {"type": "text", "text": "I reached the action limit for one turn. Review the completed steps and continue in a new message.", "provider": "openai", "model": model})
         return {"message": message, "approval_cards": approvals, "model": model, "provider": "openai"}

@@ -109,6 +109,22 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         ]})
         self.assertEqual(["Rottweiler puppy socialization checklist"], [item["title"] for item in ranked])
 
+    def test_food_profile_rejects_popular_geopolitics_and_technology_topics(self):
+        save_brand_profile(self.root, "food-channel", {
+            "customer_type": "creator",
+            "positioning": "Irfan's view shares food and cooking videos",
+            "audiences": ["home cooks and food lovers"],
+            "products_services": ["recipes and cooking content"],
+            "keywords": ["food", "cooking", "recipes"],
+            "confirmed": True,
+        })
+        ranked = rank_opportunities(self.root, "food-channel", {"topics": [
+            {"topic": "Iran's Role in Middle Eastern Geopolitics: A Deep Dive", "viral_rank": 45},
+            {"topic": "Essential Microsoft Cloud Strategies for Tech Professionals", "viral_rank": 57},
+            {"topic": "Fast weeknight biryani recipe for home cooks", "viral_rank": 38},
+        ]})
+        self.assertEqual(["Fast weeknight biryani recipe for home cooks"], [item["title"] for item in ranked])
+
     def test_empty_refresh_archives_stale_recommendations(self):
         self.brand()
         rank_opportunities(self.root, "customer-1", {"topics": [{"topic": "Ecommerce analytics update"}]})
