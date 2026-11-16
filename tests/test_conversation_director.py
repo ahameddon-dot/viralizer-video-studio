@@ -215,6 +215,12 @@ class DurationFlowTests(unittest.TestCase):
         context = d.build_context(state, d.CREATE_FROM_IDEA, {})
         self.assertIn("Never ask for an opportunity ID", context)
 
+    def test_inline_idea_from_contextual_composer_is_captured_without_repeating_question(self):
+        state = d.derive_state([user("My video idea is: A solar-powered cafe opens at sunrise")], True)
+        self.assertTrue(state.idea_mode_requested)
+        self.assertEqual("A solar-powered cafe opens at sunrise", state.custom_idea)
+        self.assertEqual("duration", state.brief_step)
+
     def test_create_from_idea_advances_to_storyboard(self):
         idea_concept = concept()
         idea_concept["opportunity_id"] = "idea-o1"

@@ -240,6 +240,9 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                 r"\b(own|my|custom)\s+(video\s+)?idea\b|\bstart with (my |an? )?idea\b", text, re.I))
             if activates_idea_mode:
                 state.idea_mode_requested = True
+                inline_idea = re.search(r"\b(?:own|my|custom)\s+(?:video\s+)?idea\s*(?:is\s*:|is|:|-)\s*(.+)", text, re.I | re.S)
+                if inline_idea and inline_idea.group(1).strip():
+                    state.custom_idea = inline_idea.group(1).strip()[:500]
             elif state.idea_mode_requested and not state.custom_idea and not _CONFIRM_RE.match(text) and len(text.strip()) >= 3:
                 state.custom_idea = text.strip()[:500]
             duration = parse_duration(text)
