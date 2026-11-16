@@ -136,6 +136,8 @@ def _compact_opportunity(item: dict[str, Any]) -> dict[str, Any]:
         "score": item.get("score"),
         "viral_rank": components.get("viral_rank") or source.get("viral_rank"),
         "why": str(item.get("rationale") or "")[:220],
+        "scope": ("category" if source.get("user_selected_category") else
+                  "worldwide_hot" if source.get("user_selected_worldwide") else "profile"),
     }
 
 

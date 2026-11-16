@@ -40,7 +40,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "generate_keyframe": {"type": "object", "properties": {"concept_id": {"type": "string"}, "scene_index": {"type": "integer", "minimum": 0, "maximum": 20}, "direction": {"type": "string"}}, "required": ["concept_id", "scene_index"], "additionalProperties": False},
     "animate_scene": {"type": "object", "properties": {"concept_id": {"type": "string"}, "scene_index": {"type": "integer", "minimum": 0, "maximum": 20}}, "required": ["concept_id", "scene_index"], "additionalProperties": False},
     "finalize_video": {"type": "object", "properties": {"concept_id": {"type": "string"}}, "required": ["concept_id"], "additionalProperties": False},
-    "prepare_publication": {"type": "object", "properties": {"asset_version_id": {"type": "string"}, "caption": {"type": "string"}, "destination_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["asset_version_id", "caption", "destination_ids"], "additionalProperties": False},
+    "prepare_publication": {"type": "object", "properties": {"asset_version_id": {"type": "string"}, "title": {"type": "string", "maxLength": 200}, "caption": {"type": "string"}, "destination_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["asset_version_id", "caption", "destination_ids"], "additionalProperties": False},
 }
 
 

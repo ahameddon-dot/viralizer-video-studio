@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from autopilot_intelligence import save_brand_profile
-from conversation.orchestrator import _execute, respond, tool_definitions
+from conversation.orchestrator import _execute, _normalize_publication_arguments, respond, tool_definitions
 from conversation.store import append_message, create_conversation, get_conversation
 from creatorthon_store import _connect
 from mcp_outline_client import MCPOutlineError
@@ -69,6 +69,24 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertIn("generate_keyframe", definitions)
         self.assertIn("prepare_publication", definitions)
         self.assertFalse(definitions["prepare_publication"]["strict"])
+
+    def test_worldwide_or_category_publication_copy_does_not_inject_profile_audience(self):
+        normalized = _normalize_publication_arguments(
+            {"caption": "UFC changes for food lovers", "destination_ids": []},
+            {"title": "Usman vs. The World: Latest UFC Updates", "scope": "worldwide_hot"},
+            "Fallback concept",
+        )
+        self.assertEqual("Usman vs. The World: Latest UFC Updates", normalized["title"])
+        self.assertNotIn("food lovers", normalized["caption"])
+        self.assertIn("what to watch next", normalized["caption"])
+
+    def test_profile_matched_publication_keeps_customer_approved_caption(self):
+        normalized = _normalize_publication_arguments(
+            {"caption": "A recipe made for food lovers", "destination_ids": []},
+            {"title": "Biryani at home", "scope": "profile"},
+            "Biryani at home",
+        )
+        self.assertEqual("A recipe made for food lovers", normalized["caption"])
 
     def test_chat_discovery_uses_canonical_v3_topics(self):
         save_brand_profile(self.root, "customer-1", {

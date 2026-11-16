@@ -337,6 +337,18 @@ def _no_match_suggestions() -> list[dict[str, str]]:
     ]
 
 
+def _normalize_publication_arguments(arguments: dict[str, Any], selected: dict[str, Any] | None,
+                                     concept_title: str) -> dict[str, Any]:
+    """Keep alternate-category/worldwide post copy grounded in its actual topic."""
+    result = dict(arguments)
+    scope = str((selected or {}).get("scope") or "profile")
+    if scope in {"category", "worldwide_hot"}:
+        topic = " ".join(str((selected or {}).get("title") or concept_title or "Viralizer video").split())[:200]
+        result["title"] = topic
+        result["caption"] = f"{topic} — the key update, why it matters, and what to watch next."
+    return result
+
+
 async def _deterministic_discovery_turn(root: Path, customer_id: str, conversation_id: str, actor_id: str,
                                         message_id: str, arguments: dict[str, Any], label: str) -> dict[str, Any]:
     call_id = f"discover_{uuid.uuid4().hex}"
@@ -495,6 +507,9 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                     arguments = json.loads(call.get("arguments") or "{}")
                 except (TypeError, ValueError):
                     arguments = {}
+                if name == "prepare_publication":
+                    arguments = _normalize_publication_arguments(
+                        arguments, directed_state.selected_opportunity, directed_state.concept_title)
                 idem = hashlib.sha256(f"{conversation_id}:{call_id}:{name}".encode()).hexdigest()
                 execution = propose_tool_execution(root, customer_id, conversation_id, name, arguments, idem, call_id, message_id=message_id, cost_confirmed=cost_confirmed)
                 decision = execution.get("authorization") or {}

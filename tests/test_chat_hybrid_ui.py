@@ -30,6 +30,9 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn('publication-card', (ROOT / "static" / "autopilot-chat.css").read_text(encoding="utf-8"))
         self.assertIn("assets.find(item=>item.status==='ready_review')", self.chat_js)
         self.assertIn('Recovered your newest assembled video.', self.chat_js)
+        self.assertIn('Connect Instagram', self.chat_js)
+        self.assertIn('Connect YouTube', self.chat_js)
+        self.assertIn("args.title||project.title", self.chat_js)
 
     def test_latest_chat_stays_visible_after_media_layout_changes(self):
         self.assertIn('function keepLatestVisible(force=false)', self.chat_js)
