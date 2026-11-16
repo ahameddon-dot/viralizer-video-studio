@@ -10,11 +10,22 @@ class AutopilotReviewUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.page = (ROOT / "static" / "autopilot-review.html").read_text(encoding="utf-8")
         cls.product = (ROOT / "static" / "autopilot-product.js").read_text(encoding="utf-8")
+        cls.chat_avatar = (ROOT / "static" / "autopilot-chat-avatar.js").read_text(encoding="utf-8")
+        cls.chat_page = (ROOT / "static" / "autopilot-chat.html").read_text(encoding="utf-8")
         cls.app = (ROOT / "app.py").read_text(encoding="utf-8")
 
     def test_has_a_dedicated_route_and_file(self):
         self.assertIn('@app.get("/autopilot-review")', self.app)
         self.assertIn('"autopilot-review.html"', self.app)
+
+    def test_chat_storyboard_uses_private_avatar_and_hides_only_duplicate_actions(self):
+        self.assertIn("Use your own photo or avatar", self.chat_avatar)
+        self.assertIn("/api/autopilot/user-photos", self.chat_avatar)
+        self.assertIn("body.user_photo_id=photoId", self.chat_avatar)
+        self.assertIn("removeDuplicateActions", self.chat_avatar)
+        self.assertIn("laterOutput", self.chat_avatar)
+        self.assertIn("autopilot-chat-avatar.js", self.chat_page)
+        self.assertIn("user_photo_id=payload.user_photo_id", self.app)
 
     def test_manual_direction_wrapper_has_its_own_scope_safe_mode_reader(self):
         self.assertIn("(()=>{const directionMode=()=>document.querySelector", self.product)

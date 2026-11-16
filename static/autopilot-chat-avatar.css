@@ -1,0 +1,11 @@
+.identity-panel{margin:18px 0 14px;padding:18px;border:1px solid #d8ccff;border-radius:18px;background:linear-gradient(135deg,#faf8ff 0%,#f2edff 100%);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 18px;align-items:center}
+.identity-panel h4{margin:4px 0 5px;font-size:18px;color:#11152f}
+.identity-panel p{margin:0;color:#5f6479;line-height:1.45}
+.identity-panel>label{grid-column:1/-1;display:flex;align-items:center;gap:9px;font-weight:700;color:#30344b}
+.identity-panel [data-avatar-preview]{width:76px;height:76px;border-radius:16px;object-fit:cover;border:3px solid #fff;box-shadow:0 8px 22px #6842c626}
+.identity-panel .media-actions{grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap}
+.identity-panel button{border:0;border-radius:12px;padding:11px 15px;background:#6738e8;color:#fff;font-weight:800;cursor:pointer}
+.identity-panel button.secondary{background:#fff;color:#5530c9;border:1px solid #cdbdff}
+.identity-panel button:disabled{opacity:.55;cursor:wait}
+.identity-panel small{grid-column:1/-1;color:#656b82}
+@media(max-width:680px){.identity-panel{grid-template-columns:1fr}.identity-panel [data-avatar-preview]{grid-row:2}.identity-panel .media-actions button{width:100%}}

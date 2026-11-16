@@ -2425,6 +2425,7 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
             result = await generate_autopilot_keyframe(request, concept_id, KeyframeGenerateRequest(
                 scene_index=scene_index, preserve_identity=True,
                 user_direction=str(arguments.get("direction") or ""), avoid="",
+                user_photo_id=payload.user_photo_id,
             ))
             keyframe = result.get("keyframe") or {}; result["media_url"] = keyframe.get("image_url") or ""
             result["concept_id"] = concept_id; result["scene_index"] = scene_index

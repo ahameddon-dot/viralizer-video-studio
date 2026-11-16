@@ -43,6 +43,7 @@ class ToolExecutionPropose(BaseModel):
 
 class ToolExecutionConfirmation(BaseModel):
     confirm_provider_cost: bool = False
+    user_photo_id: str = Field(default="", pattern=r"^[a-f0-9]{32}$|^$")
 
 
 MessageRole = Literal["user", "assistant", "system", "tool"]
