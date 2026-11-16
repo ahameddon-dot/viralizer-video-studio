@@ -226,7 +226,7 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                     if re.search(r"\b(now|immediately|right away)\b", text, re.I):
                         state.publish_timing = "now"
                         state.publication_step = "approval"
-                    elif re.search(r"\b(schedule|tomorrow|today|\d{1,2}[:.]\d{2}|am|pm)\b", text, re.I):
+                    elif re.search(r"\b(schedule|tomorrow|today|in\s+\d{1,2}\s+hours?|\d{1,2}[:.]\d{2}|am|pm)\b", text, re.I):
                         state.publish_timing = text.strip()[:200]
                         state.publication_step = "approval"
                 else:
@@ -621,7 +621,9 @@ def suggested_replies(state: DirectorState) -> list[dict[str, str]]:
                     {"label": "Change platform", "prompt": "Change the publishing platform to YouTube."}]
         if state.publication_step == "timing":
             return [{"label": "Post now", "prompt": "Post it now."},
-                    {"label": "Schedule", "prompt": "Schedule it for: "},
+                    {"label": "In 3 hours", "prompt": "Schedule it in 3 hours."},
+                    {"label": "In 12 hours", "prompt": "Schedule it in 12 hours."},
+                    {"label": "Choose time", "prompt": "Schedule it for: "},
                     {"label": "Edit caption", "prompt": "Caption: "}]
         if state.publication_step == "approval":
             return [{"label": "Review exact post", "prompt": "Show the exact-content publishing approval for this post."},

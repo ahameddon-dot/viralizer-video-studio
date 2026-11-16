@@ -62,6 +62,13 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn("if(done){complete.add(scene)", self.chat_js)
         self.assertIn("All scene animations are ready. Assembling the final video", self.chat_js)
 
+    def test_publish_chat_renders_stage_buttons_and_tracking_checkpoints(self):
+        self.assertIn("rows.findLastIndex(row=>row.role==='assistant')", self.chat_js)
+        for label in ("Instagram", "YouTube", "Write it for me", "Use my caption", "Post now", "In 3 hours", "In 12 hours"):
+            self.assertIn(f"label:'{label}'", self.chat_js)
+        self.assertIn("[3,6,12,24].map", self.chat_js)
+        self.assertIn("showTrackingChoice(card,publicationIds)", self.chat_js)
+
     def test_saved_animation_can_resume_after_refresh_without_new_generation(self):
         self.assertIn("function resumableProduction(rows)", self.chat_js)
         self.assertIn('data-resume-production', self.chat_js)
