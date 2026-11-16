@@ -8,15 +8,18 @@ import httpx
 from mcp_outline_client import MCPOutlineError
 
 
-async def fetch_v3_worldwide_topics(limit: int = 20) -> tuple[list[dict[str, Any]], str]:
-    """Fetch the canonical server-owned V3 topic feed for every Autopilot customer."""
+async def fetch_v3_worldwide_topics(limit: int = 20, category: str = "") -> tuple[list[dict[str, Any]], str]:
+    """Fetch the canonical server-owned V3 feed, optionally scoped to a confirmed category."""
     key = os.getenv("VIRALIZER_V3_TOPICS_API_KEY", "").strip()
     if not key:
         raise MCPOutlineError("V3 topics API key is not configured.")
     url = os.getenv("VIRALIZER_V3_TOPICS_API_URL", "https://v3.viralizer.ai/api/v1/hot-topics").strip()
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.get(url, params={"country": "worldwide", "limit": max(1, min(50, int(limit)))}, headers={"X-API-Key": key, "Accept": "application/json"})
+            params = {"country": "worldwide", "limit": max(1, min(50, int(limit)))}
+            if category.strip():
+                params["category"] = category.strip()
+            response = await client.get(url, params=params, headers={"X-API-Key": key, "Accept": "application/json"})
     except httpx.HTTPError as exc:
         raise MCPOutlineError(f"V3 topics API request failed: {exc}") from exc
     if response.status_code != 200:

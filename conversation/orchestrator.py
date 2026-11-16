@@ -22,6 +22,7 @@ from conversation.tool_contracts import TOOL_DESCRIPTIONS, TOOL_SCHEMAS
 from hybrid_project_state import ensure_autopilot_project, get_project_context, revise_storyboard_scene
 from storyboard_plan import scene_patch
 from mcp_outline_client import get_hot_topics_from_mcp
+from creatorthon_store import get_cached_category_topics
 from viralizer_topic_source import fetch_v3_worldwide_topics
 
 
@@ -153,13 +154,21 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
         return await analyze_brand_sources(str(arguments.get("website_url") or ""), list(arguments.get("social_urls") or []))
     if name == "discover_topics":
         limit = max(1, min(25, int(arguments.get("limit") or 10)))
-        topics, source = await fetch_v3_worldwide_topics(limit)
+        brand = get_brand_profile(root, customer_id)
+        profile_category = str(((brand or {}).get("profile") or {}).get("category") or "").strip()
+        # The V3 catalog uses broad category names (Food, Pets, Business, etc.)
+        # while onboarding may save combined labels such as Food & Cooking.
+        category = profile_category.split("&", 1)[0].split("/", 1)[0].strip()
+        cached = get_cached_category_topics(root, category, allow_stale=True)[:limit] if category else []
+        if cached:
+            topics, source = cached, f"Viralizer V3 {category} catalog"
+        else:
+            topics, source = await fetch_v3_worldwide_topics(limit, category=category)
         discovery = ({"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
                      if topics else _discovery_fallback(root, customer_id, limit, source))
         # Discovery is a worldwide feed, not a personalized result. Enforce the
         # customer relevance gate here so the model can never describe raw V3
         # topics as "profile matched" when it skips the separate ranking tool.
-        brand = get_brand_profile(root, customer_id)
         if brand and brand.get("status") == "confirmed":
             opportunities = rank_opportunities(root, customer_id, {
                 "topics": discovery.get("topics") or [], "limit": limit,

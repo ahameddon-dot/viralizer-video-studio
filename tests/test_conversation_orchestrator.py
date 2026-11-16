@@ -80,11 +80,11 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual(["Clear creator brand voice guide"], [item["topic"] for item in result["topics"]])
         self.assertEqual("viralizer_v3", result["provenance"]["data_source"])
         self.assertTrue(result["provenance"]["profile_match_verified"])
-        fetch.assert_called_once_with(5)
+        fetch.assert_called_once_with(5, category="")
 
     def test_discovery_never_exposes_unfiltered_worldwide_topics_as_profile_matches(self):
         save_brand_profile(self.root, "food-channel", {
-            "customer_type": "creator", "positioning": "Food and cooking videos",
+            "customer_type": "creator", "category": "Food & Cooking", "positioning": "Food and cooking videos",
             "audiences": ["home cooks"], "products_services": ["recipes"],
             "keywords": ["food", "cooking", "recipe"], "confirmed": True,
         })
@@ -93,10 +93,25 @@ class ConversationOrchestratorTests(unittest.TestCase):
             {"topic": "Microsoft Cloud Reliability Strategies", "viral_rank": 57},
             {"topic": "Easy chicken biryani recipe for home cooks", "viral_rank": 38},
         ]
-        with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(topics, "Viralizer V3 MCP")):
+        with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(topics, "Viralizer V3 MCP")) as fetch:
             result = asyncio.run(_execute(self.root, "food-channel", "discover_topics", {"limit": 5}))
         self.assertEqual(["Easy chicken biryani recipe for home cooks"], [item["topic"] for item in result["topics"]])
         self.assertEqual(2, result["provenance"]["rejected_unrelated_count"])
+        fetch.assert_called_once_with(5, category="Food")
+
+    def test_discovery_prefers_same_v3_category_catalog_visible_in_product(self):
+        save_brand_profile(self.root, "food-channel", {
+            "customer_type": "creator", "category": "Food & Cooking",
+            "positioning": "Food and cooking videos", "audiences": ["home cooks"],
+            "products_services": ["recipes"], "keywords": ["food", "cooking"], "confirmed": True,
+        })
+        catalog = [{"topic": "UN aims to halve global food waste by 2030", "category": "Food", "viral_rank": 132}]
+        with patch("conversation.orchestrator.get_cached_category_topics", return_value=catalog) as cached, \
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics") as fetch:
+            result = asyncio.run(_execute(self.root, "food-channel", "discover_topics", {"limit": 5}))
+        self.assertEqual(["UN aims to halve global food waste by 2030"], [item["topic"] for item in result["topics"]])
+        cached.assert_called_once_with(self.root, "Food", allow_stale=True)
+        fetch.assert_not_called()
 
     def test_empty_rank_result_archives_stale_opportunities(self):
         with patch("conversation.orchestrator.rank_opportunities", return_value=[]) as rank, \
