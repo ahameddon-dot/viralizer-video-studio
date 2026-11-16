@@ -43,6 +43,12 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn("if(done){complete.add(scene)", self.chat_js)
         self.assertIn("All scene animations are ready. Assembling the final video", self.chat_js)
 
+    def test_saved_animation_can_resume_after_refresh_without_new_generation(self):
+        self.assertIn("function resumableProduction(rows)", self.chat_js)
+        self.assertIn('data-resume-production', self.chat_js)
+        self.assertIn('Resume the status check without creating or charging for another video.', self.chat_js)
+        self.assertIn('await waitForAnimations(conceptId,count,countdown)', self.chat_js)
+
     def test_chat_has_its_own_account_and_logout_controls(self):
         self.assertIn('/api/autopilot/brand-profile', self.chat_js)
         self.assertIn('id="accountName"', self.chat_html)
