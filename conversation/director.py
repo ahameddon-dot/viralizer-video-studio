@@ -278,7 +278,11 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                 continue
             data, tool = output.get("data") or {}, content.get("tool")
             if tool == "discover_topics":
-                state.discovery_empty = not (data.get("topics") or [])
+                ranked = [_compact_opportunity(o) for o in data.get("opportunities") or []]
+                state.discovery_empty = not ranked
+                if ranked:
+                    state.opportunities = ranked
+                    state.selected_opportunity = None
             elif tool == "rank_opportunities":
                 ranked = [_compact_opportunity(o) for o in data.get("opportunities") or []]
                 # A transient empty refresh must never erase a topic the

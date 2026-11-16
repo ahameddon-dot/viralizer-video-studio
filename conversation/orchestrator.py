@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ Clearly distinguish live/provider data from simulated or unavailable data. Only 
 Provider-cost actions require an approval card. Publishing always requires the existing exact-content human approval UI; you cannot approve or publish.
 When a tool is blocked, explain the required human action. Keep answers practical and easy to understand.
 Guide one visible step at a time: choose source, choose topic, choose video length (5 to 60 seconds), review the storyboard, generate the images, create video, approve exact post, publish, learn.
+For trend discovery, use the confirmed profile category by default. If it has no current matches, offer exactly three useful paths: choose another category, show the hottest worldwide topics, or use the customer's own idea. When the customer chooses a category, call discover_topics with scope=category and that category. When they request blazing/hottest worldwide topics, call it with scope=worldwide_hot. Never describe category-selected or worldwide topics as profile-matched.
 The customer may start with their own idea. A customer idea never requires a live trend or an existing opportunity ID. Ask the desired length if missing, then call create_from_idea with their exact idea. Clearly label it as customer-directed, not a live trend.
 After ranking opportunities, ask the customer to select one. After they select, ask the length unless already stated, then call create_concepts with duration_seconds. After concept creation, present the storyboard and ask whether to generate the images.
 The workflow context states how many scenes the storyboard has (N). When the customer says yes to the images, call generate_keyframe once for each scene index 0 to N-1 that still needs an image. Do not ask them to confirm each scene separately.
@@ -155,16 +157,44 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "discover_topics":
         limit = max(1, min(25, int(arguments.get("limit") or 10)))
         brand = get_brand_profile(root, customer_id)
-        profile_category = str(((brand or {}).get("profile") or {}).get("category") or "").strip()
+        profile = ((brand or {}).get("profile") or {})
+        profile_category = str(profile.get("category") or "").strip()
+        if not profile_category:
+            profile_text = " ".join(str(value) for value in profile.values()).casefold()
+            inferred = (("Food", ("food", "cook", "recipe", "cuisine", "restaurant", "meal")),
+                        ("Pets", ("pet", "dog", "puppy", "cat", "animal")),
+                        ("Technology", ("technology", "software", "cloud", "coding", " ai ")),
+                        ("Fashion", ("fashion", "style", "apparel", "clothing")),
+                        ("Travel", ("travel", "tourism", "hotel", "destination")),
+                        ("Health", ("health", "fitness", "wellness", "medical")),
+                        ("Business", ("business", "finance", "marketing", "commerce")))
+            profile_category = next((label for label, words in inferred if any(word in profile_text for word in words)), "")
         # The V3 catalog uses broad category names (Food, Pets, Business, etc.)
         # while onboarding may save combined labels such as Food & Cooking.
-        category = profile_category.split("&", 1)[0].split("/", 1)[0].strip()
+        profile_category = profile_category.split("&", 1)[0].split("/", 1)[0].strip()
+        scope = str(arguments.get("scope") or "profile").strip().lower()
+        requested_category = " ".join(str(arguments.get("category") or "").split())[:80]
+        category = requested_category if scope == "category" and requested_category else "" if scope == "worldwide_hot" else profile_category
         cached = get_cached_category_topics(root, category, allow_stale=True)[:limit] if category else []
+        category_catalog_verified = bool(cached)
         if cached:
             topics, source = cached, f"Viralizer V3 {category} catalog"
         else:
             topics, source = await fetch_v3_worldwide_topics(limit, category=category)
-        discovery = ({"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
+        decorated = []
+        for raw in topics[:limit]:
+            item = dict(raw)
+            if category_catalog_verified and category and not item.get("category"):
+                item["category"] = category
+            if scope == "worldwide_hot":
+                item["user_selected_worldwide"] = True
+            elif scope == "category" and requested_category:
+                item["user_selected_category"] = True
+            elif category and (category_catalog_verified or category.casefold() in str(item.get("category") or "").casefold()):
+                item["profile_category_verified"] = True
+            decorated.append(item)
+        discovery = ({"topics": decorated, "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False,
+                                                          "scope": scope, "category": category, "profile_matched": scope == "profile"}}
                      if topics else _discovery_fallback(root, customer_id, limit, source))
         # Discovery is a worldwide feed, not a personalized result. Enforce the
         # customer relevance gate here so the model can never describe raw V3
@@ -257,6 +287,43 @@ def _next_suggestions(root: Path, customer_id: str, conversation_id: str, brand_
         return []
 
 
+def _no_match_suggestions() -> list[dict[str, str]]:
+    return [
+        {"label": "Choose another category", "prompt": "Show me the available trend categories."},
+        {"label": "Show hottest worldwide", "prompt": "Show me the hottest worldwide topics across all categories."},
+        {"label": "Use my own idea", "prompt": "I want to start with my own video idea."},
+    ]
+
+
+async def _deterministic_discovery_turn(root: Path, customer_id: str, conversation_id: str, actor_id: str,
+                                        message_id: str, arguments: dict[str, Any], label: str) -> dict[str, Any]:
+    call_id = f"discover_{uuid.uuid4().hex}"
+    idem = hashlib.sha256(f"{conversation_id}:{message_id}:discover:{json.dumps(arguments, sort_keys=True)}".encode()).hexdigest()
+    execution = propose_tool_execution(root, customer_id, conversation_id, "discover_topics", arguments,
+                                       idem, call_id, message_id=message_id, cost_confirmed=False)
+    result = redact(await _execute(root, customer_id, "discover_topics", arguments, conversation_id, actor_id))
+    complete_tool_execution(root, customer_id, execution["id"], result=result)
+    append_message(root, customer_id, conversation_id, "tool", {
+        "tool": "discover_topics", "call_id": call_id,
+        "output": {"status": "completed", "tool": "discover_topics", "data": result},
+    })
+    opportunities = result.get("opportunities") or []
+    if opportunities:
+        suggestions = _next_suggestions(root, customer_id, conversation_id, True, label)
+        text = f"I found {len(opportunities)} verified {label} opportunities from Viralizer V3. Choose one topic below to create your video."
+        intent = "verified_trends"
+    else:
+        suggestions = _no_match_suggestions()
+        text = "There are no current verified trends in your profile niche. I did not replace them with unrelated topics. You can choose another category, see the hottest worldwide topics, or start with your own idea."
+        intent = "no_verified_brand_match"
+    message = append_message(root, customer_id, conversation_id, "assistant", {
+        "type": "text", "text": text, "provider": "viralizer_workflow", "model": "deterministic",
+        "suggestions": suggestions, "stage": "choose_topic" if opportunities else "discover", "intent": intent,
+    })
+    return {"message": message, "approval_cards": [], "model": "deterministic",
+            "provider": "viralizer_workflow", "suggestions": suggestions}
+
+
 async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: str, message_id: str = "", cost_confirmed: bool = False,
                   client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     conversation = get_conversation(root, customer_id, conversation_id)
@@ -275,6 +342,28 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
         return await respond_onboarding(root, customer_id, conversation_id, conversation.get("messages") or [], latest_text)
     if not MODEL_ORCHESTRATION_ENABLED:
         raise RuntimeError("Viralizer AI is not configured on this server.")
+    if re.search(r"available trend categories|choose another category", latest_text, re.I):
+        categories = ("Food", "Technology", "Business", "Entertainment", "Sports", "Fashion", "Travel", "Health", "Pets")
+        suggestions = [{"label": category, "prompt": f"Show current {category} trends from Viralizer V3."} for category in categories]
+        message = append_message(root, customer_id, conversation_id, "assistant", {
+            "type": "text", "text": "Which category do you want to explore? Choose one below.",
+            "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
+            "stage": "discover", "intent": "choose_trend_category",
+        })
+        return {"message": message, "approval_cards": [], "model": "deterministic",
+                "provider": "viralizer_workflow", "suggestions": suggestions}
+    category_request = re.search(r"show current\s+(.+?)\s+trends from Viralizer V3", latest_text, re.I)
+    if category_request:
+        category = " ".join(category_request.group(1).split())[:80]
+        return await _deterministic_discovery_turn(root, customer_id, conversation_id, actor_id, message_id,
+                                                   {"limit": 10, "scope": "category", "category": category},
+                                                   f"{category} category")
+    if re.search(r"hottest worldwide|blazing topics worldwide", latest_text, re.I):
+        return await _deterministic_discovery_turn(root, customer_id, conversation_id, actor_id, message_id,
+                                                   {"limit": 10, "scope": "worldwide_hot"}, "hottest worldwide")
+    if re.search(r"find (?:profile-matched )?(?:live )?trends|find trends for me", latest_text, re.I):
+        return await _deterministic_discovery_turn(root, customer_id, conversation_id, actor_id, message_id,
+                                                   {"limit": 10, "scope": "profile"}, "profile-matched")
     instructions = SYSTEM_INSTRUCTIONS + "\n\n" + directed["context"]
     directed_state = directed["state"]
     if directed_state.stage == "final_review" and directed_state.publication_step in {"platform", "caption", "timing"}:
@@ -386,14 +475,10 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                 append_message(root, customer_id, conversation_id, "tool", {"tool": name, "call_id": call_id, "output": tool_output})
                 outputs.append({"type": "function_call_output", "call_id": call_id, "output": json.dumps(tool_output, ensure_ascii=False, default=str)[:60000]})
             if no_verified_matches:
-                suggestions = [
-                    {"label": "Refresh relevant trends", "prompt": "Refresh live trends and show only topics that genuinely match my confirmed brand profile."},
-                    {"label": "Re-analyze my brand", "prompt": "Re-analyze my website and social profile before finding trends again."},
-                    {"label": "Use my own idea", "prompt": "I want to start with my own video idea."},
-                ]
+                suggestions = _no_match_suggestions()
                 message = append_message(root, customer_id, conversation_id, "assistant", {
                     "type": "text",
-                    "text": "None of the current worldwide topics passed your confirmed brand-relevance checks. I rejected the unrelated results instead of presenting global popularity as a profile match. Refresh later, strengthen the Brand DNA, or start from your own idea.",
+                    "text": "There are no current verified trends in your profile niche. I did not replace them with unrelated topics. You can choose another category, see the hottest worldwide topics, or start with your own idea.",
                     "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
                     "stage": "discover", "intent": "no_verified_brand_match",
                 })

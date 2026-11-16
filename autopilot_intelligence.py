@@ -183,6 +183,14 @@ def _opportunity_components(topic: dict[str, Any], brand: dict[str, Any]) -> dic
     # separate from provider-ranked trend evidence.
     if topic.get("user_directed"):
         relevance = max(relevance, 80)
+    elif topic.get("profile_category_verified"):
+        # The topic came from V3's category-specific catalog/API. It is a real
+        # niche match even when the headline itself omits words such as "food".
+        relevance = max(relevance, 70)
+    elif topic.get("user_selected_category"):
+        relevance = max(relevance, 60)
+    elif topic.get("user_selected_worldwide"):
+        relevance = max(relevance, 40)
     goals = _tokens(" ".join(brand.get("profile", {}).get("goals", [])))
     products = _tokens(" ".join(brand.get("profile", {}).get("products_services", [])))
     commercial_overlap = len((goals | products) & topic_tokens)

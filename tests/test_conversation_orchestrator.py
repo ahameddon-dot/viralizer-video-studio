@@ -129,9 +129,9 @@ class ConversationOrchestratorTests(unittest.TestCase):
              patch("conversation.orchestrator.rank_opportunities", return_value=[]), \
              patch("conversation.orchestrator.archive_other_opportunities"):
             result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", self.user_message["id"], client=client))
-        self.assertIn("rejected the unrelated results", result["message"]["content"]["text"])
+        self.assertIn("choose another category", result["message"]["content"]["text"].lower())
         self.assertEqual(
-            ["Refresh relevant trends", "Re-analyze my brand", "Use my own idea"],
+            ["Choose another category", "Show hottest worldwide", "Use my own idea"],
             [item["label"] for item in result["suggestions"]],
         )
         self.assertEqual(1, len(client.requests))
@@ -150,10 +150,32 @@ class ConversationOrchestratorTests(unittest.TestCase):
              patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(raw_topics, "Viralizer V3 MCP")):
             result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", self.user_message["id"], client=client))
         self.assertNotIn("Iran", result["message"]["content"]["text"])
-        self.assertIn("rejected the unrelated results", result["message"]["content"]["text"])
-        self.assertEqual(["Refresh relevant trends", "Re-analyze my brand", "Use my own idea"],
+        self.assertIn("choose another category", result["message"]["content"]["text"].lower())
+        self.assertEqual(["Choose another category", "Show hottest worldwide", "Use my own idea"],
                          [item["label"] for item in result["suggestions"]])
         self.assertEqual(1, len(client.requests))
+
+    def test_no_match_category_chooser_is_deterministic(self):
+        message = append_message(self.root, "customer-1", self.thread["id"], "user", {"text": "Show me the available trend categories."})
+        with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", message["id"], client=FakeClient([])))
+        self.assertIn("Which category", result["message"]["content"]["text"])
+        self.assertEqual("Food", result["suggestions"][0]["label"])
+        self.assertIn("Sports", [item["label"] for item in result["suggestions"]])
+
+    def test_explicit_category_and_worldwide_scopes_are_not_rejected_by_profile_filter(self):
+        category_topics = [{"topic": "Formula One season opener", "category": "Sports", "viral_rank": 3}]
+        with patch("conversation.orchestrator.get_cached_category_topics", return_value=category_topics):
+            category_result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {
+                "limit": 5, "scope": "category", "category": "Sports",
+            }))
+        self.assertEqual(["Formula One season opener"], [item["topic"] for item in category_result["topics"]])
+        worldwide = [{"topic": "Major worldwide breaking story", "category": "Politics", "viral_rank": 1}]
+        with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(worldwide, "Viralizer V3 MCP")):
+            worldwide_result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {
+                "limit": 5, "scope": "worldwide_hot",
+            }))
+        self.assertEqual(["Major worldwide breaking story"], [item["topic"] for item in worldwide_result["topics"]])
 
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]

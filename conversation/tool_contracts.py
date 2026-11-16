@@ -6,7 +6,12 @@ from typing import Any
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_brand_profile": {"type": "object", "properties": {}, "additionalProperties": False},
     "analyze_brand_sources": {"type": "object", "properties": {"website_url": {"type": "string"}, "social_urls": {"type": "array", "items": {"type": "string"}, "maxItems": 8}}, "additionalProperties": False},
-    "discover_topics": {"type": "object", "properties": {"option_keys": {"type": "string", "description": "Comma-separated Viralizer topic source keys"}, "limit": {"type": "integer", "minimum": 1, "maximum": 25}}, "additionalProperties": False},
+    "discover_topics": {"type": "object", "properties": {
+        "option_keys": {"type": "string", "description": "Comma-separated Viralizer topic source keys"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+        "category": {"type": "string", "maxLength": 80, "description": "A category explicitly selected by the customer, such as Food, Sports, Technology, Fashion, Travel, Health, Pets, Business, or Entertainment."},
+        "scope": {"type": "string", "enum": ["profile", "category", "worldwide_hot"], "description": "profile uses the confirmed niche; category uses the customer's chosen category; worldwide_hot returns the hottest worldwide topics after explicit customer opt-in."}
+    }, "additionalProperties": False},
     "rank_opportunities": {"type": "object", "properties": {"topics": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": 25}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["topics"], "additionalProperties": False},
     "create_from_idea": {"type": "object", "properties": {
         "idea": {"type": "string", "minLength": 3, "maxLength": 500, "description": "The customer's own video idea, copied without requiring a trend or opportunity ID."},
@@ -42,7 +47,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 TOOL_DESCRIPTIONS = {
     "get_brand_profile": "Read this customer's confirmed or draft Viralizer brand profile.",
     "analyze_brand_sources": "Analyze customer-provided public website and social profile URLs. Returns an unconfirmed draft only.",
-    "discover_topics": "Fetch current worldwide hot topics and verified Viral Rank from the canonical Viralizer V3 server account.",
+    "discover_topics": "Fetch verified Viralizer V3 trends for the confirmed profile category, a customer-selected category, or explicitly requested hottest worldwide scope.",
     "rank_opportunities": "Rank supplied topics against the customer's confirmed brand profile and save the recommendations.",
     "create_from_idea": "Turn the customer's own idea directly into a saved user-directed opportunity and storyboard. It does not require a live trend or an opportunity ID.",
     "create_concepts": "Create three storyboard concepts for a customer-owned opportunity.",
