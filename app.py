@@ -3451,6 +3451,35 @@ async def autopilot_post_for_me_connection_url(request: Request, payload: PostFo
     return {"provider": "post_for_me", "mode": "quickstart", "platform": payload.platform, "connection": result}
 
 
+@app.get("/autopilot/post-for-me/callback")
+async def autopilot_post_for_me_callback(request: Request):
+    """Always return a Post for Me OAuth outcome to Viralizer's Publish page."""
+    autopilot_user(request)
+    params = request.query_params
+    outcome = str(params.get("isSuccess") or params.get("status") or "").strip().casefold()
+    success = outcome in {"1", "true", "success", "connected", "ok"}
+    platform = re.sub(r"[^a-z0-9_-]", "", str(params.get("provider") or params.get("platform") or "social").casefold())[:32]
+    raw_error = " ".join(str(params.get("error") or params.get("message") or "").split())[:180]
+    query = f"view=publish&connection={'success' if success else 'failed'}&platform={quote(platform)}"
+    if raw_error and not success:
+        query += f"&reason={quote(raw_error)}"
+    target = f"/autopilot-workspace?{query}"
+    chat_target = f"/autopilot-chat?{query.replace('view=publish&', '', 1)}"
+    # The provider normally runs in a popup. Return the result to the original
+    # Viralizer window, close the provider popup, and fall back to a regular
+    # redirect when the callback was opened without an opener.
+    safe_target = json.dumps(target)
+    safe_chat_target = json.dumps(chat_target)
+    return HTMLResponse(
+        "<!doctype html><meta charset='utf-8'><title>Returning to Viralizer</title>"
+        "<p>Returning to Viralizer…</p><script>"
+        f"let target={safe_target};const chatTarget={safe_chat_target};"
+        "try{if(window.opener&&window.opener.location.pathname==='/autopilot-chat')target=chatTarget;}catch(e){}"
+        "if(window.opener&&!window.opener.closed){window.opener.location.replace(target);window.close();}"
+        "else{window.location.replace(target);}</script>"
+    )
+
+
 @app.get("/api/autopilot/post-for-me/accounts")
 async def autopilot_post_for_me_accounts(request: Request, platform: str = ""):
     user = ({"sub": "workspace-owner", "email": "provider-relay", "name": "Provider relay"}

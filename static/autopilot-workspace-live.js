@@ -650,12 +650,18 @@
     } catch (error) { host.innerHTML = `<article><div><b>Connections unavailable</b><small>${esc(error.message)}</small></div></article>`; }
   }
   async function connectAccount(platform) {
+    const popup = window.open('about:blank', 'viralizer_social_connect', 'popup,width=760,height=820');
     try {
-      const redirect = `${location.origin}${location.pathname}?view=connections&connected=${encodeURIComponent(platform)}`;
+      const redirect = `${location.origin}/autopilot/post-for-me/callback?platform=${encodeURIComponent(platform)}`;
       const data = await api('/api/autopilot/post-for-me/connection-url', { method: 'POST', body: JSON.stringify({ platform, redirect_url: redirect }) });
       const url = data.connection?.url || data.connection?.auth_url || data.connection?.connection_url;
-      if (!url) throw new Error('Post for Me did not return a connection URL.'); location.assign(url);
-    } catch (error) { toast(error.message); }
+      if (!url) throw new Error('Post for Me did not return a connection URL.');
+      if (popup) popup.location.href = url; else window.open(url, '_blank', 'noopener');
+      showScreen('publish');
+      const pending = `/autopilot-workspace?view=publish&connection=pending&platform=${encodeURIComponent(platform)}`;
+      history.replaceState({}, '', pending);
+      toast(`Connecting ${platform}. Viralizer will keep this Publish page open.`);
+    } catch (error) { popup?.close(); toast(error.message); }
   }
 
   async function sendAssistant(text) {
@@ -718,7 +724,8 @@
     });
   }
   async function init() {
-    bind(); showScreen(new URLSearchParams(location.search).get('view') || 'today', { historyMode: 'replace' });
+    const query = new URLSearchParams(location.search);
+    bind(); showScreen(query.get('view') || 'today', { historyMode: 'replace' });
     const data = await api('/api/autopilot/brand-profile'); state.profile = data.brand_profile; state.accountProfile = data.account_profile || {}; renderBrand();
     const forceOnboarding = new URLSearchParams(window.location.search).get('onboarding') === '1';
     const confirmed = Boolean(
@@ -743,7 +750,19 @@
         toast('Your saved project has been restored.');
       }
     }
-    if (new URLSearchParams(location.search).has('connected')) toast('Connection returned. Refreshing provider accounts…');
+    const connection = query.get('connection');
+    const platform = query.get('platform') || 'social account';
+    const reason = query.get('reason');
+    if (connection === 'success') {
+      showScreen('publish', { historyMode: 'none' });
+      toast(`${platform} connected. You can now select it for publishing.`);
+    } else if (connection === 'failed') {
+      showScreen('publish', { historyMode: 'none' });
+      toast(reason || `${platform} could not be connected. Open Connections to repair the account, then retry.`);
+    } else if (connection === 'pending') {
+      showScreen('publish', { historyMode: 'none' });
+      toast(`${platform} connection opened separately. This Publish page will show the result.`);
+    } else if (query.has('connected')) toast('Connection returned. Refreshing provider accounts…');
   }
   init().catch(error => { toast(error.message); showOnboarding(); });
 })();
