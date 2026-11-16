@@ -62,6 +62,12 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertNotIn("Authorized AI tools", self.chat_page)
         self.assertIn("image-rendering:auto", self.premium)
 
+    def test_chat_removes_cross_account_stale_project_context(self):
+        self.assertIn("validateActiveProject", self.chat_script)
+        self.assertIn("localStorage.removeItem('viralizer.activeProject')", self.chat_script)
+        self.assertIn("/project context was not found/i", self.chat_script)
+        self.assertIn("active_project_context_id:''", self.chat_script)
+
     def test_chat_cost_confirmation_uses_database_allowed_status(self):
         store = (ROOT / "conversation" / "store.py").read_text(encoding="utf-8")
         migration = (ROOT / "migrations" / "20261112110000_conversation_foundation.sql").read_text(encoding="utf-8")
