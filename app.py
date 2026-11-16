@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -103,7 +104,7 @@ from autopilot_lifecycle import approve_and_queue_publication, create_asset_vers
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_publishing import FakePublishingAdapter, LocalMediaPostForMeAdapter, submit_publication
 from autopilot_providers import PostForMeAdapter, ProviderConfigurationError, ProviderResponseError, customer_social_accounts, provider_readiness, sanitize_publication_result, verify_post_for_me_webhook, verify_shopify_webhook
-from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, scheduler_tick, worker_tick
+from autopilot_operations import list_action_required, list_notifications, mark_notification, operations_status, process_webhook_inbox, retry_action, schedule_performance_tracking, scheduler_tick, worker_tick
 from autopilot_retention import apply_retention, delete_customer_data, deletion_preview, export_customer_data, retention_preview
 from hybrid_contracts import SceneRevisionCreate
 from hybrid_project_state import RevisionConflictError, ensure_autopilot_project, get_project_context, list_project_events, revise_storyboard_scene
@@ -1344,6 +1345,10 @@ class AutopilotDemoAssetRequest(BaseModel):
     hashtags: list[str] = Field(default_factory=list, max_length=100)
 
 
+class PerformanceTrackingRequest(BaseModel):
+    interval_hours: int
+
+
 @app.get("/api/betting/topics")
 async def betting_topics(query: str = ""):
     try:
@@ -2439,7 +2444,7 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
                 workflow_run_id=workflow["id"], concept_id=concept_id,
                 title=str(content.get("title") or "Viralizer video"),
                 caption="\n\n".join(filter(None, [str(content.get("narrative") or ""), str(content.get("cta") or "")])),
-                hashtags=["#Viralizer"],
+                hashtags=["#Viralizer.ai"],
             ))
             result["media_url"] = result.get("video_url") or ""
             summary = "Your final video is ready. The next step is exact-content approval; nothing has been published."
@@ -3009,21 +3014,37 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
                 raise HTTPException(502, str(exc)) from exc
         clips.append(clip_path)
         job_ids.append(job_id)
-    signature = hashlib.sha256("|".join(job_ids).encode()).hexdigest()[:32]
+    narration = " ".join(
+        " ".join(str(scene.get("narration") or scene.get("on_screen_text") or "").split())
+        for scene in storyboard
+    ).strip() or " ".join((payload.caption or payload.title or "Viralizer video").split())
+    signature = hashlib.sha256(("branded-speech-v1|" + "|".join(job_ids) + "|" + narration).encode()).hexdigest()[:32]
     filename = f"viralizer-autopilot-{signature}.mp4"
     output_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "finished_videos"
     output_root.mkdir(parents=True, exist_ok=True)
     output = output_root / filename
     if not output.is_file():
+        raw_output = clip_root / f"raw-{signature}.mp4"
         concat_file = clip_root / f"concat-{signature}.txt"
         concat_file.write_text("".join(f"file '{path.as_posix()}'\n" for path in clips), encoding="utf-8")
         completed = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(output)],
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(raw_output)],
             capture_output=True, text=True, timeout=120,
         )
-        if completed.returncode or not output.is_file():
-            output.unlink(missing_ok=True)
+        if completed.returncode or not raw_output.is_file():
+            raw_output.unlink(missing_ok=True)
             raise HTTPException(502, "The PixVerse clips could not be assembled.")
+        try:
+            branded = await finish_video(
+                "", narration, "coral", b"", overlay_text="#Viralizer.ai",
+                overlay_position="bottom-center", source_path=raw_output, append_outro=False,
+            )
+            shutil.move(str(branded), str(output))
+        except MediaFinisherError as exc:
+            output.unlink(missing_ok=True)
+            raise HTTPException(502, str(exc)) from exc
+        finally:
+            raw_output.unlink(missing_ok=True)
         try:
             await upload_object_file(output, f"finished_videos/{filename}", "video/mp4")
         except ObjectStoreError:
@@ -3299,7 +3320,11 @@ async def _ensure_autopilot_finished_video(filename: str) -> Path | None:
         versions = keyframes.get(str(scene_index)) or []
         animations.append((versions[-1].get("animation") or {}) if versions else {})
     job_ids = [str(item.get("job_id") or "") for item in animations]
-    expected = f"viralizer-autopilot-{hashlib.sha256('|'.join(job_ids).encode()).hexdigest()[:32]}.mp4"
+    narration = " ".join(
+        " ".join(str(scene.get("narration") or scene.get("on_screen_text") or "").split())
+        for scene in storyboard
+    ).strip() or " ".join(str((concept or {}).get("content", {}).get("narrative") or (concept or {}).get("content", {}).get("title") or "Viralizer video").split())
+    expected = f"viralizer-autopilot-{hashlib.sha256(('branded-speech-v1|' + '|'.join(job_ids) + '|' + narration).encode()).hexdigest()[:32]}.mp4"
     eligible = 1 <= len(storyboard) <= 12 and filename == expected and all(
         item.get("status") == "complete" and str(item.get("provider_video_url") or "").startswith("https://")
         for item in animations
@@ -3325,13 +3350,20 @@ async def _ensure_autopilot_finished_video(filename: str) -> Path | None:
         concat_file = clip_root / "concat.txt"
         concat_file.write_text("".join(f"file '{clip.as_posix()}'\n" for clip in clips), encoding="utf-8")
         path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path = clip_root / "raw-recovery.mp4"
         completed = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(path)],
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(raw_path)],
             capture_output=True, text=True, timeout=120,
         )
-        if completed.returncode or not path.is_file():
-            path.unlink(missing_ok=True)
+        if completed.returncode or not raw_path.is_file():
+            raw_path.unlink(missing_ok=True)
             return None
+        branded = await finish_video(
+            "", narration, "coral", b"", overlay_text="#Viralizer.ai",
+            overlay_position="bottom-center", source_path=raw_path, append_outro=False,
+        )
+        shutil.move(str(branded), str(path))
+        raw_path.unlink(missing_ok=True)
         try:
             await upload_object_file(path, f"finished_videos/{filename}", "video/mp4")
         except ObjectStoreError:
@@ -3574,6 +3606,18 @@ async def update_autopilot_recommendation(request: Request, recommendation_id: s
 async def autopilot_notifications(request: Request, limit: int = 50):
     user = creatorthon_user(request)
     return {"notifications": list_notifications(ROOT, str(user.get("sub", "")), limit)}
+
+
+@app.post("/api/autopilot/publications/{publication_id}/track")
+async def track_autopilot_publication(request: Request, publication_id: str, payload: PerformanceTrackingRequest):
+    user = autopilot_user(request)
+    try:
+        tracking = schedule_performance_tracking(
+            ROOT, str(user.get("sub", "")), publication_id, payload.interval_hours
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"tracking": tracking}
 
 
 @app.get("/api/autopilot/export")

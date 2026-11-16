@@ -49,12 +49,63 @@ def audit(root: Path, customer_id: str, event_type: str, entity_type: str, entit
 
 
 def list_notifications(root: Path, customer_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    release_due_tracking_notifications(root, customer_id=customer_id)
     with _connect(root) as db:
         rows = db.execute(
             "SELECT * FROM autopilot_notifications WHERE customer_id=? AND dismissed_at=0 ORDER BY created_at DESC LIMIT ?",
             (customer_id, max(1, min(200, int(limit)))),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def schedule_performance_tracking(root: Path, customer_id: str, publication_id: str, interval_hours: int) -> dict[str, Any]:
+    if interval_hours not in {3, 6, 12, 24}:
+        raise ValueError("Choose a performance check after 3, 6, 12, or 24 hours.")
+    now, tracking_id = int(time.time()), uuid.uuid4().hex
+    with _connect(root) as db:
+        publication = db.execute(
+            "SELECT id,status FROM autopilot_publications WHERE id=? AND customer_id=?",
+            (publication_id, customer_id),
+        ).fetchone()
+        if not publication:
+            raise ValueError("The published post was not found in this workspace.")
+        row = db.execute(
+            """INSERT INTO autopilot_performance_tracking
+            (id,customer_id,publication_id,interval_hours,due_at,created_at)
+            VALUES(?,?,?,?,?,?) ON CONFLICT(customer_id,publication_id,interval_hours)
+            DO UPDATE SET due_at=excluded.due_at,notified_at=0,created_at=excluded.created_at RETURNING *""",
+            (tracking_id, customer_id, publication_id, interval_hours, now + interval_hours * 3600, now),
+        ).fetchone()
+    return dict(row)
+
+
+def release_due_tracking_notifications(root: Path, now: int | None = None, customer_id: str = "") -> int:
+    moment = int(now if now is not None else time.time())
+    params: tuple[Any, ...] = (moment, customer_id) if customer_id else (moment,)
+    condition = "notified_at=0 AND due_at<=?" + (" AND customer_id=?" if customer_id else "")
+    with _connect(root) as db:
+        rows = db.execute(
+            f"SELECT * FROM autopilot_performance_tracking WHERE {condition} ORDER BY due_at,id LIMIT 200",
+            params,
+        ).fetchall()
+    released = 0
+    for raw in rows:
+        item = dict(raw)
+        hours = int(item["interval_hours"])
+        notify(
+            root, item["customer_id"], f"performance_check_{hours}h",
+            f"Your {hours}-hour post check is ready",
+            "Open the performance report to see provider-reported reach and engagement. Metrics that are not available remain clearly marked unavailable.",
+            entity_type="publication", entity_id=item["publication_id"],
+            action_url=f"/autopilot-chat?performance={item['publication_id']}",
+        )
+        with _connect(root) as db:
+            db.execute(
+                "UPDATE autopilot_performance_tracking SET notified_at=? WHERE id=? AND notified_at=0",
+                (moment, item["id"]),
+            )
+        released += 1
+    return released
 
 
 def mark_notification(root: Path, customer_id: str, notification_id: str, dismiss: bool = False) -> bool:
@@ -66,6 +117,7 @@ def mark_notification(root: Path, customer_id: str, notification_id: str, dismis
 
 def scheduler_tick(root: Path, now: int | None = None) -> dict[str, int]:
     moment, enqueued = int(now if now is not None else time.time()), 0
+    notifications_released = release_due_tracking_notifications(root, moment)
     for publication in due_publications(root, moment):
         bucket = moment // 10_800
         _, created = enqueue_workflow_step(root, {
@@ -74,7 +126,7 @@ def scheduler_tick(root: Path, now: int | None = None) -> dict[str, int]:
             "input": {"publication_id": publication["id"], "due_at": publication["next_metrics_at"]}, "max_attempts": 5,
         })
         enqueued += int(created)
-    return {"monitoring_enqueued": enqueued}
+    return {"monitoring_enqueued": enqueued, "tracking_notifications_released": notifications_released}
 
 
 def process_webhook_inbox(root: Path, limit: int = 100) -> dict[str, int]:

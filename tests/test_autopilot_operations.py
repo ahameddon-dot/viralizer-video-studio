@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from autopilot_intelligence import generate_concepts, rank_opportunities, save_brand_profile
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, start_content_workflow
-from autopilot_operations import list_action_required, list_notifications, retry_action, scheduler_tick, worker_tick
+from autopilot_operations import list_action_required, list_notifications, retry_action, schedule_performance_tracking, scheduler_tick, worker_tick
 from autopilot_store import claim_due_steps
 from creatorthon_store import _connect
 
@@ -90,6 +90,17 @@ class AutopilotOperationsTests(unittest.TestCase):
             step = db.execute("SELECT status,attempt FROM autopilot_workflow_steps WHERE id=?", (action["steps"][0]["id"],)).fetchone()
         self.assertEqual("queued", dict(step)["status"])
         self.assertEqual(0, dict(step)["attempt"])
+
+    def test_selected_performance_checkpoint_releases_notification_when_due(self):
+        approved = self.approve()
+        tracking = schedule_performance_tracking(self.root, "customer-1", approved["publication"]["id"], 6)
+        self.assertGreater(tracking["due_at"], tracking["created_at"])
+        self.assertEqual([], [item for item in list_notifications(self.root, "customer-1") if item["notification_type"] == "performance_check_6h"])
+        result = scheduler_tick(self.root, now=tracking["due_at"])
+        self.assertEqual(1, result["tracking_notifications_released"])
+        ready = [item for item in list_notifications(self.root, "customer-1") if item["notification_type"] == "performance_check_6h"]
+        self.assertEqual(1, len(ready))
+        self.assertIn("6-hour", ready[0]["title"])
 
 
 if __name__ == "__main__":

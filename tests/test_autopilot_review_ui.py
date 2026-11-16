@@ -88,6 +88,15 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("1 <= len(storyboard) <= 12", self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
+    def test_chat_final_video_includes_speech_branding_and_tracking(self):
+        chat = (ROOT / "static" / "autopilot-chat.js").read_text(encoding="utf-8")
+        self.assertIn('overlay_text="#Viralizer.ai"', self.app)
+        self.assertIn('narration, "coral"', self.app)
+        self.assertIn('hashtags=["#Viralizer.ai"]', self.app)
+        self.assertIn("Do you want me to track this post?", chat)
+        self.assertIn("[3,6,12,24]", chat)
+        self.assertIn("/track", chat)
+
     def test_demo_completion_is_forbidden_for_real_social_destinations(self):
         self.assertIn('publication.get("destination_id") != "demo-social-account"', self.app)
         self.assertIn("Demo completion cannot modify a real social publication.", self.app)
