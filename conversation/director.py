@@ -206,14 +206,13 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                 publish_approval = bool(re.search(
                     r"\bapprove\b.*\b(final\s+)?video\b|\bapprove\s*(?:&|and)?\s*post\b|\bpublish\s+(?:it|the video)\b",
                     text, re.I))
-                publish_platform, _ = _parse_platform(text)
-                if publish_platform:
-                    state.publish_platform = publish_platform
-                    state.publication_step = "caption"
-                elif publish_approval and not state.publish_platform:
-                    state.publication_step = "platform"
-                elif state.publication_step == "caption" and not publish_approval:
-                    if re.search(r"\b(write|create|generate|suggest)\b.*\bcaption\b|\bcaption for me\b", text, re.I):
+                if state.publication_step == "caption" and not publish_approval:
+                    if re.search(r"\bchange\b.*\bplatform\b", text, re.I):
+                        publish_platform, _ = _parse_platform(text)
+                        if publish_platform:
+                            state.publish_platform = publish_platform
+                            state.publication_step = "caption"
+                    elif re.search(r"\b(write|create|generate|suggest)\b.*\bcaption\b|\bcaption for me\b", text, re.I):
                         state.publish_caption = "__ai__"
                         state.publication_step = "timing"
                     else:
@@ -228,6 +227,13 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                     elif re.search(r"\b(schedule|tomorrow|today|\d{1,2}[:.]\d{2}|am|pm)\b", text, re.I):
                         state.publish_timing = text.strip()[:200]
                         state.publication_step = "approval"
+                else:
+                    publish_platform, _ = _parse_platform(text)
+                    if publish_platform:
+                        state.publish_platform = publish_platform
+                        state.publication_step = "caption"
+                    elif publish_approval and not state.publish_platform:
+                        state.publication_step = "platform"
             if not _CONFIRM_RE.match(text) and len(text.strip()) >= 3:
                 last_substantive_user = text.strip()[:500]
             activates_idea_mode = bool(re.search(

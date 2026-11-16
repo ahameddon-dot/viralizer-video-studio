@@ -81,11 +81,22 @@ class StageTests(unittest.TestCase):
         self.assertEqual("caption", state.publication_step)
         self.assertEqual("Write caption for me", d.suggested_replies(state)[0]["label"])
 
-        # Repeating approval must not erase the already selected destination.
+        msgs.append(user("Write the Instagram caption for me according to this video."))
+        state = d.derive_state(msgs, True)
+        self.assertEqual("__ai__", state.publish_caption)
+        self.assertEqual("timing", state.publication_step)
+        self.assertEqual("Post now", d.suggested_replies(state)[0]["label"])
+
+        msgs.append(user("Post it now."))
+        state = d.derive_state(msgs, True)
+        self.assertEqual("now", state.publish_timing)
+        self.assertEqual("approval", state.publication_step)
+
+        # Repeating approval must not erase the destination or completed post details.
         msgs.append(user("I approve the final video. Ask me which connected platform to publish it to."))
         state = d.derive_state(msgs, True)
         self.assertEqual("instagram", state.publish_platform)
-        self.assertEqual("caption", state.publication_step)
+        self.assertEqual("approval", state.publication_step)
 
 
 class TranscriptReplayTests(unittest.TestCase):
