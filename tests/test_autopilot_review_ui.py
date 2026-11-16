@@ -83,6 +83,9 @@ class AutopilotReviewUiTests(unittest.TestCase):
         finished_route = self.app.split('@app.api_route("/api/finished-video/{filename}"', 1)[1][:500]
         self.assertIn('(?:hybrid|autopilot)', finished_route)
         self.assertIn('autopilot_recovery', self.app)
+        self.assertIn("async def _ensure_autopilot_finished_video", self.app)
+        self.assertIn("for scene_index in range(len(storyboard))", self.app)
+        self.assertIn("1 <= len(storyboard) <= 12", self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
     def test_demo_completion_is_forbidden_for_real_social_destinations(self):
@@ -91,6 +94,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
 
     def test_direct_post_for_me_path_uploads_local_video_first(self):
         self.assertIn("LocalMediaPostForMeAdapter(ROOT)", self.app)
+        self.assertIn("path = await _ensure_autopilot_finished_video(match.group(1))", self.app)
 
 
 if __name__ == "__main__":
