@@ -246,6 +246,53 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertIn("V3 Viral Rank is unavailable", result["message"]["content"]["text"])
         self.assertNotIn("temporarily unavailable", result["message"]["content"]["text"])
 
+    def test_approved_images_deterministically_render_animation_approval_cards(self):
+        concept = {"id": "concept-video-1", "content": {"title": "Test video", "storyboard": [{}, {}]}}
+        append_message(self.root, "customer-1", self.thread["id"], "tool", {
+            "tool": "create_concepts", "output": {"status": "completed", "data": {"concepts": [concept]}},
+        })
+        for index in range(2):
+            append_message(self.root, "customer-1", self.thread["id"], "assistant", {
+                "type": "tool_result", "tool": "generate_keyframe", "media_url": f"/scene-{index}.png",
+                "result": {"concept_id": concept["id"], "scene_index": index, "status": "completed"},
+            })
+        user = append_message(self.root, "customer-1", self.thread["id"], "user", {
+            "text": "I approve the generated storyboard images. Create the final video.",
+        })
+        counter = iter(("execution-1", "execution-2"))
+        def proposed(*args, **kwargs):
+            return {"id": next(counter), "cost_class": "provider_cost", "approval_status": "pending",
+                    "authorization": {"execution_enabled": False, "code": "cost_confirmation_required", "reason": "Confirm provider cost."}}
+        with patch("conversation.orchestrator.propose_tool_execution", side_effect=proposed):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", user["id"], client=FakeClient([])))
+        self.assertEqual(["animate_scene", "animate_scene"], [card["tool"] for card in result["approval_cards"]])
+        self.assertEqual([0, 1], [card["arguments"]["scene_index"] for card in result["approval_cards"]])
+        self.assertIn("live countdown", result["message"]["content"]["text"])
+
+    def test_completed_animations_deterministically_render_assembly_approval(self):
+        concept = {"id": "concept-video-2", "content": {"title": "Test video", "storyboard": [{}, {}]}}
+        append_message(self.root, "customer-1", self.thread["id"], "tool", {
+            "tool": "create_concepts", "output": {"status": "completed", "data": {"concepts": [concept]}},
+        })
+        for index in range(2):
+            append_message(self.root, "customer-1", self.thread["id"], "assistant", {
+                "type": "tool_result", "tool": "generate_keyframe", "media_url": f"/scene-{index}.png",
+                "result": {"concept_id": concept["id"], "scene_index": index, "status": "completed"},
+            })
+            append_message(self.root, "customer-1", self.thread["id"], "assistant", {
+                "type": "tool_result", "tool": "animate_scene", "media_url": "",
+                "result": {"concept_id": concept["id"], "scene_index": index, "status": "completed"},
+            })
+        user = append_message(self.root, "customer-1", self.thread["id"], "user", {
+            "text": "All 2 animated scenes are complete for concept. Assemble them into one final video now.",
+        })
+        execution = {"id": "finalize-1", "cost_class": "low", "approval_status": "pending",
+                     "authorization": {"execution_enabled": False, "code": "cost_confirmation_required", "reason": "Confirm assembly."}}
+        with patch("conversation.orchestrator.propose_tool_execution", return_value=execution):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", user["id"], client=FakeClient([])))
+        self.assertEqual(["finalize_video"], [card["tool"] for card in result["approval_cards"]])
+        self.assertIn("final review video", result["message"]["content"]["text"])
+
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
         with patch("conversation.orchestrator.generate_concepts", return_value=concepts), \

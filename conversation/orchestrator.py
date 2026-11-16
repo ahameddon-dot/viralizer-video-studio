@@ -401,6 +401,40 @@ async def _deterministic_discovery_turn(root: Path, customer_id: str, conversati
             "provider": "viralizer_workflow", "suggestions": suggestions}
 
 
+def _approval_turn(root: Path, customer_id: str, conversation_id: str, message_id: str,
+                   proposals: list[tuple[str, dict[str, Any]]], text: str) -> dict[str, Any]:
+    """Create real approval cards for a deterministic production transition."""
+    approvals: list[dict[str, Any]] = []
+    for position, (name, arguments) in enumerate(proposals):
+        call_id = f"{name}_{uuid.uuid4().hex}"
+        idem = hashlib.sha256(
+            f"{conversation_id}:{message_id}:{name}:{position}:{json.dumps(arguments, sort_keys=True)}".encode()
+        ).hexdigest()
+        execution = propose_tool_execution(
+            root, customer_id, conversation_id, name, arguments, idem, call_id,
+            message_id=message_id, cost_confirmed=False,
+        )
+        decision = execution.get("authorization") or {}
+        card = {
+            "execution_id": execution["id"], "tool": name,
+            "code": decision.get("code"), "reason": decision.get("reason"),
+            "cost": execution.get("cost_class"), "approval": execution.get("approval_status"),
+            "arguments": redact(arguments),
+        }
+        approvals.append(card)
+        append_message(root, customer_id, conversation_id, "tool", {
+            "tool": name, "call_id": call_id,
+            "output": {"status": "approval_required", **card},
+        })
+    message = append_message(root, customer_id, conversation_id, "assistant", {
+        "type": "text", "text": text, "provider": "viralizer_workflow",
+        "model": "deterministic", "suggestions": [], "stage": "production_approval",
+        "intent": "confirm_production",
+    })
+    return {"message": message, "approval_cards": approvals, "model": "deterministic",
+            "provider": "viralizer_workflow", "suggestions": []}
+
+
 async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: str, message_id: str = "", cost_confirmed: bool = False,
                   client: httpx.AsyncClient | None = None) -> dict[str, Any]:
     conversation = get_conversation(root, customer_id, conversation_id)
@@ -417,8 +451,6 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
     directed = director_turn(conversation.get("messages") or [], bool(brand and brand.get("status") == "confirmed"), latest_text)
     if directed["state"].stage == "onboarding":
         return await respond_onboarding(root, customer_id, conversation_id, conversation.get("messages") or [], latest_text)
-    if not MODEL_ORCHESTRATION_ENABLED:
-        raise RuntimeError("Viralizer AI is not configured on this server.")
     if re.search(r"available trend categories|choose another category", latest_text, re.I):
         categories = ("Food", "Technology", "Business", "Entertainment", "Sports", "Fashion", "Travel", "Health", "Pets")
         suggestions = [{"label": category, "prompt": f"Show current {category} trends from Viralizer V3."} for category in categories]
@@ -503,6 +535,31 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
         })
         return {"message": message, "approval_cards": [], "model": "deterministic",
                 "provider": "viralizer_workflow", "suggestions": suggestions}
+    wants_video = bool(re.search(
+        r"\b(create|make|animate|produce|start)\b.*\b(final\s+)?video\b|"
+        r"\bimages?\b.*\bapproved?\b.*\bvideo\b|^\s*(yes|proceed|continue|do it)\s*[.!]*\s*$",
+        latest_text, re.I,
+    ))
+    if directed_state.stage == "images_review" and directed_state.images_ready and wants_video:
+        proposals = [
+            ("animate_scene", {"concept_id": directed_state.concept_id, "scene_index": index})
+            for index in range(directed_state.scene_count)
+        ]
+        return _approval_turn(
+            root, customer_id, conversation_id, message_id, proposals,
+            f"Your {directed_state.scene_count} approved images are ready. Confirm once below to animate every scene. "
+            "The live countdown and per-scene progress will begin only after the provider jobs actually start.",
+        )
+    if directed_state.stage == "animating" and re.search(
+            r"\ball\s+\d+\s+animated scenes?\b.*\bcomplete\b.*\bassemble\b|"
+            r"\bassemble\b.*\b(final\s+)?video\b", latest_text, re.I):
+        return _approval_turn(
+            root, customer_id, conversation_id, message_id,
+            [("finalize_video", {"concept_id": directed_state.concept_id})],
+            "Every scene clip is complete. Confirm below to assemble them into the final review video here in Chat Mode.",
+        )
+    if not MODEL_ORCHESTRATION_ENABLED:
+        raise RuntimeError("Viralizer AI is not configured on this server.")
     owns_client, http = client is None, client or httpx.AsyncClient(timeout=60.0)
     approvals: list[dict[str, Any]] = []
     response_id = ""
