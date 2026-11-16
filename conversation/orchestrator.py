@@ -22,8 +22,8 @@ from conversation.store import append_message, attach_project, complete_tool_exe
 from conversation.tool_contracts import TOOL_DESCRIPTIONS, TOOL_SCHEMAS
 from hybrid_project_state import ensure_autopilot_project, get_project_context, revise_storyboard_scene
 from storyboard_plan import scene_patch
-from mcp_outline_client import get_hot_topics_from_mcp
-from creatorthon_store import get_cached_category_topics
+from mcp_outline_client import MCPOutlineError, get_hot_topics_from_mcp
+from creatorthon_store import get_cached_category_topics, list_cached_category_topics
 from viralizer_topic_source import fetch_v3_worldwide_topics
 
 
@@ -199,13 +199,20 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
         requested_category = " ".join(str(arguments.get("category") or "").split())[:80]
         category = requested_category if scope == "category" and requested_category else "" if scope == "worldwide_hot" else profile_category
         cached = get_cached_category_topics(root, category, allow_stale=True)[:limit] if category else []
+        if category and not cached:
+            cached = [item for item in list_cached_category_topics(root, allow_stale=True)
+                      if _matches_category(item, category)][:limit]
         category_catalog_verified = bool(cached)
         if cached:
             topics, source = cached, f"Viralizer V3 {category} catalog"
         else:
             # Some older V3 deployments ignore the category query parameter.
             # Pull a larger candidate set, then enforce the category locally.
-            topics, source = await fetch_v3_worldwide_topics(50 if category else limit, category=category)
+            try:
+                topics, source = await fetch_v3_worldwide_topics(50 if category else limit, category=category)
+            except MCPOutlineError as exc:
+                topics, source = [], "Viralizer V3 temporarily unavailable"
+                provider_error = " ".join(str(exc).split())[:240]
         decorated = []
         for raw in topics:
             item = dict(raw)
@@ -225,6 +232,12 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
         discovery = ({"topics": decorated, "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False,
                                                           "scope": scope, "category": category, "profile_matched": scope == "profile"}}
                      if topics else _discovery_fallback(root, customer_id, limit, source))
+        if not topics and 'provider_error' in locals():
+            discovery = {"topics": [], "opportunities": [], "provenance": {
+                "data_source": "viralizer_v3", "source": source, "provider_mode": "unavailable",
+                "is_simulated": False, "scope": scope, "category": category,
+                "profile_matched": False, "provider_error": provider_error,
+            }}
         # Discovery is a worldwide feed, not a personalized result. Enforce the
         # customer relevance gate here so the model can never describe raw V3
         # topics as "profile matched" when it skips the separate ranking tool.
@@ -343,7 +356,10 @@ async def _deterministic_discovery_turn(root: Path, customer_id: str, conversati
         intent = "verified_trends"
     else:
         suggestions = _no_match_suggestions()
-        text = "There are no current verified trends in your profile niche. I did not replace them with unrelated topics. You can choose another category, see the hottest worldwide topics, or start with your own idea."
+        unavailable = (result.get("provenance") or {}).get("provider_mode") == "unavailable"
+        text = ("Viralizer V3 is temporarily unavailable, so I could not verify live topics right now. You can try another category, retry the hottest worldwide feed, or start with your own idea."
+                if unavailable else
+                "There are no current verified trends in your profile niche. I did not replace them with unrelated topics. You can choose another category, see the hottest worldwide topics, or start with your own idea.")
         intent = "no_verified_brand_match"
     message = append_message(root, customer_id, conversation_id, "assistant", {
         "type": "text", "text": text, "provider": "viralizer_workflow", "model": "deterministic",

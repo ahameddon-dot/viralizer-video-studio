@@ -9,6 +9,7 @@ from autopilot_intelligence import save_brand_profile
 from conversation.orchestrator import _execute, respond, tool_definitions
 from conversation.store import append_message, create_conversation, get_conversation
 from creatorthon_store import _connect
+from mcp_outline_client import MCPOutlineError
 
 
 class FakeResponse:
@@ -190,6 +191,30 @@ class ConversationOrchestratorTests(unittest.TestCase):
                 "limit": 10, "scope": "category", "category": "Food",
             }))
         self.assertEqual(["Restaurant food safety inspections expand"], [item["topic"] for item in result["topics"]])
+
+    def test_category_discovery_recovers_from_differently_named_v3_cache(self):
+        cached = [{"topic": "Restaurant kitchens adopt new food safety rules", "category": "Food & Drink", "viral_rank": 9}]
+        with patch("conversation.orchestrator.get_cached_category_topics", return_value=[]), \
+             patch("conversation.orchestrator.list_cached_category_topics", return_value=cached), \
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics") as fetch:
+            result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {
+                "limit": 10, "scope": "category", "category": "Food",
+            }))
+        self.assertEqual(["Restaurant kitchens adopt new food safety rules"], [item["topic"] for item in result["topics"]])
+        fetch.assert_not_called()
+
+    def test_v3_failure_returns_safe_fallback_choices_instead_of_chat_error(self):
+        message = append_message(self.root, "customer-1", self.thread["id"], "user", {
+            "text": "Find profile-matched live trends and show them as opportunity cards with Viral Rank.",
+        })
+        with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True), \
+             patch("conversation.orchestrator.get_cached_category_topics", return_value=[]), \
+             patch("conversation.orchestrator.list_cached_category_topics", return_value=[]), \
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics", side_effect=MCPOutlineError("V3 topics API request failed")):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", message["id"], client=FakeClient([])))
+        self.assertIn("temporarily unavailable", result["message"]["content"]["text"])
+        self.assertEqual(["Choose another category", "Show hottest worldwide", "Use my own idea"],
+                         [item["label"] for item in result["suggestions"]])
 
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
