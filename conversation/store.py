@@ -25,6 +25,27 @@ def _load(value: Any, default: Any) -> Any:
         return default
 
 
+def _meaningful_conversation_title(current: str, content: dict[str, Any]) -> str:
+    """Name a chat from the customer's real search, selected topic, or idea."""
+    text = " ".join(str(content.get("text") or content.get("message") or "").split())
+    if not text:
+        return current
+    selected = re.search(r"I select this opportunity:\s*(.+?)(?:\.\s*Use opportunity ID|$)", text, re.I)
+    idea = re.search(r"(?:My video idea is|My idea is):\s*(.+)$", text, re.I)
+    category = re.search(r"(?:show|find)(?: me)?(?: current)?\s+(.+?)\s+trends", text, re.I)
+    strong = selected.group(1) if selected else idea.group(1) if idea else category.group(1) + " trends" if category else ""
+    placeholder = not current.strip() or current.strip().casefold() in {"new growth cycle", "new conversation", "untitled conversation"}
+    if strong:
+        candidate = strong
+    elif placeholder:
+        candidate = re.sub(r"^(?:please\s+)?(?:find|show|create|help me|i want to)\s+", "", text, flags=re.I)
+    else:
+        return current
+    candidate = re.sub(r"\s+(?:and show|and recommend|then create|with viral rank).*$", "", candidate, flags=re.I)
+    candidate = candidate.strip(" .,:;-\"") or current
+    return candidate[:80]
+
+
 def create_conversation(root: Path, customer_id: str, title: str = "", active_project_context_id: str = "", created_by: str = "") -> dict[str, Any]:
     if active_project_context_id:
         get_project_context(root, customer_id, active_project_context_id)
@@ -45,7 +66,25 @@ def list_conversations(root: Path, customer_id: str, limit: int = 50) -> list[di
             "SELECT * FROM conversation_threads WHERE customer_id=? ORDER BY updated_at DESC LIMIT ?",
             (customer_id, max(1, min(100, limit))),
         ).fetchall()
-    return [dict(row) for row in rows]
+        result = [dict(row) for row in rows]
+        # Repair legacy placeholder titles when the sidebar is loaded. This is
+        # customer-scoped and derives the name only from that chat's own input.
+        for thread in result:
+            original = str(thread.get("title") or "")
+            repaired = original
+            messages = db.execute(
+                "SELECT content_json FROM conversation_messages WHERE conversation_id=? AND customer_id=? AND role='user' ORDER BY sequence",
+                (thread["id"], customer_id),
+            ).fetchall()
+            for message in messages:
+                repaired = _meaningful_conversation_title(repaired, _load(dict(message).get("content_json"), {}))
+            if repaired != original:
+                db.execute(
+                    "UPDATE conversation_threads SET title=? WHERE id=? AND customer_id=?",
+                    (repaired, thread["id"], customer_id),
+                )
+                thread["title"] = repaired
+    return result
 
 
 def get_conversation(root: Path, customer_id: str, conversation_id: str, include_messages: bool = True) -> dict[str, Any]:
@@ -88,15 +127,16 @@ def append_message(root: Path, customer_id: str, conversation_id: str, role: str
         raise ValueError("Message content is required.")
     now, message_id = int(time.time()), uuid.uuid4().hex
     with _connect(root) as db:
-        thread = db.execute("SELECT id,status FROM conversation_threads WHERE id=? AND customer_id=?", (conversation_id, customer_id)).fetchone()
+        thread = db.execute("SELECT id,status,title FROM conversation_threads WHERE id=? AND customer_id=?", (conversation_id, customer_id)).fetchone()
         if not thread:
             raise ValueError("Conversation was not found for this customer.")
         if dict(thread)["status"] != "active":
             raise ValueError("Conversation is archived.")
+        next_title = _meaningful_conversation_title(str(dict(thread).get("title") or ""), content) if role == "user" else str(dict(thread).get("title") or "")
         sequence_row = db.execute(
-            """UPDATE conversation_threads SET message_sequence=message_sequence+1,updated_at=?
+            """UPDATE conversation_threads SET message_sequence=message_sequence+1,title=?,updated_at=?
             WHERE id=? AND customer_id=? AND status='active' RETURNING message_sequence""",
-            (now, conversation_id, customer_id),
+            (next_title, now, conversation_id, customer_id),
         ).fetchone()
         sequence = int(dict(sequence_row)["message_sequence"])
         row = db.execute(

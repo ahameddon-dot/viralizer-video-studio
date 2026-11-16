@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Viralizer · Chat workspace</title>
-  <link rel="stylesheet" href="/static/autopilot-chat.css?v=9">
+  <link rel="stylesheet" href="/static/autopilot-chat.css?v=10">
   <link rel="stylesheet" href="/static/autopilot-chat-avatar.css?v=1">
   <link rel="stylesheet" href="/static/autopilot-chat-onboarding.css?v=1">
-  <script defer src="/static/autopilot-chat.js?v=14"></script>
+  <script defer src="/static/autopilot-chat.js?v=15"></script>
   <script defer src="/static/autopilot-chat-avatar.js?v=1"></script>
 </head>
 <body>
@@ -23,8 +23,9 @@
 
     <main class="chat-main">
       <header class="chat-header">
-        <div><span class="eyebrow">CONVERSATIONAL WORKSPACE</span><h1 id="conversationTitle">New conversation</h1></div>
-        <div class="mode-switch" aria-label="Current workspace mode"><span class="active">Chat Mode</span></div>
+        <button class="panel-toggle" id="toggleLeftPanel" type="button" aria-label="Open or close conversations" aria-expanded="true">☰</button>
+        <div class="chat-heading"><span class="eyebrow">CONVERSATIONAL WORKSPACE</span><h1 id="conversationTitle">New conversation</h1></div>
+        <div class="header-actions"><div class="mode-switch" aria-label="Current workspace mode"><span class="active">Chat Mode</span></div><button class="panel-toggle" id="toggleRightPanel" type="button" aria-label="Open or close creation journey" aria-expanded="true">☰</button></div>
       </header>
 
       <section class="context-strip" id="projectContext">
