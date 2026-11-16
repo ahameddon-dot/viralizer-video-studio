@@ -257,6 +257,18 @@ class DurationFlowTests(unittest.TestCase):
             [item["label"] for item in d.suggested_replies(state)],
         )
 
+    def test_empty_refresh_does_not_erase_selected_topic(self):
+        msgs = [
+            tool("rank_opportunities", {"opportunities": OPPS}),
+            user("1"),
+            {"role": "assistant", "content": {"type": "text", "text": 'You\'ve selected the trend about "First topic".'}},
+            tool("rank_opportunities", {"opportunities": []}),
+        ]
+        state = d.derive_state(msgs, True)
+        self.assertEqual("o1", state.selected_opportunity["id"])
+        self.assertEqual(d.CHOOSE_TOPIC, state.stage)
+        self.assertTrue(state.discovery_empty)
+
     def test_stated_length_tells_model_to_create_with_that_duration(self):
         msgs = [tool("rank_opportunities", {"opportunities": OPPS}), user("Use opportunity ID o1"), user("Make it 30 seconds.")]
         context = d.build_context(d.derive_state(msgs, True), d.SET_DURATION, {})

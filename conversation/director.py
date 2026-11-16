@@ -280,10 +280,18 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
             if tool == "discover_topics":
                 state.discovery_empty = not (data.get("topics") or [])
             elif tool == "rank_opportunities":
-                state.opportunities = [_compact_opportunity(o) for o in data.get("opportunities") or []]
-                state.selected_opportunity = None
-                state.concept_id, state.scenes, state.keyframes, state.animations = "", [], {}, {}
-                state.final_media_url, state.published = "", False
+                ranked = [_compact_opportunity(o) for o in data.get("opportunities") or []]
+                # A transient empty refresh must never erase a topic the
+                # customer already selected. Preserve the last valid ranked
+                # set and selection; the user can explicitly request a new
+                # discovery when they actually want to replace it.
+                if ranked:
+                    state.opportunities = ranked
+                    state.selected_opportunity = None
+                    state.concept_id, state.scenes, state.keyframes, state.animations = "", [], {}, {}
+                    state.final_media_url, state.published = "", False
+                else:
+                    state.discovery_empty = True
             elif tool == "create_concepts":
                 concepts = data.get("concepts") or []
                 if concepts:
@@ -332,6 +340,15 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                     state.final_media_url = str(content.get("media_url") or "done")
             else:
                 assistant_text = str(content.get("text") or content.get("message") or "")
+                confirmed_selection = re.search(
+                    r"(?:you(?:'ve| have)? selected|selected (?:the )?(?:trend|topic))[^\"“]*[\"“]([^\"”]+)",
+                    assistant_text, re.I,
+                )
+                if confirmed_selection and state.opportunities and not state.selected_opportunity:
+                    selected_title = confirmed_selection.group(1).strip().lower()
+                    chosen = next((item for item in state.opportunities if item["title"].strip().lower() == selected_title), None)
+                    if chosen:
+                        state.selected_opportunity = chosen
                 rejected_custom_idea = (
                     re.search(r"custom.*idea|idea.*custom", assistant_text, re.I)
                     and re.search(r"cannot|unable|existing.*opportunit|rank.*trend", assistant_text, re.I)
