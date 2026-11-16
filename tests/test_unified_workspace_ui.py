@@ -38,6 +38,8 @@ class UnifiedWorkspaceTests(unittest.TestCase):
         self.assertIn("How do you want to start?", self.chat_script)
         for entry in ("Find trends for me", "Image to video", "Video to video", "URL to video", "Promote my business", "Start with an idea"):
             self.assertIn(entry, self.chat_script)
+        self.assertIn("YOUR SELECTED CATEGORY", self.chat_script)
+        self.assertIn("HOTTEST WORLDWIDE", self.chat_script)
         self.assertIn("Best opportunities for your brand", self.chat_script)
         self.assertIn("Approve & generate all ", self.chat_script)
         self.assertIn("Animate all ${group.length} scenes", self.chat_script)

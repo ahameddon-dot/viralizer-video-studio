@@ -97,7 +97,7 @@ class ConversationOrchestratorTests(unittest.TestCase):
             result = asyncio.run(_execute(self.root, "food-channel", "discover_topics", {"limit": 5}))
         self.assertEqual(["Easy chicken biryani recipe for home cooks"], [item["topic"] for item in result["topics"]])
         self.assertEqual(2, result["provenance"]["rejected_unrelated_count"])
-        fetch.assert_called_once_with(5, category="Food")
+        fetch.assert_called_once_with(50, category="Food")
 
     def test_discovery_prefers_same_v3_category_catalog_visible_in_product(self):
         save_brand_profile(self.root, "food-channel", {
@@ -138,7 +138,7 @@ class ConversationOrchestratorTests(unittest.TestCase):
 
     def test_discover_only_model_call_cannot_narrate_raw_unrelated_feed(self):
         save_brand_profile(self.root, "customer-1", {
-            "customer_type": "creator", "positioning": "Food and cooking videos",
+            "customer_type": "creator", "category": "Food & Cooking", "positioning": "Food and cooking videos",
             "audiences": ["home cooks"], "products_services": ["recipes"],
             "keywords": ["food", "cooking", "recipe"], "confirmed": True,
         })
@@ -147,6 +147,7 @@ class ConversationOrchestratorTests(unittest.TestCase):
         ])
         raw_topics = [{"topic": "Iran's Role in Middle Eastern Geopolitics", "viral_rank": 45}]
         with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True), \
+             patch("conversation.orchestrator.get_cached_category_topics", return_value=[]), \
              patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(raw_topics, "Viralizer V3 MCP")):
             result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", self.user_message["id"], client=client))
         self.assertNotIn("Iran", result["message"]["content"]["text"])
@@ -176,6 +177,19 @@ class ConversationOrchestratorTests(unittest.TestCase):
                 "limit": 5, "scope": "worldwide_hot",
             }))
         self.assertEqual(["Major worldwide breaking story"], [item["topic"] for item in worldwide_result["topics"]])
+
+    def test_explicit_food_category_filters_a_v3_server_that_ignores_category_parameter(self):
+        mixed = [
+            {"topic": "Discover Holland travel guide", "category": "Travel", "viral_rank": 2},
+            {"topic": "China Taiwan geopolitical perspective", "category": "Politics", "viral_rank": 3},
+            {"topic": "Restaurant food safety inspections expand", "category": "Food", "viral_rank": 12},
+        ]
+        with patch("conversation.orchestrator.get_cached_category_topics", return_value=[]), \
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(mixed, "Viralizer V3 MCP")):
+            result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {
+                "limit": 10, "scope": "category", "category": "Food",
+            }))
+        self.assertEqual(["Restaurant food safety inspections expand"], [item["topic"] for item in result["topics"]])
 
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]

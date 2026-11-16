@@ -44,6 +44,29 @@ After all scene animations are complete, immediately call finalize_video for the
 Never expose internal registry names, project IDs, tool names, or implementation details to the customer."""
 
 
+CATEGORY_TERMS = {
+    "food": {"food", "cooking", "cook", "recipe", "cuisine", "restaurant", "meal", "kitchen", "chef", "dish", "biryani", "grocery", "dining", "beverage", "drink"},
+    "technology": {"technology", "tech", "software", "cloud", "coding", "developer", "digital", "computer", "ai", "robot"},
+    "business": {"business", "finance", "market", "company", "startup", "commerce", "economy", "sales", "entrepreneur"},
+    "entertainment": {"entertainment", "film", "movie", "music", "celebrity", "television", "streaming", "theatre"},
+    "sports": {"sport", "sports", "football", "cricket", "tennis", "basketball", "racing", "athlete", "league", "tournament"},
+    "fashion": {"fashion", "style", "apparel", "clothing", "designer", "runway", "beauty"},
+    "travel": {"travel", "tourism", "destination", "hotel", "flight", "holiday", "vacation", "city guide"},
+    "health": {"health", "medical", "medicine", "fitness", "wellness", "doctor", "hospital", "disease"},
+    "pets": {"pet", "pets", "dog", "puppy", "cat", "animal", "veterinary"},
+}
+
+
+def _matches_category(item: dict[str, Any], category: str) -> bool:
+    key = category.casefold().strip()
+    terms = CATEGORY_TERMS.get(key, {key})
+    structured = " ".join(str(item.get(field) or "") for field in ("category", "groups", "group_keys", "tags")).casefold()
+    if key and (key in structured or any(re.search(rf"\b{re.escape(term)}\b", structured) for term in terms)):
+        return True
+    text = " ".join(str(item.get(field) or "") for field in ("topic", "title", "summary", "description", "video_idea")).casefold()
+    return any(re.search(rf"\b{re.escape(term)}\b", text) for term in terms)
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     return [{"type": "function", "name": name, "description": TOOL_DESCRIPTIONS[name], "parameters": schema, "strict": False}
             for name, schema in TOOL_SCHEMAS.items() if name in TOOL_REGISTRY]
@@ -180,10 +203,14 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
         if cached:
             topics, source = cached, f"Viralizer V3 {category} catalog"
         else:
-            topics, source = await fetch_v3_worldwide_topics(limit, category=category)
+            # Some older V3 deployments ignore the category query parameter.
+            # Pull a larger candidate set, then enforce the category locally.
+            topics, source = await fetch_v3_worldwide_topics(50 if category else limit, category=category)
         decorated = []
-        for raw in topics[:limit]:
+        for raw in topics:
             item = dict(raw)
+            if category and not category_catalog_verified and not _matches_category(item, category):
+                continue
             if category_catalog_verified and category and not item.get("category"):
                 item["category"] = category
             if scope == "worldwide_hot":
@@ -193,6 +220,8 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
             elif category and (category_catalog_verified or category.casefold() in str(item.get("category") or "").casefold()):
                 item["profile_category_verified"] = True
             decorated.append(item)
+            if len(decorated) >= limit:
+                break
         discovery = ({"topics": decorated, "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False,
                                                           "scope": scope, "category": category, "profile_matched": scope == "profile"}}
                      if topics else _discovery_fallback(root, customer_id, limit, source))
@@ -200,9 +229,9 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
         # customer relevance gate here so the model can never describe raw V3
         # topics as "profile matched" when it skips the separate ranking tool.
         if brand and brand.get("status") == "confirmed":
-            opportunities = rank_opportunities(root, customer_id, {
-                "topics": discovery.get("topics") or [], "limit": limit,
-            })
+            candidates = discovery.get("topics") or []
+            opportunities = (rank_opportunities(root, customer_id, {"topics": candidates, "limit": limit})
+                             if candidates else [])
             archive_other_opportunities(root, customer_id, [str(item["id"]) for item in opportunities])
             verified_topics = []
             for item in opportunities:
