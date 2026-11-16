@@ -259,6 +259,16 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                 chosen = next((o for o in state.opportunities if o["id"] == match.group(1)), None)
                 if chosen:
                     state.selected_opportunity = chosen
+            elif state.opportunities:
+                # Topic cards and numbered chat lists both allow a customer to
+                # answer with only "1", "#2", or "option 3". Persist that
+                # selection in derived state so the next buttons advance to
+                # duration instead of falling back to discovery actions.
+                ordinal = re.fullmatch(r"\s*(?:option\s*)?#?(\d{1,2})\s*", text, re.I)
+                if ordinal:
+                    index = int(ordinal.group(1)) - 1
+                    if 0 <= index < len(state.opportunities):
+                        state.selected_opportunity = state.opportunities[index]
         elif role == "tool":
             output = content.get("output") or {}
             if output.get("status") != "completed":

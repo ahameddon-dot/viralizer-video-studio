@@ -242,6 +242,15 @@ class DurationFlowTests(unittest.TestCase):
         self.assertEqual(["5 seconds", "10 seconds", "15 seconds", "30 seconds", "60 seconds"], labels)
         self.assertIn("not chosen a video length", d.build_context(state, d.GENERAL, {}))
 
+    def test_number_only_topic_selection_advances_quick_replies_to_duration(self):
+        msgs = [tool("rank_opportunities", {"opportunities": OPPS}), user("1")]
+        state = d.derive_state(msgs, True)
+        self.assertEqual("o1", state.selected_opportunity["id"])
+        self.assertEqual(
+            ["5 seconds", "10 seconds", "15 seconds", "30 seconds", "60 seconds"],
+            [item["label"] for item in d.suggested_replies(state)],
+        )
+
     def test_stated_length_tells_model_to_create_with_that_duration(self):
         msgs = [tool("rank_opportunities", {"opportunities": OPPS}), user("Use opportunity ID o1"), user("Make it 30 seconds.")]
         context = d.build_context(d.derive_state(msgs, True), d.SET_DURATION, {})
