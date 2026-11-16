@@ -19,7 +19,7 @@ STOP = {"about","after","also","and","are","been","being","best","but","can","co
 
 class PageSignals(HTMLParser):
     def __init__(self) -> None:
-        super().__init__(); self.title=""; self.description=""; self.image=""; self.author=""; self.keywords=""; self.headings=[]; self.text=[]; self._tag=""; self._skip=0
+        super().__init__(); self.title=""; self.description=""; self.image=""; self.logo=""; self.theme_color=""; self.author=""; self.keywords=""; self.headings=[]; self.text=[]; self._tag=""; self._skip=0
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self._tag=tag
         if tag in {"script","style","svg","noscript"}: self._skip += 1
@@ -28,8 +28,12 @@ class PageSignals(HTMLParser):
         if tag=="meta" and values.get("property","").lower()=="og:description" and not self.description: self.description=values.get("content","")[:1000]
         if tag=="meta" and values.get("property","").lower()=="og:title" and not self.title: self.title=values.get("content","")[:300]
         if tag=="meta" and values.get("property","").lower()=="og:image" and not self.image: self.image=values.get("content","")[:1000]
+        if tag=="meta" and values.get("name","").lower()=="theme-color": self.theme_color=values.get("content","")[:30]
         if tag=="meta" and values.get("name","").lower()=="author": self.author=values.get("content","")[:300]
         if tag=="meta" and values.get("name","").lower()=="keywords": self.keywords=values.get("content","")[:1000]
+        identity=" ".join((values.get("class",""),values.get("id",""),values.get("alt",""))).casefold()
+        if tag=="img" and "logo" in identity and not self.logo: self.logo=values.get("src","")[:1000]
+        if tag=="link" and any(value in values.get("rel","").casefold() for value in ("icon","apple-touch-icon")) and not self.logo: self.logo=values.get("href","")[:1000]
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script","style","svg","noscript"} and self._skip: self._skip-=1
         self._tag=""
@@ -134,7 +138,21 @@ def _analyse(url: str, html: str) -> dict[str, Any]:
     brand_name=youtube.get("owner_name") or parser.author or re.sub(r"\s*[-|–].*$", "", parser.title).strip()
     description=youtube.get("channel_description") or parser.description
     audience_map={"Pets & Animals":"dog owners, pet lovers, and animal-care audiences","Food & Cooking":"food lovers, home cooks, and restaurant explorers","Technology":"technology enthusiasts, creators, and digital professionals","Business & Finance":"business owners, founders, and growth-focused professionals","Travel & Places":"travelers and destination explorers","Entertainment":"entertainment audiences and pop-culture followers","Education":"learners seeking practical guidance","Health & Fitness":"health-conscious and fitness-focused audiences","Beauty & Fashion":"beauty and style audiences","Home & Design":"homeowners, designers, and renovation audiences","Gaming":"gamers and gaming communities"}
-    return {"url":url,"title":parser.title,"brand_name":brand_name,"description":description,"image_url":parser.image,"channel_id":youtube.get("channel_id",""),"recent_content":recent,"category":category,"category_score":category_score,"suggested_audience":audience_map.get(category,"people interested in " + ", ".join(themes[:3])),"positioning_evidence":combined[:1200],"content_themes":themes,"interests":themes[:8],"voice_signals":tone or ["not confidently detected"],"heading_samples":parser.headings[:8],"text_characters_analyzed":len(text)}
+    css_colors=[value.upper() for value in re.findall(r"#[0-9a-fA-F]{6}\b",html)]
+    colors=list(dict.fromkeys(([parser.theme_color.upper()] if re.fullmatch(r"#[0-9a-fA-F]{6}",parser.theme_color) else [])+[color for color,_ in Counter(css_colors).most_common(8)]))[:6]
+    fonts=list(dict.fromkeys(" ".join(value.strip(" '\"").split()) for value in re.findall(r"font-family\s*:\s*([^;}]+)",html,re.I) if value.strip()))[:5]
+    formats=[]
+    corpus=" ".join(recent).casefold()
+    for label,terms in {"tutorials and how-to":["how to","guide","tutorial"],"reviews":["review","vs ","comparison"],"short-form video":["shorts","reel","tiktok"],"news and commentary":["news","update","explained"],"behind the scenes":["behind the scenes","vlog","day in"]}.items():
+        if any(term in corpus for term in terms): formats.append(label)
+    visual=[]
+    if colors: visual.append("brand-color-led")
+    if any(term in lower for term in ("premium","luxury","exclusive")): visual.append("premium")
+    if any(term in lower for term in ("fun","playful","entertainment")): visual.append("playful")
+    if not visual: visual.append("not confidently detected")
+    logo=urljoin(url,parser.logo) if parser.logo else ""
+    image=urljoin(url,parser.image) if parser.image else ""
+    return {"url":url,"title":parser.title,"brand_name":brand_name,"description":description,"image_url":image,"logo_url":logo,"brand_colors":colors,"font_families":fonts,"visual_style":visual,"content_formats":formats,"channel_id":youtube.get("channel_id",""),"recent_content":recent,"category":category,"category_score":category_score,"suggested_audience":audience_map.get(category,"people interested in " + ", ".join(themes[:3])),"positioning_evidence":combined[:1200],"content_themes":themes,"interests":themes[:8],"voice_signals":tone or ["not confidently detected"],"heading_samples":parser.headings[:8],"text_characters_analyzed":len(text)}
 
 
 async def analyze_brand_sources(website_url: str, social_urls: list[str], client: httpx.AsyncClient | None=None) -> dict[str, Any]:
@@ -161,7 +179,12 @@ async def analyze_brand_sources(website_url: str, social_urls: list[str], client
     brand_name=next((s.get("brand_name") for s in analyzed if s.get("brand_name")),"")
     audiences=list(dict.fromkeys(s.get("suggested_audience") for s in analyzed if s.get("suggested_audience")))
     recent=list(dict.fromkeys(item for source in analyzed for item in source.get("recent_content",[])))[:12]
+    visual_style=list(dict.fromkeys(item for source in analyzed for item in source.get("visual_style",[]) if item!="not confidently detected"))[:10]
+    brand_colors=list(dict.fromkeys(item for source in analyzed for item in source.get("brand_colors",[])))[:8]
+    font_families=list(dict.fromkeys(item for source in analyzed for item in source.get("font_families",[])))[:8]
+    content_formats=list(dict.fromkeys(item for source in analyzed for item in source.get("content_formats",[])))[:10]
+    logo_url=next((source.get("logo_url") for source in analyzed if source.get("logo_url")),"")
     hashtags=["#"+re.sub(r"[^A-Za-z0-9]","",theme.title()) for theme in themes[:8] if theme]
     confidence="high" if len(analyzed)>1 else "medium" if analyzed else "none"
     offer=(descriptions[0] if descriptions else (f"{category} content focused on {', '.join(themes[:5])}" if themes else ""))[:500]
-    return {"status":"draft_requires_confirmation","sources":sources,"draft":{"brand_name":brand_name,"identity_type":"creator" if any(s.get("source_type")=="social" for s in analyzed) else "business","category":category,"positioning":offer,"products_services":[offer] if offer else [],"audiences":audiences,"content_themes":themes,"areas_of_interest":themes[:10],"voice":voices,"keywords":themes[:12],"hashtags":hashtags,"recent_content":recent,"confidence":confidence},"disclosure":"This is evidence-based extraction, not a verified fact. The customer must review and confirm every field."}
+    return {"status":"draft_requires_confirmation","sources":sources,"draft":{"brand_name":brand_name,"logo_url":logo_url,"identity_type":"creator" if any(s.get("source_type")=="social" for s in analyzed) else "business","category":category,"positioning":offer,"products_services":[offer] if offer else [],"audiences":audiences,"content_themes":themes,"areas_of_interest":themes[:10],"voice":voices,"visual_style":visual_style,"brand_colors":brand_colors,"font_families":font_families,"content_formats":content_formats,"keywords":themes[:12],"hashtags":hashtags,"recent_content":recent,"confidence":confidence},"disclosure":"This is evidence-based extraction, not a verified fact. The customer must review and confirm every field."}

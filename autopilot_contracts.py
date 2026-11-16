@@ -61,6 +61,7 @@ class BrandProfileUpsert(BaseModel):
     customer_type: Literal["creator", "business"]
     brand_name: str = Field(default="", max_length=300)
     category: str = Field(default="", max_length=120)
+    logo_url: str = Field(default="", max_length=2_000)
     website_url: str = Field(default="", max_length=2_000)
     social_urls: list[str] = Field(default_factory=list, max_length=20)
     voice: list[str] = Field(default_factory=list, max_length=20)

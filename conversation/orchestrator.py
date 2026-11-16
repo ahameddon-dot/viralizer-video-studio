@@ -14,6 +14,7 @@ from autopilot_growth import growth_dashboard
 from autopilot_intelligence import apply_creative_brief, generate_concepts, get_brand_profile, get_concept, list_opportunities, rank_opportunities
 from conversation import MODEL_ORCHESTRATION_ENABLED
 from conversation.director import brand_seed_topics, director_turn
+from conversation.onboarding import respond_onboarding
 from conversation.redaction import redact
 from conversation.registry import TOOL_REGISTRY
 from conversation.store import append_message, attach_project, complete_tool_execution, get_conversation, propose_tool_execution
@@ -227,8 +228,6 @@ def _next_suggestions(root: Path, customer_id: str, conversation_id: str, brand_
 
 async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: str, message_id: str = "", cost_confirmed: bool = False,
                   client: httpx.AsyncClient | None = None) -> dict[str, Any]:
-    if not MODEL_ORCHESTRATION_ENABLED:
-        raise RuntimeError("Viralizer AI is not configured on this server.")
     conversation = get_conversation(root, customer_id, conversation_id)
     if message_id and not any(item["id"] == message_id and item["role"] == "user" for item in conversation.get("messages") or []):
         raise ValueError("The user message was not found in this conversation.")
@@ -241,6 +240,10 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
             latest_text = str((item.get("content") or {}).get("text") or (item.get("content") or {}).get("message") or "")
             break
     directed = director_turn(conversation.get("messages") or [], bool(brand and brand.get("status") == "confirmed"), latest_text)
+    if directed["state"].stage == "onboarding":
+        return await respond_onboarding(root, customer_id, conversation_id, conversation.get("messages") or [], latest_text)
+    if not MODEL_ORCHESTRATION_ENABLED:
+        raise RuntimeError("Viralizer AI is not configured on this server.")
     instructions = SYSTEM_INSTRUCTIONS + "\n\n" + directed["context"]
     directed_state = directed["state"]
     if directed_state.stage == "final_review" and directed_state.publication_step in {"platform", "caption", "timing"}:

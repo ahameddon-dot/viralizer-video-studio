@@ -55,6 +55,9 @@ def save_brand_profile(root: Path, customer_id: str, request: BrandProfileUpsert
     if any(not url.startswith(("http://", "https://")) for url in all_profile_urls):
         raise ValueError("Social, competitor, and inspiration URLs must begin with http:// or https://.")
     profile = {
+        "brand_name": " ".join(model.brand_name.split()),
+        "category": " ".join(model.category.split()),
+        "logo_url": model.logo_url.strip(),
         "voice": _clean_list(model.voice, 20),
         "positioning": " ".join(model.positioning.split()),
         "audiences": _clean_list(model.audiences, 20),
