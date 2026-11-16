@@ -154,9 +154,29 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "discover_topics":
         limit = max(1, min(25, int(arguments.get("limit") or 10)))
         topics, source = await fetch_v3_worldwide_topics(limit)
-        if topics:
-            return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
-        return _discovery_fallback(root, customer_id, limit, source)
+        discovery = ({"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
+                     if topics else _discovery_fallback(root, customer_id, limit, source))
+        # Discovery is a worldwide feed, not a personalized result. Enforce the
+        # customer relevance gate here so the model can never describe raw V3
+        # topics as "profile matched" when it skips the separate ranking tool.
+        brand = get_brand_profile(root, customer_id)
+        if brand and brand.get("status") == "confirmed":
+            opportunities = rank_opportunities(root, customer_id, {
+                "topics": discovery.get("topics") or [], "limit": limit,
+            })
+            archive_other_opportunities(root, customer_id, [str(item["id"]) for item in opportunities])
+            verified_topics = []
+            for item in opportunities:
+                verified_topics.append(dict(
+                    item.get("source") or {},
+                    topic=item["title"], title=item["title"], category=item.get("category") or "",
+                    opportunity_id=item["id"], profile_match_score=item["components"]["brand_relevance"],
+                ))
+            discovery["topics"] = verified_topics
+            discovery["opportunities"] = opportunities
+            discovery["provenance"]["profile_match_verified"] = True
+            discovery["provenance"]["rejected_unrelated_count"] = max(0, len(topics) - len(verified_topics))
+        return discovery
     if name == "rank_opportunities":
         opportunities = rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})
         archive_other_opportunities(root, customer_id, [str(item["id"]) for item in opportunities])
@@ -340,7 +360,7 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                         result = redact(await _execute(root, customer_id, name, arguments, conversation_id, actor_id))
                         complete_tool_execution(root, customer_id, execution["id"], result=result)
                         tool_output = {"status": "completed", "tool": name, "data": result}
-                        if name == "rank_opportunities" and not (result.get("opportunities") or []):
+                        if name in {"discover_topics", "rank_opportunities"} and not (result.get("opportunities") or []):
                             no_verified_matches = True
                     except (ValueError, RuntimeError) as exc:
                         safe_message = " ".join(str(exc).split())[:300] or "The workflow step could not complete."

@@ -70,12 +70,33 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertFalse(definitions["prepare_publication"]["strict"])
 
     def test_chat_discovery_uses_canonical_v3_topics(self):
-        topics = [{"topic": "Verified V3 topic", "viral_rank": 88}]
+        save_brand_profile(self.root, "customer-1", {
+            "customer_type": "creator", "positioning": "Clear practical brand voice guidance",
+            "audiences": ["content creators"], "products_services": ["brand voice guides"], "confirmed": True,
+        })
+        topics = [{"topic": "Clear creator brand voice guide", "viral_rank": 88}]
         with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(topics, "Viralizer V3 MCP")) as fetch:
             result = asyncio.run(_execute(self.root, "customer-1", "discover_topics", {"limit": 5}))
-        self.assertEqual(topics, result["topics"])
+        self.assertEqual(["Clear creator brand voice guide"], [item["topic"] for item in result["topics"]])
         self.assertEqual("viralizer_v3", result["provenance"]["data_source"])
+        self.assertTrue(result["provenance"]["profile_match_verified"])
         fetch.assert_called_once_with(5)
+
+    def test_discovery_never_exposes_unfiltered_worldwide_topics_as_profile_matches(self):
+        save_brand_profile(self.root, "food-channel", {
+            "customer_type": "creator", "positioning": "Food and cooking videos",
+            "audiences": ["home cooks"], "products_services": ["recipes"],
+            "keywords": ["food", "cooking", "recipe"], "confirmed": True,
+        })
+        topics = [
+            {"topic": "Iran's Role in Middle Eastern Geopolitics", "viral_rank": 45},
+            {"topic": "Microsoft Cloud Reliability Strategies", "viral_rank": 57},
+            {"topic": "Easy chicken biryani recipe for home cooks", "viral_rank": 38},
+        ]
+        with patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(topics, "Viralizer V3 MCP")):
+            result = asyncio.run(_execute(self.root, "food-channel", "discover_topics", {"limit": 5}))
+        self.assertEqual(["Easy chicken biryani recipe for home cooks"], [item["topic"] for item in result["topics"]])
+        self.assertEqual(2, result["provenance"]["rejected_unrelated_count"])
 
     def test_empty_rank_result_archives_stale_opportunities(self):
         with patch("conversation.orchestrator.rank_opportunities", return_value=[]) as rank, \
@@ -98,6 +119,25 @@ class ConversationOrchestratorTests(unittest.TestCase):
             ["Refresh relevant trends", "Re-analyze my brand", "Use my own idea"],
             [item["label"] for item in result["suggestions"]],
         )
+        self.assertEqual(1, len(client.requests))
+
+    def test_discover_only_model_call_cannot_narrate_raw_unrelated_feed(self):
+        save_brand_profile(self.root, "customer-1", {
+            "customer_type": "creator", "positioning": "Food and cooking videos",
+            "audiences": ["home cooks"], "products_services": ["recipes"],
+            "keywords": ["food", "cooking", "recipe"], "confirmed": True,
+        })
+        client = FakeClient([
+            FakeResponse({"id": "resp-1", "output": [{"type": "function_call", "name": "discover_topics", "call_id": "call-1", "arguments": "{\"limit\":5}"}]}),
+        ])
+        raw_topics = [{"topic": "Iran's Role in Middle Eastern Geopolitics", "viral_rank": 45}]
+        with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True), \
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics", return_value=(raw_topics, "Viralizer V3 MCP")):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", self.user_message["id"], client=client))
+        self.assertNotIn("Iran", result["message"]["content"]["text"])
+        self.assertIn("rejected the unrelated results", result["message"]["content"]["text"])
+        self.assertEqual(["Refresh relevant trends", "Re-analyze my brand", "Use my own idea"],
+                         [item["label"] for item in result["suggestions"]])
         self.assertEqual(1, len(client.requests))
 
     def test_concept_creation_attaches_shared_project_to_chat(self):
