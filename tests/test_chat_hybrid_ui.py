@@ -29,6 +29,15 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn("/respond", self.chat_js)
         self.assertNotIn("tool-executions/propose", self.chat_js)
 
+    def test_video_countdown_is_added_after_conversation_refresh(self):
+        refresh = self.chat_js.index("await openConversation(currentId);if(tool==='all_animations'")
+        countdown = self.chat_js.index("countdown=startCountdown('video',ids.length)")
+        polling = self.chat_js.index("await waitForAnimations(conceptId,ids.length,countdown)")
+        self.assertLess(refresh, countdown)
+        self.assertLess(countdown, polling)
+        self.assertIn("VIDEO GENERATION'} · ESTIMATED TIME LEFT", self.chat_js)
+        self.assertIn("Your job is still running safely", self.chat_js)
+
     def test_chat_has_its_own_account_and_logout_controls(self):
         self.assertIn('/api/autopilot/brand-profile', self.chat_js)
         self.assertIn('id="accountName"', self.chat_html)
