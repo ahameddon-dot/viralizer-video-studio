@@ -5599,7 +5599,11 @@ async def _developer_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
         return cached[1], cached[2]
     try:
         raw_topics = await get_hot_topics_from_mcp()
-        source = "Viralizer MCP"
+        if raw_topics:
+            source = "Viralizer MCP"
+        else:
+            raw_topics = await discover_global_sources()
+            source = "Worldwide public sources"
     except MCPOutlineError:
         raw_topics = await discover_global_sources()
         source = "Worldwide public sources"

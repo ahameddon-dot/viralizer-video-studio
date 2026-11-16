@@ -95,6 +95,27 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["topics"][0]["category"], "Energy")
         self.assertEqual(payload["topics"][0]["sources"][0]["url"], "https://publisher.test/story")
 
+    async def test_api_uses_public_source_fallback_when_mcp_returns_empty_payload(self):
+        raw = [{
+            "topic": "Restaurant menus shift toward regional ingredients",
+            "category": "Food",
+            "published_at": "2026-11-16T08:00:00+00:00",
+            "summary": "A current food-industry development.",
+            "source_urls": ["https://publisher.test/food-story"],
+            "source_platforms": ["GDELT"],
+            "mentions": 4,
+        }]
+        with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "developer-test-key"}, clear=False), patch(
+            "app.get_hot_topics_from_mcp", new=AsyncMock(return_value=[])
+        ), patch("app.discover_global_sources", new=AsyncMock(return_value=raw)) as discover:
+            response = await self.request("/api/v1/hot-topics?category=Food")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["source"], "Worldwide public sources")
+        self.assertEqual(payload["topics"][0]["category"], "Food")
+        discover.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
