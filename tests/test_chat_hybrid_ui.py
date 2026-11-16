@@ -38,6 +38,11 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn("VIDEO GENERATION'} · ESTIMATED TIME LEFT", self.chat_js)
         self.assertIn("Your job is still running safely", self.chat_js)
 
+    def test_pixverse_complete_status_renders_video_and_advances(self):
+        self.assertIn("value==='completed'||value==='complete'", self.chat_js)
+        self.assertIn("if(done){complete.add(scene)", self.chat_js)
+        self.assertIn("All scene animations are ready. Assembling the final video", self.chat_js)
+
     def test_chat_has_its_own_account_and_logout_controls(self):
         self.assertIn('/api/autopilot/brand-profile', self.chat_js)
         self.assertIn('id="accountName"', self.chat_html)
