@@ -485,5 +485,23 @@
       otherPanel?.classList.add('v3-other-category');
     })();
   </script>
+  <script>
+    (() => {
+      const openGrowthWithCurrentRendering = openAutopilotGrowth;
+      openAutopilotGrowth = async function () {
+        await openGrowthWithCurrentRendering();
+        try {
+          const data = await api('/api/autopilot/growth-dashboard');
+          const host = document.querySelector('#autopilotGrowthContent');
+          if (!host || !data.provenance?.contains_simulated_data || host.querySelector('[data-simulated-growth-warning]')) return;
+          const warning = document.createElement('div');
+          warning.className = 'autopilot-panel';
+          warning.dataset.simulatedGrowthWarning = '';
+          warning.innerHTML = '<span class="eyebrow">SIMULATED DATA — NOT SOCIAL PERFORMANCE</span><p>Demo publishing and synthetic metrics only demonstrate the workflow. They are not provider-reported engagement.</p>';
+          host.prepend(warning);
+        } catch (_) {}
+      };
+    })();
+  </script>
 </body>
 </html>

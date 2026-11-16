@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from storyboard_plan import normalize_duration, scaled_storyboard
 from autopilot_contracts import BrandProfileUpsert, ConceptGenerateRequest, OpportunityRankRequest
 from creatorthon_store import _connect
 
@@ -275,7 +276,7 @@ def archive_other_opportunities(root: Path, customer_id: str, keep_ids: list[str
             )
 
 
-def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str, goal: str) -> list[dict[str, Any]]:
+def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str, goal: str, duration_seconds: int = 15) -> list[dict[str, Any]]:
     title = opportunity["title"]
     source = _load(opportunity.get("source_json"), {})
     source_evidence = " ".join(str(source.get(key) or "").strip() for key in ("reference_description", "summary", "why_it_matters") if source.get(key)).strip()
@@ -291,11 +292,17 @@ def _concepts(opportunity: dict[str, Any], brand: dict[str, Any], platform: str,
                 "negative_prompt": "No generated text, captions, logos, watermarks, distorted hands, duplicate people, invented statistics, or unsupported brand claims.",
                 "motion_prompt": f"Animate only from the approved keyframe. {motion}. Preserve identity, product geometry, wardrobe, lighting, background layout, and brand colors. No morphing, cuts, new objects, or generated text.",
                 "camera": motion, "transition": "clean motivated cut" if start else "opening frame"}
-    return [
-        {"name": "Fast Insight", "hook": f"Here is what {title} changes for {audience}.", "narrative": "Lead with the verified development, explain its immediate relevance, and end with one practical implication.", "script": f"{title} is moving quickly. Here is the part that matters for {audience}, what to watch next, and why it deserves attention now.", "cta": cta_goal, "production_mode": "image_to_video", "storyboard": [scene(0,3,"hook",f"Here is what {title} changes.","A striking close editorial view of the central subject at the moment of change","Slow controlled push-in with restrained environmental motion"),scene(3,11,"explain",f"This matters now for {audience}.","A concrete real-world scene showing why the verified development matters to the audience","Gentle lateral track while the subject performs one clear action"),scene(11,15,"action",cta_goal,"A confident outcome frame connecting the insight to the customer's offer without fake interface elements","Subtle pull-back settling into a clean closing composition")]},
+    variants = [
+        {"name": "Fast Insight", "hook": f"Here is what {title} changes for {audience}.", "narrative": "Lead with the verified development, explain its immediate relevance, and end with one practical implication.", "script": f"{title} is moving quickly. Here is the part that matters for {audience}, what to watch next, and why it deserves attention now.", "cta": cta_goal, "production_mode": "image_to_video", "storyboard": [scene(0,5,"hook",f"Here is what {title} changes.","A striking close editorial view of the central subject at the moment of change","Slow controlled push-in with restrained environmental motion"),scene(5,10,"explain",f"This matters now for {audience}.","A concrete real-world scene showing why the verified development matters to the audience","Gentle lateral track while the subject performs one clear action"),scene(10,15,"action",cta_goal,"A confident outcome frame connecting the insight to the customer's offer without fake interface elements","Subtle pull-back settling into a clean closing composition")]},
         {"name": "Myth vs Reality", "hook": f"The obvious take on {title} misses the real opportunity.", "narrative": "Contrast a common assumption with source-grounded reality, then reveal the brand-relevant opportunity.", "script": f"The headline is only the surface. The useful signal for {audience} is the contrast between the popular assumption and what the evidence actually supports.", "cta": cta_goal, "production_mode": "image_to_video", "storyboard": [scene(0,5,"myth",f"The obvious take on {title} misses the point.","MYTH: a wide, cool-toned composition showing the approved person acting on the common mistaken assumption; make the misconception visually obvious without generated labels","Slow push toward the mistaken action; keep the unresolved result visible"),scene(5,10,"reality",f"The evidence reveals what matters for {audience}.","REALITY: a clearly different side-angle medium composition showing the same person discovering and demonstrating the evidence-grounded reality; change pose, action, lighting, and focal object","Quick motivated lateral reveal into the corrected action; do not repeat the myth framing"),scene(10,15,"takeaway",cta_goal,"TAKEAWAY: a distinct warm hero composition showing the same person applying the correct insight and reaching a credible completed outcome","Gentle pull-back from the result to the confident person, ending with clean CTA space")]},
         {"name": "Before & After", "hook": f"Before {title}, the playbook looked different.", "narrative": "Show the prior situation, the visible transformation, and the improved outcome without unsupported claims.", "script": f"Before this shift, {audience} followed the old pattern. Then the verified conditions changed. Here is the clearer after-state and the practical action it supports.", "cta": cta_goal, "production_mode": "image_to_video", "storyboard": [scene(0,5,"before",f"Before {title}, the playbook looked different.","BEFORE: a wide environmental composition showing the recurring problem in progress; the approved person is visibly struggling with the old process, with restrained cool lighting and clear negative space around the unresolved obstacle","Mostly locked wide shot; the person performs one small frustrated action while the unresolved environment remains unchanged"),scene(5,10,"transformation",f"Now the verified conditions are changing.","TRANSFORMATION: a clearly different medium side-angle composition; the same approved person actively changes the process using the relevant product or method, with directional light and visible cause-and-effect action","Decisive lateral tracking move following the person's hands through one complete transformation action; do not repeat the before pose"),scene(10,15,"after",cta_goal,"AFTER: a clearly different confident hero composition; the same approved person and product occupy the improved finished environment, with warmer light, an unmistakable completed outcome, and clean CTA space","Begin on the completed result, then use a gentle reveal or pull-back to include the confident person and finished environment; do not repeat earlier framing")]},
     ]
+    if normalize_duration(duration_seconds) != 15:
+        for variant in variants:
+            variant["storyboard"] = scaled_storyboard(
+                variant["hook"], title, audience, cta_goal, duration_seconds, scene, variant["name"]
+            )
+    return variants
 
 
 def generate_concepts(root: Path, customer_id: str, request: ConceptGenerateRequest | dict[str, Any]) -> list[dict[str, Any]]:
@@ -308,11 +315,11 @@ def generate_concepts(root: Path, customer_id: str, request: ConceptGenerateRequ
         if not row:
             raise ValueError("Opportunity was not found for this customer.")
         opportunity = dict(row)
-        concepts = _concepts(opportunity, brand, model.platform, model.goal)
+        concepts = _concepts(opportunity, brand, model.platform, model.goal, model.duration_seconds)
         now = int(time.time())
         saved = []
         for index, concept in enumerate(concepts, 1):
-            concept.update({"platform": model.platform, "duration_seconds": 15, "brand_tone": brand["profile"].get("voice", [])})
+            concept.update({"platform": model.platform, "duration_seconds": normalize_duration(model.duration_seconds), "brand_tone": brand["profile"].get("voice", [])})
             concept_id = uuid.uuid4().hex
             stored = db.execute(
                 """INSERT INTO autopilot_creative_concepts
@@ -327,6 +334,40 @@ def generate_concepts(root: Path, customer_id: str, request: ConceptGenerateRequ
             saved.append(item)
         db.execute("UPDATE autopilot_opportunities SET status='selected',updated_at=? WHERE id=? AND customer_id=?", (now, model.opportunity_id, customer_id))
     return saved
+
+
+def apply_creative_brief(root: Path, customer_id: str, concepts: list[dict[str, Any]], brief: dict[str, Any]) -> list[dict[str, Any]]:
+    """Persist customer-approved narration, visual style and format on generated concepts."""
+    style = " ".join(str(brief.get("visual_style") or "").split())[:80]
+    aspect = " ".join(str(brief.get("aspect_ratio") or "").split())[:12]
+    narration_mode = str(brief.get("narration_mode") or "ai")
+    narration_text = " ".join(str(brief.get("narration_text") or "").split())[:4000]
+    with _connect(root) as db:
+        for item in concepts:
+            content = dict(item.get("content") or {})
+            scenes = content.get("storyboard") or []
+            custom_lines: list[str] = []
+            if narration_mode == "custom" and narration_text and scenes:
+                words = narration_text.split()
+                size = max(1, (len(words) + len(scenes) - 1) // len(scenes))
+                custom_lines = [" ".join(words[i * size:(i + 1) * size]) for i in range(len(scenes))]
+            for index, scene in enumerate(scenes):
+                if narration_mode == "none":
+                    scene["narration"] = ""
+                elif custom_lines:
+                    scene["narration"] = custom_lines[index]
+                    scene["on_screen_text"] = custom_lines[index][:60]
+                if style or aspect:
+                    prefix = ", ".join(value for value in (f"{aspect} format" if aspect else "", f"{style} visual style" if style else "") if value)
+                    scene["keyframe_prompt"] = f"{prefix}. {scene.get('keyframe_prompt') or ''}".strip(". ")
+            content["creative_brief"] = {
+                "narration_mode": narration_mode, "narration_text": narration_text,
+                "visual_style": style, "aspect_ratio": aspect,
+            }
+            db.execute("UPDATE autopilot_creative_concepts SET content_json=?,updated_at=? WHERE id=? AND customer_id=?",
+                       (_json(content), int(time.time()), item["id"], customer_id))
+            item["content"] = content
+    return concepts
 
 
 def list_concepts(root: Path, customer_id: str, opportunity_id: str) -> list[dict[str, Any]]:

@@ -71,9 +71,11 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("/submit", self.product)
         self.assertNotIn("/api/autopilot/demo/publications/", self.product)
 
-    def test_finalizer_requires_three_completed_pixverse_scenes(self):
+    def test_finalizer_requires_all_variable_length_pixverse_scenes(self):
         self.assertIn('@app.post("/api/autopilot/concepts/{concept_id}/finalize")', self.app)
-        self.assertIn("must contain exactly three scenes", self.app)
+        self.assertIn("must contain between 1 and 12 five-second scenes", self.app)
+        self.assertIn("for scene_index in range(len(storyboard))", self.app)
+        self.assertIn("was edited after its image was made", self.app)
         self.assertIn("is not a completed PixVerse clip", self.app)
         self.assertIn('"provider": "pixverse", "scene_job_ids": job_ids', self.app)
         self.assertIn('f"/api/finished-video/{filename}"', self.app)

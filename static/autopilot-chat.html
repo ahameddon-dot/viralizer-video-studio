@@ -4,32 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Viralizer · Chat workspace</title>
-  <link rel="stylesheet" href="/static/autopilot-chat.css?v=4">
-  <script defer src="/static/autopilot-chat.js?v=4"></script>
+  <link rel="stylesheet" href="/static/autopilot-chat.css?v=9">
+  <script defer src="/static/autopilot-chat.js?v=8"></script>
 </head>
 <body>
   <div class="workspace">
     <aside class="rail">
-      <a class="brand" href="/autopilot-workspace" aria-label="Viralizer home"><span>V.</span> Viralizer AI<small>Growth Autopilot</small></a>
+      <a class="brand" href="/autopilot-chat" aria-label="Viralizer Autopilot chat home"><img src="/static/viralizer-autopilot-logo.png" alt="Viralizer Autopilot" width="176" height="74" style="display:block;width:176px;max-width:100%;height:74px;object-fit:contain"></a>
       <button class="new-chat" id="newConversation">＋ New conversation</button>
       <div class="rail-label">Conversations</div>
       <nav class="thread-list" id="conversationList" aria-label="Conversations"><div class="muted">Loading…</div></nav>
+      <div class="rail-account"><div class="account-avatar" id="accountAvatar">V</div><div><b id="accountName">Your account</b><small id="accountEmail">Signed in</small></div><a href="/logout?next=/login" id="chatLogout">Log out</a></div>
       <div class="rail-foot"><span class="status-dot"></span><span>Checking AI status</span><small>Loading authorized tools</small></div>
     </aside>
 
     <main class="chat-main">
       <header class="chat-header">
         <div><span class="eyebrow">CONVERSATIONAL WORKSPACE</span><h1 id="conversationTitle">New conversation</h1></div>
-        <nav class="mode-switch" aria-label="Workspace mode">
-          <a class="active" href="/autopilot-chat">Chat</a>
-          <a href="/autopilot-workspace">Visual</a>
-        </nav>
+        <div class="mode-switch" aria-label="Current workspace mode"><span class="active">Chat Mode</span></div>
       </header>
 
       <section class="context-strip" id="projectContext">
         <div class="context-icon">◇</div>
-        <div><b>No active project</b><small>Open a topic in UI Mode to connect its storyboard here.</small></div>
-        <a href="/autopilot-workspace">Open visual workspace →</a>
+        <div><b>No active project</b><small>Start and complete the full workflow in this chat.</small></div>
       </section>
 
       <section class="messages" id="messages" aria-live="polite">

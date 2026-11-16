@@ -14,11 +14,12 @@ class ChatHybridUiContractTests(unittest.TestCase):
         cls.review = (ROOT / "static" / "autopilot-review.html").read_text(encoding="utf-8")
         cls.hybrid = (ROOT / "static" / "autopilot-hybrid.js").read_text(encoding="utf-8")
 
-    def test_chat_has_separate_route_and_mode_switching(self):
+    def test_chat_has_separate_route_and_does_not_redirect_into_visual_mode(self):
         self.assertIn('@app.get("/autopilot-chat")', self.app)
         self.assertIn('autopilot-chat.html', self.app)
-        self.assertIn('/autopilot-review?mode=hybrid', self.chat_html)
-        self.assertIn('/autopilot-review', self.chat_html)
+        self.assertIn('Chat Mode', self.chat_html)
+        self.assertNotIn('Open visual workspace', self.chat_html)
+        self.assertNotIn('Open canvas', self.chat_js)
 
     def test_chat_uses_real_persistence_and_policy_controlled_ai(self):
         self.assertIn("/api/conversations", self.chat_js)
@@ -27,6 +28,12 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn("Provider costs and publishing require approval", self.chat_html)
         self.assertIn("/respond", self.chat_js)
         self.assertNotIn("tool-executions/propose", self.chat_js)
+
+    def test_chat_has_its_own_account_and_logout_controls(self):
+        self.assertIn('/api/autopilot/brand-profile', self.chat_js)
+        self.assertIn('id="accountName"', self.chat_html)
+        self.assertIn('href="/logout?next=/login"', self.chat_html)
+        self.assertIn('id="chatLogout"', self.chat_html)
 
     def test_hybrid_is_loaded_without_replacing_existing_ui(self):
         self.assertIn('/static/autopilot-product.js?v=15', self.review)

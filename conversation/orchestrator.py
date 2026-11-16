@@ -11,13 +11,15 @@ import httpx
 
 from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_growth import growth_dashboard
-from autopilot_intelligence import generate_concepts, get_brand_profile, list_opportunities, rank_opportunities
+from autopilot_intelligence import apply_creative_brief, generate_concepts, get_brand_profile, get_concept, list_opportunities, rank_opportunities
 from conversation import MODEL_ORCHESTRATION_ENABLED
+from conversation.director import brand_seed_topics, director_turn
 from conversation.redaction import redact
 from conversation.registry import TOOL_REGISTRY
 from conversation.store import append_message, attach_project, complete_tool_execution, get_conversation, propose_tool_execution
 from conversation.tool_contracts import TOOL_DESCRIPTIONS, TOOL_SCHEMAS
-from hybrid_project_state import ensure_autopilot_project, get_project_context
+from hybrid_project_state import ensure_autopilot_project, get_project_context, revise_storyboard_scene
+from storyboard_plan import scene_patch
 from mcp_outline_client import get_hot_topics_from_mcp
 from viralizer_topic_source import fetch_v3_worldwide_topics
 
@@ -27,12 +29,14 @@ Use tools for customer or project facts; never invent trends, viral scores, publ
 Clearly distinguish live/provider data from simulated or unavailable data. Only take an action when the user asks for it.
 Provider-cost actions require an approval card. Publishing always requires the existing exact-content human approval UI; you cannot approve or publish.
 When a tool is blocked, explain the required human action. Keep answers practical and easy to understand.
-Guide one visible step at a time: choose source, choose topic, review three-scene storyboard, generate all three images, create video, approve exact post, publish, learn.
-After ranking opportunities, ask the customer to select one. After concept creation, present the storyboard and ask whether to generate all three images.
-When the customer says yes to all three images, call generate_keyframe once for each scene index 0, 1 and 2. Do not ask them to confirm each scene separately.
-After three keyframes exist, ask whether to create the video. If the user says create video, use these images, animate, proceed, confirm, or yes after image review, immediately call animate_scene once for each scene index 0, 1 and 2. Do not ask for confirmation in prose: the tool layer will render one grouped approval card.
-Never call generate_keyframe again after scenes 1, 2 and 3 have succeeded unless the user explicitly asks to regenerate an image.
-After all three animation results are complete, immediately call finalize_video for the same concept. Do not return to image generation.
+Guide one visible step at a time: choose source, choose topic, choose video length (5 to 60 seconds), review the storyboard, generate the images, create video, approve exact post, publish, learn.
+The customer may start with their own idea. A customer idea never requires a live trend or an existing opportunity ID. Ask the desired length if missing, then call create_from_idea with their exact idea. Clearly label it as customer-directed, not a live trend.
+After ranking opportunities, ask the customer to select one. After they select, ask the length unless already stated, then call create_concepts with duration_seconds. After concept creation, present the storyboard and ask whether to generate the images.
+The workflow context states how many scenes the storyboard has (N). When the customer says yes to the images, call generate_keyframe once for each scene index 0 to N-1 that still needs an image. Do not ask them to confirm each scene separately.
+After every scene has an image, ask whether to create the video. If the user says create video, use these images, animate, proceed, confirm, or yes after image review, immediately call animate_scene once for each scene index 0 to N-1. Do not ask for confirmation in prose: the tool layer will render one grouped approval card.
+To change a scene or the whole video, call revise_storyboard (free), then offer to regenerate ONLY the edited scenes' images. Never regenerate scenes the customer did not change.
+Never call generate_keyframe again for a scene that already has an image unless the user explicitly asks to regenerate it or the context says it needs a new image.
+After all scene animations are complete, immediately call finalize_video for the same concept. Do not return to image generation.
 Never expose internal registry names, project IDs, tool names, or implementation details to the customer."""
 
 
@@ -62,7 +66,7 @@ def _history(root: Path, customer_id: str, conversation: dict[str, Any]) -> list
         if message.get("role") == "tool":
             content = message.get("content") or {}
             output = content.get("output") or {}
-            if output.get("status") == "completed" and content.get("tool") in {"rank_opportunities", "create_concepts"}:
+            if output.get("status") == "completed" and content.get("tool") in {"rank_opportunities", "create_concepts", "create_from_idea"}:
                 result.append({
                     "role": "user",
                     "content": "Saved Viralizer workflow state (use these exact IDs; do not show IDs to the customer):\n"
@@ -92,6 +96,55 @@ def _history(root: Path, customer_id: str, conversation: dict[str, Any]) -> list
     return result
 
 
+def _discovery_fallback(root: Path, customer_id: str, limit: int, source: Any) -> dict[str, Any]:
+    """Never dead-end: reuse saved opportunities, else brand-grounded evergreen ideas. Always labeled honestly."""
+    saved = list_opportunities(root, customer_id, limit)
+    if saved:
+        topics = [dict(item.get("source") or {}, title=item.get("title"), topic=item.get("title"), category=item.get("category")) for item in saved]
+        return {"topics": topics[:limit], "provenance": {"data_source": "saved_fallback", "source": source, "provider_mode": "live", "is_simulated": False, "is_live_trend": False,
+                "note": "The live trend feed returned nothing right now, so these are your previously ranked opportunities. Say that clearly and offer to retry the live feed later."}}
+    seeds = brand_seed_topics(get_brand_profile(root, customer_id), limit)
+    return {"topics": seeds, "provenance": {"data_source": "brand_seed", "source": source, "provider_mode": "live", "is_simulated": False, "is_live_trend": False,
+            "note": "The live trend feed returned nothing right now. These are evergreen ideas built from the confirmed brand profile, not live trends. Say that clearly, then rank them."}}
+
+
+def _revise_storyboard(root: Path, customer_id: str, arguments: dict[str, Any], actor_id: str) -> dict[str, Any]:
+    """Apply per-scene or whole-video edits through the shared project revision history."""
+    concept_id = str(arguments.get("concept_id") or "").strip()
+    concept = get_concept(root, customer_id, concept_id)
+    if not concept:
+        raise ValueError("That storyboard was not found. Create a storyboard first.")
+    storyboard = (concept.get("content") or {}).get("storyboard") or []
+    style = str(arguments.get("style_direction") or "").strip()
+    edits = [dict(item) for item in (arguments.get("edits") or []) if isinstance(item, dict)]
+    if not edits and not style:
+        raise ValueError("Tell me what to change: a scene, or the overall style.")
+    targets: dict[int, dict[str, Any]] = {}
+    for edit in edits:
+        index = int(edit.get("scene_index", -1))
+        if not 0 <= index < len(storyboard):
+            raise ValueError(f"Scene {index + 1} does not exist. This storyboard has {len(storyboard)} scenes.")
+        targets[index] = edit
+    if style:
+        for index in range(len(storyboard)):
+            targets.setdefault(index, {"scene_index": index})
+    project = ensure_autopilot_project(root, customer_id, concept_id, actor_id)
+    revision, changed = int(project["revision"]), []
+    summary = " ".join(str(arguments.get("summary") or "Chat storyboard revision").split())[:480]
+    for index in sorted(targets):
+        edit = targets[index]
+        patch = scene_patch(storyboard[index], edit.get("narration"), edit.get("visual"), edit.get("motion"), style or None)
+        if not patch:
+            continue
+        result = revise_storyboard_scene(root, customer_id, str(project["id"]), index, revision, patch, "user_chat", actor_id, summary, "")
+        revision = int(result["project"]["revision"])
+        changed.append(index)
+    if not changed:
+        raise ValueError("Nothing changed. Describe the new narration, visual, motion or style.")
+    return {"concept": get_concept(root, customer_id, concept_id), "changed_scenes": changed, "stale_images": changed,
+            "project": {"id": project["id"], "revision": revision}}
+
+
 async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str, Any], conversation_id: str = "", actor_id: str = "") -> Any:
     if name == "get_brand_profile":
         return get_brand_profile(root, customer_id)
@@ -100,9 +153,42 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
     if name == "discover_topics":
         limit = max(1, min(25, int(arguments.get("limit") or 10)))
         topics, source = await fetch_v3_worldwide_topics(limit)
-        return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
+        if topics:
+            return {"topics": topics[:limit], "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False}}
+        return _discovery_fallback(root, customer_id, limit, source)
     if name == "rank_opportunities":
         return {"opportunities": rank_opportunities(root, customer_id, {"topics": arguments.get("topics") or [], "limit": arguments.get("limit") or 5})}
+    if name == "create_from_idea":
+        idea = " ".join(str(arguments.get("idea") or "").split())[:500]
+        if len(idea) < 3:
+            raise ValueError("Tell me the video idea you want to create.")
+        ranked = rank_opportunities(root, customer_id, {"topics": [{
+            "topic": idea, "title": idea, "category": "Customer idea",
+            "summary": "Customer-directed creative brief.",
+            "why_it_matters": str(arguments.get("goal") or "Create the customer's requested video.")[:500],
+            "source_type": "user_idea", "user_directed": True, "is_live_trend": False,
+        }], "limit": 1})
+        if not ranked:
+            raise ValueError("The idea could not be saved. Confirm the Brand Profile, then try again.")
+        opportunity = ranked[0]
+        concepts = generate_concepts(root, customer_id, {
+            "opportunity_id": opportunity["id"], "platform": arguments.get("platform") or "instagram",
+            "goal": arguments.get("cta") or "", "duration_seconds": arguments.get("duration_seconds") or 15,
+        })
+        concepts = apply_creative_brief(root, customer_id, concepts, {
+            "narration_mode": arguments.get("narration_mode") or "ai",
+            "narration_text": arguments.get("narration_text") or "",
+            "visual_style": arguments.get("visual_style") or "",
+            "aspect_ratio": arguments.get("aspect_ratio") or "9:16",
+        })
+        project = None
+        if concepts:
+            project = ensure_autopilot_project(root, customer_id, str(concepts[0]["id"]), actor_id)
+            if conversation_id:
+                attach_project(root, customer_id, conversation_id, str(project["id"]))
+        return {"opportunity": opportunity, "concepts": concepts,
+                "provenance": {"source_type": "user_idea", "is_live_trend": False, "customer_directed": True},
+                "project": {"id": project["id"], "revision": project["revision"]} if project else None}
     if name == "create_concepts":
         requested = str(arguments.get("opportunity_id") or "").strip()
         opportunities = list_opportunities(root, customer_id, 25)
@@ -116,16 +202,27 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
                 opportunity_id = str(matched["id"])
         if not opportunity_id or not any(str(item.get("id")) == opportunity_id for item in opportunities):
             raise ValueError("Select one of the displayed opportunities before creating the storyboard.")
-        concepts = generate_concepts(root, customer_id, {"opportunity_id": opportunity_id, "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or ""})
+        concepts = generate_concepts(root, customer_id, {"opportunity_id": opportunity_id, "platform": arguments.get("platform") or "instagram", "goal": arguments.get("goal") or "", "duration_seconds": arguments.get("duration_seconds") or 15})
         project = None
         if concepts:
             project = ensure_autopilot_project(root, customer_id, str(concepts[0]["id"]), actor_id)
             if conversation_id:
                 attach_project(root, customer_id, conversation_id, str(project["id"]))
         return {"concepts": concepts, "project": {"id": project["id"], "revision": project["revision"]} if project else None}
+    if name == "revise_storyboard":
+        return _revise_storyboard(root, customer_id, arguments, actor_id)
     if name == "get_growth_report":
         return growth_dashboard(root, customer_id)
     raise ValueError("This action requires its dedicated approved workflow.")
+
+
+def _next_suggestions(root: Path, customer_id: str, conversation_id: str, brand_confirmed: bool, latest_text: str) -> list[dict[str, str]]:
+    """Quick replies for the state AFTER this turn's tools ran."""
+    try:
+        fresh = get_conversation(root, customer_id, conversation_id)
+        return director_turn(fresh.get("messages") or [], brand_confirmed, latest_text)["suggestions"][:4]
+    except Exception:
+        return []
 
 
 async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: str, message_id: str = "", cost_confirmed: bool = False,
@@ -137,11 +234,80 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
         raise ValueError("The user message was not found in this conversation.")
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     model = os.getenv("OPENAI_CONVERSATION_MODEL", "").strip() or os.getenv("OPENAI_MODEL", "").strip() or "gpt-4.1-mini"
+    brand = get_brand_profile(root, customer_id)
+    latest_text = ""
+    for item in reversed(conversation.get("messages") or []):
+        if item.get("role") == "user" and (not message_id or item.get("id") == message_id):
+            latest_text = str((item.get("content") or {}).get("text") or (item.get("content") or {}).get("message") or "")
+            break
+    directed = director_turn(conversation.get("messages") or [], bool(brand and brand.get("status") == "confirmed"), latest_text)
+    instructions = SYSTEM_INSTRUCTIONS + "\n\n" + directed["context"]
+    directed_state = directed["state"]
+    if directed_state.stage == "final_review" and directed_state.publication_step in {"platform", "caption", "timing"}:
+        copy = {
+            "platform": "Your final video is approved. Where should I publish it? Choose one of your connected accounts.",
+            "caption": f"{directed_state.publish_platform.title()} selected. What caption should I use? You can write it, or I can create one from the approved video.",
+            "timing": "When should I publish it—now or at a specific date and time? I’ll show the exact post for one final approval before anything is sent.",
+        }
+        suggestions = directed["suggestions"]
+        message = append_message(root, customer_id, conversation_id, "assistant", {
+            "type": "text", "text": copy[directed_state.publication_step],
+            "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
+            "stage": directed_state.stage, "intent": "prepare_publication",
+            "flow_step": directed_state.publication_step,
+        })
+        return {"message": message, "approval_cards": [], "model": "deterministic",
+                "provider": "viralizer_workflow", "suggestions": suggestions}
+    if directed["intent"] == "create_from_idea" and directed_state.idea_mode_requested:
+        step_copy = {
+            "idea": "Describe the video idea in your own words. I’ll keep it exactly as your creative brief.",
+            "duration": "How long should the video be?",
+            "narration": "How should narration work for this video?",
+            "style": "What visual style should I use?",
+            "platform": "Which platform and video size should I create it for?",
+        }
+        if directed_state.brief_step != "ready":
+            suggestions = directed["suggestions"]
+            message = append_message(root, customer_id, conversation_id, "assistant", {
+                "type": "text",
+                "text": step_copy[directed_state.brief_step],
+                "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
+                "stage": directed_state.stage, "intent": directed["intent"], "flow_step": directed_state.brief_step,
+            })
+            return {"message": message, "approval_cards": [], "model": "deterministic",
+                    "provider": "viralizer_workflow", "suggestions": suggestions}
+        call_id = f"idea_{uuid.uuid4().hex}"
+        narration = (directed_state.narration_text if directed_state.narration_mode == "custom"
+                     else "Write narration according to the content" if directed_state.narration_mode == "ai"
+                     else "No narration or voiceover")
+        creative_goal = (f"Narration: {narration}. Visual style: {directed_state.visual_style}. "
+                         f"Format: {directed_state.target_platform} {directed_state.aspect_ratio}.")
+        arguments = {"idea": directed_state.custom_idea, "duration_seconds": directed_state.requested_duration,
+                     "platform": directed_state.target_platform, "goal": creative_goal,
+                     "narration_mode": directed_state.narration_mode, "narration_text": directed_state.narration_text,
+                     "visual_style": directed_state.visual_style, "aspect_ratio": directed_state.aspect_ratio}
+        idem = hashlib.sha256(f"{conversation_id}:{directed_state.custom_idea}:{directed_state.requested_duration}".encode()).hexdigest()
+        execution = propose_tool_execution(root, customer_id, conversation_id, "create_from_idea", arguments,
+                                           idem, call_id, message_id=message_id, cost_confirmed=False)
+        result = redact(await _execute(root, customer_id, "create_from_idea", arguments, conversation_id, actor_id))
+        complete_tool_execution(root, customer_id, execution["id"], result=result)
+        tool_output = {"status": "completed", "tool": "create_from_idea", "data": result}
+        append_message(root, customer_id, conversation_id, "tool", {
+            "tool": "create_from_idea", "call_id": call_id, "output": tool_output})
+        suggestions = _next_suggestions(root, customer_id, conversation_id,
+                                        bool(brand and brand.get("status") == "confirmed"), latest_text)
+        message = append_message(root, customer_id, conversation_id, "assistant", {
+            "type": "text", "text": "I created the complete storyboard from your brief. Review every scene, hook, narration, visual and motion below. You can edit one field, one scene, or the whole story before generating images.",
+            "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
+            "stage": "storyboard_review", "intent": directed["intent"],
+        })
+        return {"message": message, "approval_cards": [], "model": "deterministic",
+                "provider": "viralizer_workflow", "suggestions": suggestions}
     owns_client, http = client is None, client or httpx.AsyncClient(timeout=60.0)
     approvals: list[dict[str, Any]] = []
     response_id = ""
     try:
-        body: dict[str, Any] = {"model": model, "instructions": SYSTEM_INSTRUCTIONS, "input": _history(root, customer_id, conversation), "tools": tool_definitions(), "max_output_tokens": 1400}
+        body: dict[str, Any] = {"model": model, "instructions": instructions, "input": _history(root, customer_id, conversation), "tools": tool_definitions(), "max_output_tokens": 1400}
         for _ in range(4):
             response = await http.post("https://api.openai.com/v1/responses", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=body)
             if response.status_code >= 400:
@@ -150,8 +316,9 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
             calls = _function_calls(payload)
             if not calls:
                 text = _output_text(payload) or "I could not produce a response. Please try again."
-                message = append_message(root, customer_id, conversation_id, "assistant", {"type": "text", "text": text, "provider": "openai", "model": model, "response_id": response_id})
-                return {"message": message, "approval_cards": approvals, "model": model, "provider": "openai"}
+                suggestions = _next_suggestions(root, customer_id, conversation_id, bool(brand and brand.get("status") == "confirmed"), latest_text)
+                message = append_message(root, customer_id, conversation_id, "assistant", {"type": "text", "text": text, "provider": "openai", "model": model, "response_id": response_id, "suggestions": suggestions, "stage": directed["state"].stage, "intent": directed["intent"]})
+                return {"message": message, "approval_cards": approvals, "model": model, "provider": "openai", "suggestions": suggestions}
             outputs = []
             for call in calls:
                 name, call_id = str(call.get("name") or ""), str(call.get("call_id") or uuid.uuid4().hex)
@@ -181,7 +348,7 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
                     approvals.append(card); tool_output = {"status": "approval_required", **card}
                 append_message(root, customer_id, conversation_id, "tool", {"tool": name, "call_id": call_id, "output": tool_output})
                 outputs.append({"type": "function_call_output", "call_id": call_id, "output": json.dumps(tool_output, ensure_ascii=False, default=str)[:60000]})
-            body = {"model": model, "instructions": SYSTEM_INSTRUCTIONS, "previous_response_id": response_id, "input": outputs, "tools": tool_definitions(), "max_output_tokens": 1400}
+            body = {"model": model, "instructions": instructions, "previous_response_id": response_id, "input": outputs, "tools": tool_definitions(), "max_output_tokens": 1400}
         message = append_message(root, customer_id, conversation_id, "assistant", {"type": "text", "text": "I reached the action limit for one turn. Review the completed steps and continue in a new message.", "provider": "openai", "model": model})
         return {"message": message, "approval_cards": approvals, "model": model, "provider": "openai"}
     finally:

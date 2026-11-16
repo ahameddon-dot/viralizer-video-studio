@@ -112,6 +112,7 @@ class ConceptGenerateRequest(BaseModel):
     opportunity_id: str = Field(min_length=1, max_length=64)
     platform: Literal["youtube_shorts", "instagram", "tiktok", "linkedin"] = "youtube_shorts"
     goal: str = Field(default="", max_length=300)
+    duration_seconds: int = Field(default=15, ge=5, le=60)
 
 
 class AssetVersionCreate(BaseModel):

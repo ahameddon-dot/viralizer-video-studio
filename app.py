@@ -513,6 +513,13 @@ def configured_admin_password() -> str:
     return os.getenv("ADMIN_PASSWORD", "").strip()
 
 
+def _provider_relay_request_is_authorized(request: Request) -> bool:
+    """Validate the scoped server-to-server secret used only by provider relay endpoints."""
+    expected = os.getenv("AUTOPILOT_PROVIDER_RELAY_SECRET", "").strip()
+    received = request.headers.get("X-Viralizer-Relay-Secret", "").strip()
+    return bool(expected and received and hmac.compare_digest(received.encode(), expected.encode()))
+
+
 def admin_access_token(password: str) -> str:
     return hmac.new(password.encode("utf-8"), b"viralizer-release-dashboard", hashlib.sha256).hexdigest()
 
@@ -581,7 +588,13 @@ async def require_password(request: Request, call_next):
     # This route authenticates with a scoped developer API key in the endpoint.
     # Do not require an interactive browser session as well.
     is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
-    is_provider_relay = request.url.path == "/api/autopilot/provider-relay/publications"
+    relay_paths = {
+        "/api/autopilot/provider-relay/publications",
+        "/api/autopilot/post-for-me/connection-url",
+        "/api/autopilot/post-for-me/accounts",
+        "/api/autopilot/provider-readiness",
+    }
+    is_provider_relay = request.url.path in relay_paths and _provider_relay_request_is_authorized(request)
     # Keep the standalone stakeholder preview independent from the legacy
     # Video Studio login while developing on this machine. Host checking makes
     # this exception local-only; deployed environments retain normal auth.
@@ -669,7 +682,7 @@ async def login_page(request: Request, error: str = "", email_mode: str = ""):
     google_button = '<a class="auth-button google" href="/auth/google?next=/autopilot-workspace"><span>G</span> Continue with Google</a>' if google_configured() else '<button class="auth-button unavailable" type="button" disabled><span>G</span><b>Google sign-in</b><small>Setup required</small></button>'
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Welcome to Viralizer AI</title><style>
+<title>Welcome to Viralizer Autopilot</title><style>.brand{{display:block!important}}.brand-mark{{display:block!important;width:180px!important;height:120px!important;border-radius:14px!important;background:#fff url('/static/viralizer-autopilot-logo.png') center/contain no-repeat!important;color:transparent!important;box-shadow:none!important}}.brand>div{{display:none!important}}</style><style>
 *{{box-sizing:border-box}}:root{{--violet:#6f35f2;--ink:#11152a;--muted:#6f7487;--line:#e7e4ef}}html,body{{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#f7f7fb;color:var(--ink)}}body{{min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(circle at 9% 8%,#efe9ff 0,transparent 32%),#f8f8fc}}.shell{{width:min(1120px,100%);min-height:680px;display:grid;grid-template-columns:minmax(420px,.92fr) minmax(480px,1.08fr);overflow:hidden;border:1px solid #e6e2ef;border-radius:30px;background:#fff;box-shadow:0 36px 100px rgba(33,23,73,.14)}}.login-panel{{padding:42px 64px;display:flex;flex-direction:column}}.brand{{display:flex;align-items:center;gap:11px;font-size:20px;font-weight:900;letter-spacing:-.5px}}.brand-mark{{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,#8a4cff,#5925dd);color:#fff;box-shadow:0 10px 25px #7132ef45}}.brand small{{display:block;margin-top:1px;color:#8b8fa0;font-size:10px;font-weight:650;letter-spacing:0}}.welcome{{margin:auto 0}}.eyebrow{{color:var(--violet);font-size:11px;font-weight:900;letter-spacing:1.4px}}h1{{max-width:470px;margin:13px 0 12px;font-size:clamp(38px,4.5vw,54px);line-height:1.01;letter-spacing:-2.4px}}.intro{{max-width:430px;margin:0 0 22px;color:var(--muted);font-size:15px;line-height:1.6}}.auth-stack{{display:grid;gap:10px}}.auth-button{{min-height:52px;width:100%;border:1px solid #dedbe7;border-radius:13px;background:#fff;color:#171927;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 16px;font:inherit;font-weight:820;text-decoration:none;cursor:pointer;transition:.2s}}.auth-button:hover{{border-color:#b9a5ed;transform:translateY(-1px);box-shadow:0 8px 24px #38217c12}}.auth-button span{{width:24px;font-size:19px;font-weight:900}}.auth-button.google span{{color:#4285f4}}.auth-button.apple span{{color:#111;font-size:24px}}.auth-button.email{{background:#15182c;color:#fff;border-color:#15182c}}.auth-button small{{margin-left:auto;color:#9699a7;font-size:9px}}.auth-button.unavailable{{cursor:not-allowed;opacity:.58}}.auth-button.unavailable:hover{{transform:none;box-shadow:none}}.divider{{display:flex;align-items:center;gap:12px;margin:13px 0;color:#a0a3af;font-size:11px}}.divider:before,.divider:after{{content:"";height:1px;flex:1;background:#ebe9f0}}.email-form{{display:none;padding-top:2px}}.email-form.open{{display:block}}.email-tabs{{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:11px;background:#f2f1f6}}.email-tabs button{{min-height:35px;border:0;border-radius:8px;background:transparent;color:#73788a;font-size:11px;font-weight:820;cursor:pointer}}.email-tabs button.active{{background:#fff;color:#202337;box-shadow:0 3px 10px #26174d12}}.form-hint{{display:block;margin-top:7px;color:#8b90a0;font-size:9px}}label{{display:block;margin:10px 0 5px;font-size:11px;font-weight:800}}input{{width:100%;padding:12px 14px;border:1px solid #dcd9e5;border-radius:11px;background:#fff;color:#171927;font-size:14px;outline:none}}input:focus{{border-color:#8a5cf1;box-shadow:0 0 0 4px #7641ef16}}.submit{{width:100%;margin-top:13px;padding:13px;border:0;border-radius:12px;background:linear-gradient(135deg,#6c31ed,#984bf5);color:#fff;font-size:14px;font-weight:850;cursor:pointer}}.error{{margin:0 0 13px;padding:10px 12px;border-radius:10px;background:#fff0f1;color:#a93445;font-size:12px}}.security{{margin:16px 0 0;color:#9296a5;font-size:10px;text-align:center}}.visual-panel{{position:relative;min-height:680px;overflow:hidden;background:#19152d}}.visual-panel>img{{width:100%;height:100%;object-fit:cover;filter:saturate(.95) contrast(1.03)}}.visual-panel:after{{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(22,13,55,.08),rgba(25,16,54,.72))}}.visual-copy{{position:absolute;z-index:2;left:42px;right:42px;bottom:42px;color:#fff}}.visual-copy span{{display:inline-flex;padding:7px 10px;border:1px solid #ffffff4a;border-radius:999px;background:#ffffff1c;backdrop-filter:blur(8px);font-size:9px;font-weight:900;letter-spacing:1px}}.visual-copy h2{{max-width:520px;margin:15px 0 10px;font-size:34px;line-height:1.06;letter-spacing:-1.3px}}.visual-copy p{{max-width:460px;margin:0;color:#e7e2f3;font-size:13px;line-height:1.55}}@media(max-width:880px){{body{{padding:0}}.shell{{min-height:100vh;border:0;border-radius:0;grid-template-columns:1fr}}.visual-panel{{display:none}}.login-panel{{padding:35px 24px}}.welcome{{width:min(520px,100%);margin:auto}}}}
 </style></head><body><main class="shell"><section class="login-panel"><div class="brand"><span class="brand-mark">V.</span><div>Viralizer AI<small>Growth Autopilot</small></div></div><div class="welcome"><span class="eyebrow">WELCOME TO VIRALIZER</span><h1>Create content people stop for.</h1><p class="intro">Your AI growth team discovers the right opportunity, creates the video, waits for your approval, publishes, and learns.</p>{message}<div class="auth-stack">{google_button}<button class="auth-button apple unavailable" type="button" disabled><span></span><b>Continue with Apple</b><small>Setup required</small></button><button class="auth-button email" id="showEmail" type="button"><span>✉</span>Continue with email</button></div><div class="divider">secure account access</div><form class="{email_form_class}" id="emailForm" method="post" action="/auth/email"><div class="email-tabs"><button type="button" id="signInTab">Sign in</button><button type="button" id="signUpTab">Create account</button></div><input type="hidden" name="mode" id="emailMode" value="{selected_email_mode}"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" placeholder="you@company.com" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="10" required><small class="form-hint" id="passwordHint">Use your personal account password.</small><button class="submit" id="emailSubmit" type="submit">Sign in →</button></form><p class="security">Protected sign-in · Passwords are salted and hashed · Human approval is required before publishing</p></div></section><section class="visual-panel"><img src="/static/category-images/technology.webp" alt="Creative technology workspace"><div class="visual-copy"><span>DISCOVER → CREATE → GROW</span><h2>One clear workflow. Your AI team does the heavy lifting.</h2><p>Personalized trends, visual storytelling, video production, publishing approval, and growth insights in one workspace.</p></div></section></main><script>const form=document.getElementById('emailForm'),show=document.getElementById('showEmail'),mode=document.getElementById('emailMode'),signin=document.getElementById('signInTab'),signup=document.getElementById('signUpTab'),submit=document.getElementById('emailSubmit'),hint=document.getElementById('passwordHint');function setMode(value){{mode.value=value;signin.classList.toggle('active',value==='signin');signup.classList.toggle('active',value==='signup');submit.textContent=value==='signup'?'Create my account →':'Sign in →';hint.textContent=value==='signup'?'Create at least 10 characters. Your password is never stored in plain text.':'Use the password you created for this account.';}}show.addEventListener('click',()=>{{form.classList.toggle('open');show.innerHTML=form.classList.contains('open')?'<span>✉</span>Hide email options':'<span>✉</span>Continue with email';}});signin.addEventListener('click',()=>setMode('signin'));signup.addEventListener('click',()=>setMode('signup'));setMode(mode.value);</script></body></html>""")
 
@@ -2401,7 +2414,7 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
             if not concept:
                 raise ValueError("Creative concept was not found.")
             result = {"storyboard": concept.get("content", {}).get("storyboard") or [], "concept_id": concept_id}
-            summary = "The storyboard is ready. Review the three scenes here or open the visual canvas."
+            summary = "The storyboard is ready. Review the scenes here or open the visual canvas."
         elif name == "generate_keyframe":
             scene_index = int(arguments.get("scene_index") or 0)
             result = await generate_autopilot_keyframe(request, concept_id, KeyframeGenerateRequest(
@@ -2897,6 +2910,8 @@ async def animate_autopilot_keyframe(request: Request, concept_id: str, payload:
     if payload.scene_index >= len(scenes) or not versions:
         raise HTTPException(409, "Generate the scene keyframe before animation.")
     latest = versions[-1]
+    if latest.get("stale"):
+        raise HTTPException(409, "This scene was edited after its image was made. Regenerate the image before animating it.")
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(latest.get("filename") or "")
     if not path.is_file():
         await restore_object_file(path, f"autopilot_keyframes/{customer_id}/{concept_id}/{path.name}")
@@ -2962,20 +2977,22 @@ async def autopilot_keyframe_animation_video(request: Request, concept_id: str, 
 
 @app.post("/api/autopilot/concepts/{concept_id}/finalize")
 async def finalize_autopilot_concept(request: Request, concept_id: str, payload: AutopilotDemoAssetRequest):
-    """Assemble the three approved PixVerse clips into the immutable review asset."""
+    """Assemble the approved PixVerse clips (one per scene) into the immutable review asset."""
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
     concept = get_concept(ROOT, customer_id, concept_id)
     if not concept or concept_id != payload.concept_id:
         raise HTTPException(404, "Creative concept was not found.")
     storyboard = concept["content"].get("storyboard") or []
-    if len(storyboard) != 3:
-        raise HTTPException(409, "The approved 15-second storyboard must contain exactly three scenes.")
+    if not 1 <= len(storyboard) <= 12:
+        raise HTTPException(409, "The approved storyboard must contain between 1 and 12 five-second scenes.")
     clip_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_clips" / customer_id / concept_id
     clip_root.mkdir(parents=True, exist_ok=True)
     clips: list[Path] = []
     job_ids: list[str] = []
-    for scene_index in range(3):
+    for scene_index in range(len(storyboard)):
         versions = (concept["content"].get("keyframes") or {}).get(str(scene_index)) or []
+        if versions and versions[-1].get("stale"):
+            raise HTTPException(409, f"Scene {scene_index + 1} was edited after its image was made. Regenerate its image and clip first.")
         animation = (versions[-1].get("animation") or {}) if versions else {}
         job_id = str(animation.get("job_id") or "")
         provider_url = str(animation.get("provider_video_url") or "")
@@ -3006,7 +3023,7 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
         )
         if completed.returncode or not output.is_file():
             output.unlink(missing_ok=True)
-            raise HTTPException(502, "The three PixVerse clips could not be assembled.")
+            raise HTTPException(502, "The PixVerse clips could not be assembled.")
         try:
             await upload_object_file(output, f"finished_videos/{filename}", "video/mp4")
         except ObjectStoreError:
@@ -3021,7 +3038,7 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     try:
         asset = create_asset_version(ROOT, customer_id, {
             **payload.model_dump(), "media_url": media_url, "media_sha256": digest.hexdigest(),
-            "duration_seconds": 15, "aspect_ratio": "9:16",
+            "duration_seconds": len(storyboard) * 5, "aspect_ratio": "9:16",
             "qc": {"duration_valid": True, "aspect_ratio_valid": True, "media_available": True,
                    "provider": "pixverse", "scene_job_ids": job_ids},
         })
@@ -3305,7 +3322,8 @@ class _PostForMeRelayAdapter:
 
 @app.post("/api/autopilot/post-for-me/connection-url")
 async def autopilot_post_for_me_connection_url(request: Request, payload: PostForMeConnectionRequest):
-    user = autopilot_user(request)
+    user = ({"sub": "workspace-owner", "email": "provider-relay", "name": "Provider relay"}
+            if _provider_relay_request_is_authorized(request) else autopilot_user(request))
     parsed = urlparse(payload.redirect_url)
     if parsed.scheme not in {"https", "http"} or (parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost"}):
         raise HTTPException(422, "Redirect URL must use HTTPS, except for localhost development.")
@@ -3330,7 +3348,8 @@ async def autopilot_post_for_me_connection_url(request: Request, payload: PostFo
 
 @app.get("/api/autopilot/post-for-me/accounts")
 async def autopilot_post_for_me_accounts(request: Request, platform: str = ""):
-    user = autopilot_user(request)
+    user = ({"sub": "workspace-owner", "email": "provider-relay", "name": "Provider relay"}
+            if _provider_relay_request_is_authorized(request) else autopilot_user(request))
     if platform and platform not in {"instagram", "tiktok", "youtube", "linkedin"}:
         raise HTTPException(422, "Unsupported social platform.")
     proxy_url = _post_for_me_proxy_url()
@@ -3501,7 +3520,8 @@ async def read_autopilot_notification(request: Request, notification_id: str, di
 
 @app.get("/api/autopilot/provider-readiness")
 async def autopilot_provider_readiness(request: Request):
-    autopilot_user(request)
+    if not _provider_relay_request_is_authorized(request):
+        autopilot_user(request)
     readiness = provider_readiness()
     if _post_for_me_proxy_url():
         try:

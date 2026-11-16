@@ -125,11 +125,17 @@ def _mcp_config() -> tuple[str, dict[str, str]]:
     if not url:
         raise MCPOutlineError("MCP_SERVER_URL must be configured in .env.")
     headers: dict[str, str] = {}
-    api_key = os.getenv("MCP_API_KEY", "").strip()
+    # Internal/unmetered Viralizer access uses X-API-Key instead of OAuth.
+    # Keep MCP_API_KEY as a backwards-compatible alias, but prefer the
+    # explicit service-scoped secret name used in Render.
+    api_key = (
+        os.getenv("VIRALIZER_MCP_API_KEY", "").strip()
+        or os.getenv("MCP_API_KEY", "").strip()
+    )
     token = os.getenv("MCP_AUTH_TOKEN", "").strip()
     if api_key:
         headers["X-API-Key"] = api_key
-    if token:
+    elif token:
         headers["Authorization"] = f"Bearer {token}"
     return url, headers
 
