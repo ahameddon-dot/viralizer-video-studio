@@ -24,6 +24,7 @@ from hybrid_project_state import ensure_autopilot_project, get_project_context, 
 from storyboard_plan import scene_patch
 from mcp_outline_client import MCPOutlineError, get_hot_topics_from_mcp
 from creatorthon_store import get_cached_category_topics, list_cached_category_topics
+from global_sources import build_category_discovery_queries, discover_category_topics, discover_global_sources
 from viralizer_topic_source import fetch_v3_worldwide_topics
 
 
@@ -211,8 +212,21 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
             try:
                 topics, source = await fetch_v3_worldwide_topics(50 if category else limit, category=category)
             except MCPOutlineError as exc:
-                topics, source = [], "Viralizer V3 temporarily unavailable"
-                provider_error = " ".join(str(exc).split())[:240]
+                # V3 is allowed to fail without dead-ending Chat Mode. Continue
+                # with current public reporting, clearly labelled without a
+                # verified V3 Viral Rank, and keep the same strict category gate.
+                if category:
+                    queries = build_category_discovery_queries(category)
+                    topics = await discover_category_topics(queries, limit=max(limit * 3, 30), fast=True, enrich=False)
+                    for item in topics:
+                        item["category"] = category
+                    source = f"Live public sources · {category}"
+                else:
+                    topics = await discover_global_sources()
+                    source = "Live worldwide public sources"
+                if not topics:
+                    source = "Viralizer V3 and public trend sources temporarily unavailable"
+                    provider_error = " ".join(str(exc).split())[:240]
         decorated = []
         for raw in topics:
             item = dict(raw)
@@ -229,7 +243,8 @@ async def _execute(root: Path, customer_id: str, name: str, arguments: dict[str,
             decorated.append(item)
             if len(decorated) >= limit:
                 break
-        discovery = ({"topics": decorated, "provenance": {"data_source": "viralizer_v3", "source": source, "provider_mode": "live", "is_simulated": False,
+        data_source = "viralizer_v3" if source.startswith("Viralizer V3") else "public_live_sources"
+        discovery = ({"topics": decorated, "provenance": {"data_source": data_source, "source": source, "provider_mode": "live", "is_simulated": False,
                                                           "scope": scope, "category": category, "profile_matched": scope == "profile"}}
                      if topics else _discovery_fallback(root, customer_id, limit, source))
         if not topics and 'provider_error' in locals():
@@ -364,7 +379,12 @@ async def _deterministic_discovery_turn(root: Path, customer_id: str, conversati
     opportunities = result.get("opportunities") or []
     if opportunities:
         suggestions = _next_suggestions(root, customer_id, conversation_id, True, label)
-        text = f"I found {len(opportunities)} verified {label} opportunities from Viralizer V3. Choose one topic below to create your video."
+        provenance = result.get("provenance") or {}
+        if provenance.get("data_source") == "viralizer_v3":
+            text = f"I found {len(opportunities)} verified {label} opportunities from Viralizer V3. Choose one topic below to create your video."
+        else:
+            text = (f"Viralizer V3 is unavailable, so I found {len(opportunities)} current {label} opportunities from live public sources instead. "
+                    "They are real current topics, but V3 Viral Rank is unavailable. Choose one topic below to create your video.")
         intent = "verified_trends"
     else:
         suggestions = _no_match_suggestions()

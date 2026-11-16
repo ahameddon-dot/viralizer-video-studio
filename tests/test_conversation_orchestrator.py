@@ -221,18 +221,30 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual(["Restaurant kitchens adopt new food safety rules"], [item["topic"] for item in result["topics"]])
         fetch.assert_not_called()
 
-    def test_v3_failure_returns_safe_fallback_choices_instead_of_chat_error(self):
+    def test_v3_failure_returns_live_public_topics_instead_of_unavailable_chat(self):
+        save_brand_profile(self.root, "customer-1", {
+            "customer_type": "creator", "category": "Entertainment",
+            "offer": "Short-form creator storytelling", "audience": "Content creators",
+            "voice": ["clear"], "confirmed": True,
+        })
         message = append_message(self.root, "customer-1", self.thread["id"], "user", {
             "text": "Find profile-matched live trends and show them as opportunity cards with Viral Rank.",
         })
+        public_topics = [{
+            "topic": "Creators adopt new short-form storytelling formats",
+            "category": "Entertainment",
+            "summary": "A current creator-industry development.",
+            "source_url": "https://publisher.test/story",
+        }]
         with patch("conversation.orchestrator.MODEL_ORCHESTRATION_ENABLED", True), \
              patch("conversation.orchestrator.get_cached_category_topics", return_value=[]), \
              patch("conversation.orchestrator.list_cached_category_topics", return_value=[]), \
-             patch("conversation.orchestrator.fetch_v3_worldwide_topics", side_effect=MCPOutlineError("V3 topics API request failed")):
+             patch("conversation.orchestrator.fetch_v3_worldwide_topics", side_effect=MCPOutlineError("V3 topics API request failed")), \
+             patch("conversation.orchestrator.discover_category_topics", return_value=public_topics):
             result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", message["id"], client=FakeClient([])))
-        self.assertIn("temporarily unavailable", result["message"]["content"]["text"])
-        self.assertEqual(["Choose another category", "Show hottest worldwide", "Use my own idea"],
-                         [item["label"] for item in result["suggestions"]])
+        self.assertIn("live public sources", result["message"]["content"]["text"])
+        self.assertIn("V3 Viral Rank is unavailable", result["message"]["content"]["text"])
+        self.assertNotIn("temporarily unavailable", result["message"]["content"]["text"])
 
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
