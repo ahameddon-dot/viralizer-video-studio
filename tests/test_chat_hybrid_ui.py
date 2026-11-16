@@ -20,6 +20,20 @@ class ChatHybridUiContractTests(unittest.TestCase):
         self.assertIn('Chat Mode', self.chat_html)
         self.assertNotIn('Open visual workspace', self.chat_html)
         self.assertNotIn('Open canvas', self.chat_js)
+        self.assertNotIn('/autopilot-workspace?view=', self.chat_js)
+
+    def test_exact_publication_review_and_submit_remain_inside_chat(self):
+        self.assertIn('EXACT POST APPROVAL · CHAT MODE', self.chat_js)
+        self.assertIn('/api/autopilot/publications/approve', self.chat_js)
+        self.assertIn('/submit', self.chat_js)
+        self.assertIn('data-exact-approval', self.chat_js)
+        self.assertIn('publication-card', (ROOT / "static" / "autopilot-chat.css").read_text(encoding="utf-8"))
+
+    def test_latest_chat_stays_visible_after_media_layout_changes(self):
+        self.assertIn('function keepLatestVisible(force=false)', self.chat_js)
+        self.assertIn("media.addEventListener(event,()=>scrollToLatest(false)", self.chat_js)
+        self.assertIn("messages.addEventListener('scroll'", self.chat_js)
+        self.assertNotIn('messages.scrollTop=messages.scrollHeight', self.chat_js)
 
     def test_chat_uses_real_persistence_and_policy_controlled_ai(self):
         self.assertIn("/api/conversations", self.chat_js)
