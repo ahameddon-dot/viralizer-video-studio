@@ -108,6 +108,13 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("[3,6,12,24]", chat)
         self.assertIn("/track", chat)
 
+    def test_verified_relay_can_stream_only_the_customers_autopilot_video(self):
+        self.assertIn('request.url.path.startswith("/api/finished-video/viralizer-autopilot-")', self.app)
+        finished_route = self.app.split('@app.api_route("/api/finished-video/{filename}"', 1)[1][:1800]
+        self.assertIn('_provider_relay_request_is_authorized(request)', finished_route)
+        self.assertIn('WHERE customer_id=? AND media_url LIKE ?', finished_route)
+        self.assertIn('raise HTTPException(404, "Finished video not found.")', finished_route)
+
     def test_demo_completion_is_forbidden_for_real_social_destinations(self):
         self.assertIn('publication.get("destination_id") != "demo-social-account"', self.app)
         self.assertIn("Demo completion cannot modify a real social publication.", self.app)

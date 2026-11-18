@@ -593,6 +593,7 @@ async def require_password(request: Request, call_next):
         request.url.path.startswith("/api/autopilot/")
         or request.url.path == "/api/conversations"
         or request.url.path.startswith("/api/conversations/")
+        or request.url.path.startswith("/api/finished-video/viralizer-autopilot-")
     ) and _provider_relay_request_is_authorized(request)
     # Keep the standalone stakeholder preview independent from the legacy
     # Video Studio login while developing on this machine. Host checking makes
@@ -7089,6 +7090,16 @@ async def creatorthon_finish_job_status(request: Request, job_id: str):
 async def finished_video(request: Request, filename: str):
     if not re.fullmatch(r"viralizer-(?:(?:hybrid|autopilot)-)?[a-f0-9]{32}\.mp4", filename):
         raise HTTPException(404, "Finished video not found.")
+    if filename.startswith("viralizer-autopilot-") and _provider_relay_request_is_authorized(request):
+        customer_id = str(autopilot_user(request).get("sub", ""))
+        with _connect(ROOT) as db:
+            owned = db.execute(
+                """SELECT 1 FROM autopilot_asset_versions
+                WHERE customer_id=? AND media_url LIKE ? LIMIT 1""",
+                (customer_id, f"%/api/finished-video/{filename}"),
+            ).fetchone()
+        if not owned:
+            raise HTTPException(404, "Finished video not found.")
     try:
         return RedirectResponse(
             object_share_url(
