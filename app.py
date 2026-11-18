@@ -589,13 +589,11 @@ async def require_password(request: Request, call_next):
     # This route authenticates with a scoped developer API key in the endpoint.
     # Do not require an interactive browser session as well.
     is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
-    relay_paths = {
-        "/api/autopilot/provider-relay/publications",
-        "/api/autopilot/post-for-me/connection-url",
-        "/api/autopilot/post-for-me/accounts",
-        "/api/autopilot/provider-readiness",
-    }
-    is_provider_relay = request.url.path in relay_paths and _provider_relay_request_is_authorized(request)
+    is_provider_relay = (
+        request.url.path.startswith("/api/autopilot/")
+        or request.url.path == "/api/conversations"
+        or request.url.path.startswith("/api/conversations/")
+    ) and _provider_relay_request_is_authorized(request)
     # Keep the standalone stakeholder preview independent from the legacy
     # Video Studio login while developing on this machine. Host checking makes
     # this exception local-only; deployed environments retain normal auth.
@@ -1743,6 +1741,17 @@ def creatorthon_user(request: Request) -> dict[str, Any]:
 
 def autopilot_user(request: Request) -> dict[str, Any]:
     """Authenticate the standalone product independently of Creatorthon enrollment."""
+    if _provider_relay_request_is_authorized(request):
+        user_id = request.headers.get("X-Viralizer-User-Id", "").strip()
+        if not user_id:
+            raise HTTPException(401, "Verified relay identity required.")
+        email = request.headers.get("X-Viralizer-User-Email", "").strip()
+        return {
+            "sub": user_id,
+            "email": email,
+            "name": email or "Viralizer user",
+            "is_guest": request.headers.get("X-Viralizer-User-Guest", "") == "1",
+        }
     google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
     if google_user:
         return google_user
