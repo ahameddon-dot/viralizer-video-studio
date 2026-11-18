@@ -588,7 +588,10 @@ async def require_password(request: Request, call_next):
     is_public_demo = request.url.path in {"/demos", "/creatorthon/demos", "/api/creatorthon/demos"} or request.url.path.startswith("/api/creatorthon/demos/")
     # This route authenticates with a scoped developer API key in the endpoint.
     # Do not require an interactive browser session as well.
-    is_developer_topics_api = request.url.path == "/api/v1/hot-topics"
+    is_developer_topics_api = request.url.path in {
+        "/api/v1/hot-topics",
+        "/api/v1/topic-intelligence",
+    }
     is_provider_relay = (
         request.url.path.startswith("/api/autopilot/")
         or request.url.path == "/api/conversations"
@@ -5662,16 +5665,10 @@ async def _developer_worldwide_topics() -> tuple[list[dict[str, Any]], str]:
     cached = DEVELOPER_TOPIC_CACHE.get("worldwide")
     if cached and time.time() - cached[0] < ttl:
         return cached[1], cached[2]
-    try:
-        raw_topics = await get_hot_topics_from_mcp()
-        if raw_topics:
-            source = "Viralizer MCP"
-        else:
-            raw_topics = await discover_global_sources()
-            source = "Worldwide public sources"
-    except MCPOutlineError:
-        raw_topics = await discover_global_sources()
-        source = "Worldwide public sources"
+    # The developer API intentionally exposes Viralizer's independent worldwide
+    # discovery feed. MCP data is never queried or mixed into this contract.
+    raw_topics = await discover_global_sources()
+    source = "Viralizer Worldwide Intelligence"
     normalized = [_normalize_developer_topic(item, index) for index, item in enumerate(raw_topics, 1)]
     DEVELOPER_TOPIC_CACHE["worldwide"] = (time.time(), normalized, source)
     return normalized, source
@@ -5737,6 +5734,64 @@ async def developer_hot_topics(
         "total": len(filtered),
         "topics": page,
         "next_cursor": _encode_topic_cursor(next_offset) if next_offset < len(filtered) else None,
+    }
+
+
+@app.post("/api/v1/topic-intelligence", tags=["Developer Topics"])
+async def developer_topic_intelligence(
+    request: Request,
+    payload: CategoryIntelligenceRequest,
+    limit: int = 30,
+):
+    """Discover worldwide topic intelligence without using Viralizer MCP."""
+    _require_developer_topic_key(request)
+    limit = max(1, min(100, limit))
+    category = " ".join(payload.category.split()[:8])
+    super_category = " ".join(payload.super_category.split()[:10])
+    categories = [" ".join(value.split()[:8]) for value in payload.categories if value.strip()][:50]
+    keyword = " ".join(payload.keyword.split()[:8])
+    description = " ".join(payload.description.split()[:10])
+    lens = " ".join(payload.lens.split()[:4])
+    reputation = " ".join(payload.reputation.split()[:3])
+
+    if categories:
+        queries: list[str] = []
+        for start in range(0, len(categories), 4):
+            batch = categories[start:start + 4]
+            grouped = "(" + " OR ".join(f'\"{name}\"' for name in batch) + ")"
+            queries.extend(build_category_discovery_queries(grouped, keyword, description, lens, reputation))
+    else:
+        queries = build_category_discovery_queries(category, keyword, description, lens, reputation)
+
+    try:
+        raw_topics = await discover_category_topics(queries, limit)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Could not discover worldwide topic intelligence: {exc}") from exc
+
+    annotated = annotate_topic_taxonomy(
+        raw_topics,
+        categories or [category],
+        super_category or category,
+        lens,
+    )
+    topics = [_normalize_developer_topic(item, index) for index, item in enumerate(annotated, 1)]
+    return {
+        "api_version": "v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "Viralizer Worldwide Intelligence",
+        "scope": "worldwide",
+        "query": {
+            "category": category,
+            "super_category": super_category,
+            "categories": categories,
+            "keyword": keyword,
+            "description": description,
+            "lens": lens,
+            "reputation": reputation,
+        },
+        "queries": queries,
+        "count": len(topics),
+        "topics": topics,
     }
 
 

@@ -11,10 +11,12 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         viralizer_app.DEVELOPER_TOPIC_CACHE.clear()
 
-    async def request(self, path: str, key: str | None = "developer-test-key") -> httpx.Response:
+    async def request(self, path: str, key: str | None = "developer-test-key", json=None) -> httpx.Response:
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         transport = httpx.ASGITransport(app=viralizer_app.app)
         async with httpx.AsyncClient(transport=transport, base_url="https://test") as client:
+            if json is not None:
+                return await client.post(path, headers=headers, json=json)
             return await client.get(path, headers=headers)
 
     async def test_api_requires_configured_valid_key(self):
@@ -22,7 +24,7 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
             response = await self.request("/api/v1/hot-topics", key="wrong")
         self.assertEqual(response.status_code, 401)
 
-    async def test_api_normalizes_filters_and_paginates_mcp_topics(self):
+    async def test_api_normalizes_filters_and_paginates_worldwide_topics(self):
         raw = [
             {
                 "topic_id": "ai-1",
@@ -40,7 +42,7 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
         with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "developer-test-key"}, clear=False), patch(
-            "app.get_hot_topics_from_mcp", new=AsyncMock(return_value=raw)
+            "app.discover_global_sources", new=AsyncMock(return_value=raw)
         ):
             response = await self.request("/api/v1/hot-topics?category=Technology&country=US&limit=1")
 
@@ -74,7 +76,7 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(topics[0]["viral_rank"], 7)
         self.assertEqual(session.get.await_args.kwargs["headers"]["X-API-Key"], "server-only-key")
 
-    async def test_api_uses_public_source_fallback_with_same_contract(self):
+    async def test_api_uses_viralizer_worldwide_intelligence(self):
         raw = [{
             "topic": "Worldwide energy breakthrough",
             "category": "Energy",
@@ -85,17 +87,17 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
             "mentions": 3,
         }]
         with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "developer-test-key"}, clear=False), patch(
-            "app.get_hot_topics_from_mcp", new=AsyncMock(side_effect=viralizer_app.MCPOutlineError("offline"))
-        ), patch("app.discover_global_sources", new=AsyncMock(return_value=raw)):
+            "app.discover_global_sources", new=AsyncMock(return_value=raw)
+        ):
             response = await self.request("/api/v1/hot-topics?search=energy")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["source"], "Worldwide public sources")
+        self.assertEqual(payload["source"], "Viralizer Worldwide Intelligence")
         self.assertEqual(payload["topics"][0]["category"], "Energy")
         self.assertEqual(payload["topics"][0]["sources"][0]["url"], "https://publisher.test/story")
 
-    async def test_api_uses_public_source_fallback_when_mcp_returns_empty_payload(self):
+    async def test_api_never_queries_mcp(self):
         raw = [{
             "topic": "Restaurant menus shift toward regional ingredients",
             "category": "Food",
@@ -106,14 +108,40 @@ class DeveloperHotTopicsApiTests(unittest.IsolatedAsyncioTestCase):
             "mentions": 4,
         }]
         with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "developer-test-key"}, clear=False), patch(
-            "app.get_hot_topics_from_mcp", new=AsyncMock(return_value=[])
+            "app.get_hot_topics_from_mcp", new=AsyncMock(side_effect=AssertionError("MCP must not be called"))
         ), patch("app.discover_global_sources", new=AsyncMock(return_value=raw)) as discover:
             response = await self.request("/api/v1/hot-topics?category=Food")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["source"], "Worldwide public sources")
+        self.assertEqual(payload["source"], "Viralizer Worldwide Intelligence")
         self.assertEqual(payload["topics"][0]["category"], "Food")
+        discover.assert_awaited_once()
+
+    async def test_topic_intelligence_requires_key_and_returns_normalized_topics(self):
+        raw = [{
+            "topic": "Enterprise AI adoption accelerates",
+            "category": "Artificial Intelligence",
+            "summary": "Companies expand production AI deployments.",
+            "source_urls": ["https://publisher.test/ai"],
+            "source_platforms": ["Publisher"],
+        }]
+        payload = {
+            "category": "Artificial Intelligence",
+            "super_category": "Technology",
+            "keyword": "enterprise adoption",
+            "lens": "companies",
+            "reputation": "mixed",
+        }
+        with patch.dict(os.environ, {"VIRALIZER_TOPICS_API_KEYS": "developer-test-key"}, clear=False), patch(
+            "app.discover_category_topics", new=AsyncMock(return_value=raw)
+        ) as discover, patch("app.annotate_topic_taxonomy", side_effect=lambda items, *_: items):
+            response = await self.request("/api/v1/topic-intelligence?limit=20", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["source"], "Viralizer Worldwide Intelligence")
+        self.assertEqual(body["topics"][0]["title"], "Enterprise AI adoption accelerates")
         discover.assert_awaited_once()
 
 
