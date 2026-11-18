@@ -2237,6 +2237,32 @@ async def autopilot_brand_profile(request: Request):
     }
 
 
+@app.post("/api/autopilot/brand-profile/ensure")
+async def ensure_autopilot_brand_profile(request: Request):
+    """Create a minimal profile for verified chat-relay users; never replace an existing profile."""
+    if not _provider_relay_request_is_authorized(request):
+        raise HTTPException(403, "Verified relay required.")
+    user = autopilot_user(request)
+    customer_id = str(user.get("sub", ""))
+    existing = get_brand_profile(ROOT, customer_id)
+    if existing:
+        return {"brand_profile": existing, "created": False}
+    raw = await request.json()
+    positioning = str(raw.get("positioning") or "Creator producing original social video content.")[:500]
+    profile = save_brand_profile(ROOT, customer_id, {
+        "customer_type": "creator",
+        "brand_name": str(user.get("name") or user.get("email") or "Viralizer creator")[:120],
+        "category": "Digital creator",
+        "positioning": positioning,
+        "audiences": ["Social media viewers"],
+        "goals": ["Create engaging original videos"],
+        "content_themes": [],
+        "constraints": ["Original and copyright-safe"],
+        "confirmed": True,
+    })
+    return {"brand_profile": profile, "created": True}
+
+
 @app.get("/api/hybrid/projects/autopilot-concept/{concept_id}")
 async def resolve_hybrid_autopilot_project(request: Request, concept_id: str):
     """Resolve or lazily create shared state for an existing Autopilot concept."""
