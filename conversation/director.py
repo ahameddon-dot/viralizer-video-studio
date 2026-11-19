@@ -308,6 +308,12 @@ def derive_state(messages: list[dict[str, Any]], brand_confirmed: bool) -> Direc
                     state.duration_seconds = int((first.get("content") or {}).get("duration_seconds") or 15)
                     state.keyframes, state.animations = {}, {}
                     state.final_media_url = ""
+                    # A completed topic/reference concept supersedes any old
+                    # unfinished "own idea" wizard state from this chat.
+                    # Leaving that flag set makes later retry messages enter
+                    # the brief wizard even though a concept already exists.
+                    state.idea_mode_requested = False
+                    state.custom_idea = ""
                     opportunity_id = str(first.get("opportunity_id") or "")
                     chosen = next((o for o in state.opportunities if o["id"] == opportunity_id), None)
                     if chosen:

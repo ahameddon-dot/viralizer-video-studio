@@ -231,6 +231,20 @@ class DurationFlowTests(unittest.TestCase):
         self.assertFalse(state.idea_mode_requested)
         self.assertEqual("", state.custom_idea)
 
+    def test_topic_concept_clears_stale_own_idea_wizard_state(self):
+        msgs = [
+            user("I have my own idea"),
+            user("An earlier unfinished idea"),
+            tool("create_concepts", {"concepts": [concept()]}),
+            user("Retry analysis here"),
+        ]
+        state = d.derive_state(msgs, True)
+        self.assertEqual(d.STORYBOARD, state.stage)
+        self.assertFalse(state.idea_mode_requested)
+        self.assertEqual("", state.brief_step)
+        self.assertNotEqual(d.CREATE_FROM_IDEA, d.classify_intent("Retry analysis here", state))
+        self.assertEqual("", state.custom_idea)
+
     def test_old_model_rejection_is_recovered_as_custom_idea(self):
         assistant = {"role": "assistant", "content": {"type": "text", "text":
             "Since your idea is custom, I cannot create concepts without an existing ranked opportunity."}}

@@ -490,7 +490,8 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
         })
         return {"message": message, "approval_cards": [], "model": "deterministic",
                 "provider": "viralizer_workflow", "suggestions": suggestions}
-    if directed["intent"] == "create_from_idea" and directed_state.idea_mode_requested:
+    if (directed["intent"] == "create_from_idea" and directed_state.idea_mode_requested
+            and not directed_state.concept_id):
         step_copy = {
             "idea": "Describe the video idea in your own words. I’ll keep it exactly as your creative brief.",
             "duration": "How long should the video be?",
@@ -502,7 +503,7 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
             suggestions = directed["suggestions"]
             message = append_message(root, customer_id, conversation_id, "assistant", {
                 "type": "text",
-                "text": step_copy[directed_state.brief_step],
+                "text": step_copy.get(directed_state.brief_step, step_copy["idea"]),
                 "provider": "viralizer_workflow", "model": "deterministic", "suggestions": suggestions,
                 "stage": directed_state.stage, "intent": directed["intent"], "flow_step": directed_state.brief_step,
             })
