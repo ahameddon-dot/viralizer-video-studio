@@ -3068,6 +3068,24 @@ async def autopilot_keyframe_animation_video(request: Request, concept_id: str, 
 FINALIZATION_JOBS: dict[str, dict] = {}
 
 
+def _completed_finalization(customer_id: str, concept_id: str) -> dict | None:
+    """Recover the durable delivery record even after a deploy clears in-memory jobs."""
+    with _connect(ROOT) as db:
+        row = db.execute(
+            """SELECT * FROM autopilot_asset_versions
+            WHERE customer_id=? AND concept_id=? AND status='ready_review'
+            ORDER BY created_at DESC, version DESC LIMIT 1""",
+            (customer_id, concept_id),
+        ).fetchone()
+    if not row:
+        return None
+    asset = dict(row)
+    media_url = str(asset.get("media_url") or "")
+    if not media_url:
+        return None
+    return {"asset": asset, "video_url": media_url, "media_url": media_url, "recovered": True}
+
+
 async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload: AutopilotDemoAssetRequest):
     """Assemble the approved PixVerse clips (one per scene) into the immutable review asset."""
     concept = get_concept(ROOT, customer_id, concept_id)
@@ -3174,7 +3192,15 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     job_key = f"{customer_id}:{concept_id}"
     existing = FINALIZATION_JOBS.get(job_key)
     if existing and existing.get("status") in {"queued", "processing", "succeeded"}:
+        if existing.get("status") == "succeeded" and not str((existing.get("result") or {}).get("video_url") or ""):
+            completed = _completed_finalization(customer_id, concept_id)
+            if completed:
+                existing["result"] = completed
         return {key: value for key, value in existing.items() if key != "result"} | ({"result": existing["result"]} if existing.get("status") == "succeeded" else {})
+    completed = _completed_finalization(customer_id, concept_id)
+    if completed:
+        return {"id": hashlib.sha256(job_key.encode()).hexdigest()[:24], "concept_id": concept_id,
+                "status": "succeeded", "stage": "Final video ready", "result": completed}
     job = {"id": hashlib.sha256(job_key.encode()).hexdigest()[:24], "concept_id": concept_id, "status": "queued", "stage": "Final assembly queued"}
     FINALIZATION_JOBS[job_key] = job
     asyncio.create_task(_run_autopilot_finalization(job_key, customer_id, concept_id, payload))
@@ -3186,7 +3212,15 @@ async def autopilot_finalization_status(request: Request, concept_id: str):
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
     job = FINALIZATION_JOBS.get(f"{customer_id}:{concept_id}")
     if not job:
+        completed = _completed_finalization(customer_id, concept_id)
+        if completed:
+            return {"id": hashlib.sha256(f"{customer_id}:{concept_id}".encode()).hexdigest()[:24],
+                    "concept_id": concept_id, "status": "succeeded", "stage": "Final video ready", "result": completed}
         raise HTTPException(404, "Final assembly job was not found. Start it again.")
+    if job.get("status") == "succeeded" and not str((job.get("result") or {}).get("video_url") or ""):
+        completed = _completed_finalization(customer_id, concept_id)
+        if completed:
+            job["result"] = completed
     return job
 
 
