@@ -575,6 +575,20 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
             f"Your {directed_state.scene_count} approved images are ready. Confirm once below to animate every scene. "
             "The live countdown and per-scene progress will begin only after the provider jobs actually start.",
         )
+    if directed_state.stage == "animating" and directed_state.concept_id and wants_video:
+        # Reopening or retrying an in-progress production must yield actionable
+        # controls, not a prose-only "already underway" response that the UI
+        # mistakes for a failed stage. Re-propose every scene: the confirmed
+        # animation endpoint reuses saved jobs and starts only a missing one.
+        proposals = [
+            ("animate_scene", {"concept_id": directed_state.concept_id, "scene_index": index})
+            for index in range(directed_state.scene_count)
+        ]
+        return _approval_turn(
+            root, customer_id, conversation_id, message_id, proposals,
+            "Video production is already underway. Confirm once to reconnect to every saved animation job "
+            "and resume any approved scene whose provider job was interrupted. Existing jobs will be reused.",
+        )
     if directed_state.stage == "animating" and re.search(
             r"\ball\s+\d+\s+animated scenes?\b.*\bcomplete\b.*\bassemble\b|"
             r"\bassemble\b.*\b(final\s+)?video\b", latest_text, re.I):

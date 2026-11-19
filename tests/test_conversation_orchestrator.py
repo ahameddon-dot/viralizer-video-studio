@@ -311,6 +311,33 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual(["finalize_video"], [card["tool"] for card in result["approval_cards"]])
         self.assertIn("final review video", result["message"]["content"]["text"])
 
+    def test_in_progress_animation_retry_returns_resumable_approval_cards(self):
+        concept = {"id": "concept-resume-1", "content": {"title": "Resume video", "storyboard": [{}, {}]}}
+        append_message(self.root, "customer-1", self.thread["id"], "tool", {
+            "tool": "create_concepts", "output": {"status": "completed", "data": {"concepts": [concept]}},
+        })
+        for index in range(2):
+            append_message(self.root, "customer-1", self.thread["id"], "assistant", {
+                "type": "tool_result", "tool": "generate_keyframe", "media_url": f"/scene-{index}.png",
+                "result": {"concept_id": concept["id"], "scene_index": index, "status": "completed"},
+            })
+        append_message(self.root, "customer-1", self.thread["id"], "assistant", {
+            "type": "tool_result", "tool": "animate_scene", "media_url": "",
+            "result": {"concept_id": concept["id"], "scene_index": 0, "status": "processing"},
+        })
+        user = append_message(self.root, "customer-1", self.thread["id"], "user", {
+            "text": "Create the video using all approved images.",
+        })
+        counter = iter(("resume-1", "resume-2"))
+        def proposed(*args, **kwargs):
+            return {"id": next(counter), "cost_class": "provider_cost", "approval_status": "pending",
+                    "authorization": {"execution_enabled": False, "code": "cost_confirmation_required", "reason": "Confirm provider cost."}}
+        with patch("conversation.orchestrator.propose_tool_execution", side_effect=proposed):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", user["id"], client=FakeClient([])))
+        self.assertEqual(["animate_scene", "animate_scene"], [card["tool"] for card in result["approval_cards"]])
+        self.assertEqual([0, 1], [card["arguments"]["scene_index"] for card in result["approval_cards"]])
+        self.assertIn("Existing jobs will be reused", result["message"]["content"]["text"])
+
     def test_concept_creation_attaches_shared_project_to_chat(self):
         concepts = [{"id": "concept-1", "content": {"storyboard": [{}, {}, {}]}}]
         with patch("conversation.orchestrator.generate_concepts", return_value=concepts), \
