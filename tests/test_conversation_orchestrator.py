@@ -269,6 +269,24 @@ class ConversationOrchestratorTests(unittest.TestCase):
         self.assertEqual([0, 1], [card["arguments"]["scene_index"] for card in result["approval_cards"]])
         self.assertIn("live countdown", result["message"]["content"]["text"])
 
+    def test_storyboard_approval_uses_exact_saved_scene_indexes_without_model(self):
+        concept = {"id": "concept-images-1", "content": {"title": "Test storyboard", "storyboard": [{}, {}, {}]}}
+        append_message(self.root, "customer-1", self.thread["id"], "tool", {
+            "tool": "create_concepts", "output": {"status": "completed", "data": {"concepts": [concept]}},
+        })
+        user = append_message(self.root, "customer-1", self.thread["id"], "user", {
+            "text": "I approve this storyboard. Generate every scene image and show them here for review.",
+        })
+        counter = iter(("image-execution-1", "image-execution-2", "image-execution-3"))
+        def proposed(*args, **kwargs):
+            return {"id": next(counter), "cost_class": "provider_cost", "approval_status": "pending",
+                    "authorization": {"execution_enabled": False, "code": "cost_confirmation_required", "reason": "Confirm provider cost."}}
+        with patch("conversation.orchestrator.propose_tool_execution", side_effect=proposed):
+            result = asyncio.run(respond(self.root, "customer-1", self.thread["id"], "owner", user["id"], client=FakeClient([])))
+        self.assertEqual(["generate_keyframe"] * 3, [card["tool"] for card in result["approval_cards"]])
+        self.assertEqual([0, 1, 2], [card["arguments"]["scene_index"] for card in result["approval_cards"]])
+        self.assertIn("exact saved scene indexes", result["message"]["content"]["text"])
+
     def test_completed_animations_deterministically_render_assembly_approval(self):
         concept = {"id": "concept-video-2", "content": {"title": "Test video", "storyboard": [{}, {}]}}
         append_message(self.root, "customer-1", self.thread["id"], "tool", {

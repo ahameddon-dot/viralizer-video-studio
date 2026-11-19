@@ -2460,7 +2460,28 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
             result = {"storyboard": concept.get("content", {}).get("storyboard") or [], "concept_id": concept_id}
             summary = "The storyboard is ready. Review the scenes here or open the visual canvas."
         elif name == "generate_keyframe":
-            scene_index = int(arguments.get("scene_index") or 0)
+            concept = get_concept(ROOT, customer_id, concept_id)
+            if not concept:
+                raise ValueError("Creative concept was not found.")
+            scenes = concept.get("content", {}).get("storyboard") or []
+            if not scenes:
+                raise ValueError("The saved storyboard has no scenes.")
+            keyframes = concept.get("content", {}).get("keyframes") or {}
+            requested_index = int(arguments.get("scene_index") or 0)
+            explicit_regeneration = bool(str(arguments.get("direction") or "").strip())
+            missing_indexes = [
+                index for index in range(len(scenes))
+                if not (keyframes.get(str(index)) or []) or bool((keyframes.get(str(index)) or [{}])[-1].get("stale"))
+            ]
+            scene_index = requested_index
+            requested_versions = keyframes.get(str(requested_index)) or []
+            if not explicit_regeneration and missing_indexes and (
+                requested_index < 0 or requested_index >= len(scenes) or
+                (requested_versions and not requested_versions[-1].get("stale"))
+            ):
+                scene_index = missing_indexes[0]
+            elif requested_index < 0 or requested_index >= len(scenes):
+                scene_index = 0
             result = await generate_autopilot_keyframe(request, concept_id, KeyframeGenerateRequest(
                 scene_index=scene_index, preserve_identity=True,
                 user_direction=str(arguments.get("direction") or ""), avoid="",
@@ -2470,7 +2491,24 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
             result["concept_id"] = concept_id; result["scene_index"] = scene_index
             summary = f"Scene {scene_index + 1} is generated. Review the image before asking me to animate it."
         elif name == "animate_scene":
-            scene_index = int(arguments.get("scene_index") or 0)
+            concept = get_concept(ROOT, customer_id, concept_id)
+            if not concept:
+                raise ValueError("Creative concept was not found.")
+            scenes = concept.get("content", {}).get("storyboard") or []
+            if not scenes:
+                raise ValueError("The saved storyboard has no scenes.")
+            keyframes = concept.get("content", {}).get("keyframes") or {}
+            requested_index = int(arguments.get("scene_index") or 0)
+            missing_animations = [
+                index for index in range(len(scenes))
+                if not str((((keyframes.get(str(index)) or [{}])[-1].get("animation") or {}).get("job_id") or ""))
+            ]
+            requested_animation = ((keyframes.get(str(requested_index)) or [{}])[-1].get("animation") or {}) if 0 <= requested_index < len(scenes) else {}
+            scene_index = requested_index
+            if missing_animations and (requested_index < 0 or requested_index >= len(scenes) or requested_animation.get("job_id")):
+                scene_index = missing_animations[0]
+            elif requested_index < 0 or requested_index >= len(scenes):
+                scene_index = 0
             result = await animate_autopilot_keyframe(request, concept_id, KeyframeAnimateRequest(scene_index=scene_index))
             result["concept_id"] = concept_id; result["scene_index"] = scene_index
             summary = f"PixVerse started Scene {scene_index + 1}. The job is saved and can continue in the background."
@@ -2819,10 +2857,14 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
     if not concept:
         raise HTTPException(404, "Creative concept was not found.")
     scenes = concept["content"].get("storyboard") or []
-    if payload.scene_index >= len(scenes):
+    if payload.scene_index < 0 or payload.scene_index >= len(scenes):
         raise HTTPException(404, "Storyboard scene was not found.")
     scene = scenes[payload.scene_index]
     keyframes = concept["content"].get("keyframes") or {}
+    existing_versions = keyframes.get(str(payload.scene_index)) or []
+    if (existing_versions and not existing_versions[-1].get("stale") and
+            not payload.user_direction.strip() and not payload.avoid.strip()):
+        return {"keyframe": existing_versions[-1], "reused": True}
     identity_reference: dict[str, Any] | None = None
     user_photo_path: Path | None = None
     if payload.user_photo_id:
@@ -2952,11 +2994,14 @@ async def animate_autopilot_keyframe(request: Request, concept_id: str, payload:
         raise HTTPException(404, "Creative concept was not found.")
     scenes = concept["content"].get("storyboard") or []
     versions = (concept["content"].get("keyframes") or {}).get(str(payload.scene_index)) or []
-    if payload.scene_index >= len(scenes) or not versions:
+    if payload.scene_index < 0 or payload.scene_index >= len(scenes) or not versions:
         raise HTTPException(409, "Generate the scene keyframe before animation.")
     latest = versions[-1]
     if latest.get("stale"):
         raise HTTPException(409, "This scene was edited after its image was made. Regenerate the image before animating it.")
+    existing_animation = latest.get("animation") or {}
+    if existing_animation.get("job_id") and str(existing_animation.get("status") or "") in {"queued", "processing", "complete", "succeeded"}:
+        return {"keyframe": latest, "job_id": str(existing_animation.get("job_id")), "status": str(existing_animation.get("status") or "processing"), "reused": True}
     path = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_keyframes" / customer_id / concept_id / str(latest.get("filename") or "")
     if not path.is_file():
         await restore_object_file(path, f"autopilot_keyframes/{customer_id}/{concept_id}/{path.name}")

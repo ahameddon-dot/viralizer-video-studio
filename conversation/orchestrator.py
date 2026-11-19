@@ -536,6 +536,30 @@ async def respond(root: Path, customer_id: str, conversation_id: str, actor_id: 
         })
         return {"message": message, "approval_cards": [], "model": "deterministic",
                 "provider": "viralizer_workflow", "suggestions": suggestions}
+    wants_images = bool(re.search(
+        r"\bapprove\b.*\bstoryboard\b.*\b(?:generate|create|make)\b.*\b(?:every|all)?\s*scene\s*images?\b|"
+        r"\b(?:generate|create|make)\b.*\b(?:every|all)\s*scene\s*images?\b",
+        latest_text, re.I,
+    ))
+    if directed_state.stage in {"storyboard_review", "images_review"} and directed_state.concept_id and wants_images:
+        missing = directed_state.missing_images
+        if not missing:
+            message = append_message(root, customer_id, conversation_id, "assistant", {
+                "type": "text", "text": "Every saved storyboard scene already has an approved image. No image provider job was repeated.",
+                "provider": "viralizer_workflow", "model": "deterministic", "suggestions": [],
+                "stage": "images_review", "intent": "confirm_production",
+            })
+            return {"message": message, "approval_cards": [], "model": "deterministic",
+                    "provider": "viralizer_workflow", "suggestions": []}
+        proposals = [
+            ("generate_keyframe", {"concept_id": directed_state.concept_id, "scene_index": index})
+            for index in missing
+        ]
+        return _approval_turn(
+            root, customer_id, conversation_id, message_id, proposals,
+            f"Generate {len(missing)} storyboard image{'' if len(missing) == 1 else 's'} using the exact saved scene indexes. "
+            "Confirm once below; existing approved images will not be regenerated or charged again.",
+        )
     wants_video = bool(re.search(
         r"\b(create|make|animate|produce|start)\b.*\b(final\s+)?video\b|"
         r"\bimages?\b.*\bapproved?\b.*\bvideo\b|^\s*(yes|proceed|continue|do it)\s*[.!]*\s*$",
