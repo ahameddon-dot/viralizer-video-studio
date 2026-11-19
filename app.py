@@ -2480,7 +2480,7 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
                 raise ValueError("Creative concept was not found.")
             workflow = start_content_workflow(ROOT, customer_id, concept_id)
             content = concept.get("content") or {}
-            result = await finalize_autopilot_concept(request, concept_id, AutopilotDemoAssetRequest(
+            result = await _finalize_autopilot_concept(customer_id, concept_id, AutopilotDemoAssetRequest(
                 workflow_run_id=workflow["id"], concept_id=concept_id,
                 title=str(content.get("title") or "Viralizer video"),
                 caption="\n\n".join(filter(None, [str(content.get("narrative") or ""), str(content.get("cta") or "")])),
@@ -3020,10 +3020,11 @@ async def autopilot_keyframe_animation_video(request: Request, concept_id: str, 
     return FileResponse(clip_path, media_type="video/mp4", filename=f"viralizer-scene-{scene_index + 1}.mp4", content_disposition_type="inline", headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"})
 
 
-@app.post("/api/autopilot/concepts/{concept_id}/finalize")
-async def finalize_autopilot_concept(request: Request, concept_id: str, payload: AutopilotDemoAssetRequest):
+FINALIZATION_JOBS: dict[str, dict] = {}
+
+
+async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload: AutopilotDemoAssetRequest):
     """Assemble the approved PixVerse clips (one per scene) into the immutable review asset."""
-    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
     concept = get_concept(ROOT, customer_id, concept_id)
     if not concept or concept_id != payload.concept_id:
         raise HTTPException(404, "Creative concept was not found.")
@@ -3106,6 +3107,42 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"asset": asset, "video_url": media_url, "provider": "pixverse", "scene_job_ids": job_ids}
+
+
+async def _run_autopilot_finalization(job_key: str, customer_id: str, concept_id: str, payload: AutopilotDemoAssetRequest):
+    job = FINALIZATION_JOBS[job_key]
+    job.update(status="processing", stage="Downloading completed scenes and assembling the final MP4…")
+    try:
+        result = await _finalize_autopilot_concept(customer_id, concept_id, payload)
+        job.update(status="succeeded", stage="Final video ready", result=result)
+    except HTTPException as exc:
+        job.update(status="failed", stage="Final assembly failed", error=str(exc.detail))
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Autopilot final assembly failed")
+        job.update(status="failed", stage="Final assembly failed", error=str(exc) or "Final assembly failed.")
+
+
+@app.post("/api/autopilot/concepts/{concept_id}/finalize")
+async def finalize_autopilot_concept(request: Request, concept_id: str, payload: AutopilotDemoAssetRequest):
+    """Start an idempotent background assembly so Render's HTTP timeout cannot cancel long FFmpeg/TTS work."""
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    job_key = f"{customer_id}:{concept_id}"
+    existing = FINALIZATION_JOBS.get(job_key)
+    if existing and existing.get("status") in {"queued", "processing", "succeeded"}:
+        return {key: value for key, value in existing.items() if key != "result"} | ({"result": existing["result"]} if existing.get("status") == "succeeded" else {})
+    job = {"id": hashlib.sha256(job_key.encode()).hexdigest()[:24], "concept_id": concept_id, "status": "queued", "stage": "Final assembly queued"}
+    FINALIZATION_JOBS[job_key] = job
+    asyncio.create_task(_run_autopilot_finalization(job_key, customer_id, concept_id, payload))
+    return job
+
+
+@app.get("/api/autopilot/concepts/{concept_id}/finalize/status")
+async def autopilot_finalization_status(request: Request, concept_id: str):
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    job = FINALIZATION_JOBS.get(f"{customer_id}:{concept_id}")
+    if not job:
+        raise HTTPException(404, "Final assembly job was not found. Start it again.")
+    return job
 
 
 @app.post("/api/autopilot/workflows/start/{concept_id}")
