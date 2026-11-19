@@ -108,6 +108,14 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn("[3,6,12,24]", chat)
         self.assertIn("/track", chat)
 
+    def test_missing_animation_job_is_reported_as_recoverable(self):
+        status_route = self.app.split(
+            '@app.get("/api/autopilot/concepts/{concept_id}/animations/{scene_index}/status")', 1
+        )[1][:1800]
+        self.assertIn('"status": "not_started"', status_route)
+        self.assertIn('"recoverable": True', status_route)
+        self.assertNotIn('raise HTTPException(404, "PixVerse animation job was not found.")', status_route)
+
     def test_verified_relay_can_stream_only_the_customers_autopilot_video(self):
         self.assertIn('request.url.path.startswith("/api/finished-video/viralizer-autopilot-")', self.app)
         finished_route = self.app.split('@app.api_route("/api/finished-video/{filename}"', 1)[1][:1800]

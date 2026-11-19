@@ -3026,7 +3026,16 @@ async def autopilot_keyframe_animation_status(request: Request, concept_id: str,
     animation = (versions[-1].get("animation") or {}) if versions else {}
     job_id = str(animation.get("job_id") or "")
     if not job_id:
-        raise HTTPException(404, "PixVerse animation job was not found.")
+        # A deploy can land after the customer confirms provider cost but before
+        # the provider job id is durably attached to the keyframe.  This is a
+        # recoverable production state, not a permanently failed render.  The
+        # authenticated adapter may resubmit the already-approved scene; the
+        # animate endpoint remains idempotent when a job was saved meanwhile.
+        return {
+            "status": "not_started", "video_url": "", "error": "",
+            "job_id": "", "keyframe": versions[-1] if versions else {},
+            "recoverable": True,
+        }
     try:
         result = await provider_video_status("pixverse", job_id)
     except VideoProviderError as exc:
