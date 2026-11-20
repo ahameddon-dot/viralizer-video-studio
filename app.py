@@ -95,6 +95,7 @@ from object_store import ObjectStoreError, delete_file as delete_object_file, re
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
 from autopilot_finalization_store import claim as claim_finalization_job, enqueue as enqueue_finalization_job, finish as finish_finalization_job, get as get_finalization_job, renew as renew_finalization_job, retry as retry_finalization_job
 from chat_video_attachments import get as get_chat_video_attachment, save as save_chat_video_attachment
+from topic_prompt_grounding import topic_grounded_keyframe_prompt
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
 from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflow_runs
@@ -2883,7 +2884,7 @@ async def generate_autopilot_keyframe(request: Request, concept_id: str, payload
             identity_reference = anchor_versions[-1]
         else:
             raise HTTPException(409, "Generate and approve Scene 1 first. It becomes the identity reference for every later scene.")
-    prompt = str(scene.get("keyframe_prompt") or "")
+    prompt = topic_grounded_keyframe_prompt(concept["content"], scene, str(scene.get("keyframe_prompt") or ""))
     if payload.user_direction.strip():
         prompt += " CUSTOMER CREATIVE DIRECTION (apply while preserving the storyboard purpose): " + " ".join(payload.user_direction.split())
     negative_prompt = str(scene.get("negative_prompt") or "")
