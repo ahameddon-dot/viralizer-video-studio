@@ -93,7 +93,8 @@ from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
-from autopilot_finalization_store import claim as claim_finalization_job, enqueue as enqueue_finalization_job, finish as finish_finalization_job, get as get_finalization_job, renew as renew_finalization_job
+from autopilot_finalization_store import claim as claim_finalization_job, enqueue as enqueue_finalization_job, finish as finish_finalization_job, get as get_finalization_job, renew as renew_finalization_job, retry as retry_finalization_job
+from chat_video_attachments import get as get_chat_video_attachment, save as save_chat_video_attachment
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
 from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflow_runs
@@ -3159,10 +3160,8 @@ async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload
             raise HTTPException(502, str(exc)) from exc
         finally:
             raw_output.unlink(missing_ok=True)
-        try:
-            await upload_object_file(output, f"finished_videos/{filename}", "video/mp4")
-        except ObjectStoreError:
-            logging.getLogger(__name__).warning("Autopilot final video was stored locally because object storage was unavailable.")
+        if not await upload_object_file(output, f"finished_videos/{filename}", "video/mp4"):
+            raise ObjectStoreError("Permanent media storage is not configured.")
     digest = hashlib.sha256()
     with output.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -3199,7 +3198,15 @@ async def _run_autopilot_finalization(job_key: str, customer_id: str, concept_id
         result = await _finalize_autopilot_concept(customer_id, concept_id, payload)
         await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=result)
     except HTTPException as exc:
-        await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc.detail))
+        if exc.status_code >= 500 and int(claimed.get("attempt") or 0) < 5:
+            await asyncio.to_thread(retry_finalization_job, ROOT, customer_id, concept_id, str(exc.detail))
+        else:
+            await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc.detail))
+    except (ObjectStoreError, MediaFinisherError, OSError) as exc:
+        if int(claimed.get("attempt") or 0) < 5:
+            await asyncio.to_thread(retry_finalization_job, ROOT, customer_id, concept_id, str(exc))
+        else:
+            await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc))
     except Exception as exc:
         logging.getLogger(__name__).exception("Autopilot final assembly failed")
         await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc) or "Final assembly failed.")
@@ -3395,6 +3402,48 @@ async def autopilot_current_project(request: Request):
 async def autopilot_projects(request: Request):
     user = autopilot_user(request)
     return {"projects": list_autopilot_projects(ROOT, str(user.get("sub", "")))}
+
+
+@app.get("/api/autopilot/chat-video-attachments/{chat_conversation_id}")
+async def autopilot_chat_video_attachment(
+    request: Request, chat_conversation_id: str, subject: str = "", mode: str = ""
+):
+    """Restore the newest customer-owned video workflow attached to a chat."""
+    user = autopilot_user(request)
+    attachment = await asyncio.to_thread(
+        get_chat_video_attachment,
+        ROOT,
+        str(user.get("sub", "")),
+        chat_conversation_id,
+        subject,
+        mode,
+    )
+    return {"attachment": attachment}
+
+
+@app.put("/api/autopilot/chat-video-attachments/{chat_conversation_id}")
+async def store_autopilot_chat_video_attachment(request: Request, chat_conversation_id: str):
+    """Persist UI progress so final videos remain inside their originating chat."""
+    user = autopilot_user(request)
+    payload = await request.json()
+    subject = " ".join(str(payload.get("subject") or "").split())[:300]
+    mode = str(payload.get("mode") or "quick").strip().lower()
+    snapshot = payload.get("snapshot")
+    if not chat_conversation_id.strip() or not subject or mode not in {"quick", "research"} or not isinstance(snapshot, dict):
+        raise HTTPException(422, "A chat, topic, production mode, and snapshot are required.")
+    # Bound database growth and reject malformed/client-injected giant payloads.
+    if len(json.dumps(snapshot, ensure_ascii=False)) > 512_000:
+        raise HTTPException(413, "The production snapshot is too large.")
+    attachment = await asyncio.to_thread(
+        save_chat_video_attachment,
+        ROOT,
+        str(user.get("sub", "")),
+        chat_conversation_id,
+        subject,
+        mode,
+        snapshot,
+    )
+    return {"attachment": attachment}
 
 
 @app.post("/api/autopilot/projects/{asset_id}/prepare-publication")

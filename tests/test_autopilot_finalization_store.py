@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from autopilot_finalization_store import claim, enqueue, finish, get, renew
+from autopilot_finalization_store import claim, enqueue, finish, get, renew, retry
 from creatorthon_store import _connect
 
 
@@ -62,6 +62,14 @@ class AutopilotFinalizationStoreTests(unittest.TestCase):
         self.assertEqual(first["id"], retried["id"])
         self.assertEqual("queued", retried["status"])
         self.assertEqual("New", retried["payload"]["title"])
+
+    def test_temporary_failure_returns_processing_job_to_queue(self):
+        enqueue(self.root, "customer", "concept", {"concept_id": "concept"})
+        claim(self.root, "customer", "concept")
+        queued = retry(self.root, "customer", "concept", "R2 timed out")
+        self.assertEqual("queued", queued["status"])
+        self.assertEqual("R2 timed out", queued["error"])
+        self.assertIsNotNone(claim(self.root, "customer", "concept"))
 
 
 if __name__ == "__main__":

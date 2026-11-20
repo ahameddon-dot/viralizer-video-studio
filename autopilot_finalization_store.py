@@ -138,3 +138,18 @@ def finish(
         ).fetchone()
     return _decode(row)
 
+
+def retry(root: Path, customer_id: str, concept_id: str, error: str) -> dict[str, Any] | None:
+    """Release a failed lease back to the durable queue without losing its payload."""
+    now = int(time.time())
+    with _connect(root) as db:
+        _ensure(db)
+        row = db.execute(
+            """UPDATE autopilot_finalization_jobs
+            SET status='queued',stage='Temporary assembly failure; retrying automatically…',
+                error=?,lease_until=0,updated_at=?
+            WHERE customer_id=? AND concept_id=? AND status='processing' RETURNING *""",
+            (str(error or "")[:2000], now, customer_id, concept_id),
+        ).fetchone()
+    return _decode(row)
+
