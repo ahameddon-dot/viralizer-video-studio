@@ -93,6 +93,7 @@ from website_to_video import WebsiteAnalysisError, analyze_website, fetch_public
 from article_intelligence import openai_story_analysis_complete, prepare_article_intelligence
 from object_store import ObjectStoreError, delete_file as delete_object_file, restore_file as restore_object_file, share_url as object_share_url, upload_file as upload_object_file
 from durable_media_pipeline import enqueue as enqueue_durable_media_job, get as get_durable_media_job
+from autopilot_finalization_store import claim as claim_finalization_job, enqueue as enqueue_finalization_job, finish as finish_finalization_job, get as get_finalization_job, renew as renew_finalization_job
 from youtube_oauth import YouTubeOAuthError, authorization_url as youtube_authorization_url, configured as youtube_oauth_configured, decrypt_refresh_token, exchange_connection as exchange_youtube_connection, redirect_uri as youtube_redirect_uri
 from channel_automation import CATEGORIES as CHANNEL_AUTOMATION_CATEGORIES, ChannelAutomationError, ViralChannelAutomation, youtube_frame_auth_configured
 from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflow_runs
@@ -3074,7 +3075,7 @@ async def autopilot_keyframe_animation_video(request: Request, concept_id: str, 
     return FileResponse(clip_path, media_type="video/mp4", filename=f"viralizer-scene-{scene_index + 1}.mp4", content_disposition_type="inline", headers={"Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes"})
 
 
-FINALIZATION_JOBS: dict[str, dict] = {}
+FINALIZATION_TASKS: dict[str, asyncio.Task] = {}
 
 
 def _completed_finalization(customer_id: str, concept_id: str) -> dict | None:
@@ -3181,45 +3182,79 @@ async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload
     return {"asset": asset, "video_url": media_url, "provider": "pixverse", "scene_job_ids": job_ids}
 
 
-async def _run_autopilot_finalization(job_key: str, customer_id: str, concept_id: str, payload: AutopilotDemoAssetRequest):
-    job = FINALIZATION_JOBS[job_key]
-    job.update(status="processing", stage="Downloading completed scenes and assembling the final MP4…")
+async def _renew_autopilot_finalization_lease(customer_id: str, concept_id: str):
+    while True:
+        await asyncio.sleep(45)
+        await asyncio.to_thread(renew_finalization_job, ROOT, customer_id, concept_id)
+
+
+async def _run_autopilot_finalization(job_key: str, customer_id: str, concept_id: str):
+    claimed = await asyncio.to_thread(claim_finalization_job, ROOT, customer_id, concept_id)
+    if not claimed:
+        FINALIZATION_TASKS.pop(job_key, None)
+        return
+    lease_task = asyncio.create_task(_renew_autopilot_finalization_lease(customer_id, concept_id))
     try:
+        payload = AutopilotDemoAssetRequest.model_validate(claimed.get("payload") or {})
         result = await _finalize_autopilot_concept(customer_id, concept_id, payload)
-        job.update(status="succeeded", stage="Final video ready", result=result)
+        await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=result)
     except HTTPException as exc:
-        job.update(status="failed", stage="Final assembly failed", error=str(exc.detail))
+        await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc.detail))
     except Exception as exc:
         logging.getLogger(__name__).exception("Autopilot final assembly failed")
-        job.update(status="failed", stage="Final assembly failed", error=str(exc) or "Final assembly failed.")
+        await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, error=str(exc) or "Final assembly failed.")
+    finally:
+        lease_task.cancel()
+        FINALIZATION_TASKS.pop(job_key, None)
+
+
+def _schedule_autopilot_finalization(customer_id: str, concept_id: str) -> None:
+    job_key = f"{customer_id}:{concept_id}"
+    task = FINALIZATION_TASKS.get(job_key)
+    if task and not task.done():
+        return
+    FINALIZATION_TASKS[job_key] = asyncio.create_task(
+        _run_autopilot_finalization(job_key, customer_id, concept_id)
+    )
+
+
+def _public_finalization_job(job: dict) -> dict:
+    fields = ("id", "concept_id", "status", "stage", "error", "attempt", "created_at", "updated_at")
+    response = {field: job.get(field) for field in fields if field in job}
+    if job.get("status") == "succeeded":
+        response["result"] = job.get("result") or {}
+    return response
 
 
 @app.post("/api/autopilot/concepts/{concept_id}/finalize")
 async def finalize_autopilot_concept(request: Request, concept_id: str, payload: AutopilotDemoAssetRequest):
     """Start an idempotent background assembly so Render's HTTP timeout cannot cancel long FFmpeg/TTS work."""
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
-    job_key = f"{customer_id}:{concept_id}"
-    existing = FINALIZATION_JOBS.get(job_key)
+    existing = await asyncio.to_thread(get_finalization_job, ROOT, customer_id, concept_id)
     if existing and existing.get("status") in {"queued", "processing", "succeeded"}:
         if existing.get("status") == "succeeded" and not str((existing.get("result") or {}).get("video_url") or ""):
             completed = _completed_finalization(customer_id, concept_id)
             if completed:
-                existing["result"] = completed
-        return {key: value for key, value in existing.items() if key != "result"} | ({"result": existing["result"]} if existing.get("status") == "succeeded" else {})
+                existing = await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=completed)
+        if existing.get("status") in {"queued", "processing"}:
+            _schedule_autopilot_finalization(customer_id, concept_id)
+        return _public_finalization_job(existing)
     completed = _completed_finalization(customer_id, concept_id)
     if completed:
+        job_key = f"{customer_id}:{concept_id}"
         return {"id": hashlib.sha256(job_key.encode()).hexdigest()[:24], "concept_id": concept_id,
                 "status": "succeeded", "stage": "Final video ready", "result": completed}
-    job = {"id": hashlib.sha256(job_key.encode()).hexdigest()[:24], "concept_id": concept_id, "status": "queued", "stage": "Final assembly queued"}
-    FINALIZATION_JOBS[job_key] = job
-    asyncio.create_task(_run_autopilot_finalization(job_key, customer_id, concept_id, payload))
-    return job
+    job = await asyncio.to_thread(
+        enqueue_finalization_job, ROOT, customer_id, concept_id, payload.model_dump(mode="json")
+    )
+    _schedule_autopilot_finalization(customer_id, concept_id)
+    return _public_finalization_job(job)
 
 
 @app.get("/api/autopilot/concepts/{concept_id}/finalize/status")
 async def autopilot_finalization_status(request: Request, concept_id: str):
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
-    job = FINALIZATION_JOBS.get(f"{customer_id}:{concept_id}")
+    job = await asyncio.to_thread(get_finalization_job, ROOT, customer_id, concept_id)
     if not job:
         completed = _completed_finalization(customer_id, concept_id)
         if completed:
@@ -3229,8 +3264,10 @@ async def autopilot_finalization_status(request: Request, concept_id: str):
     if job.get("status") == "succeeded" and not str((job.get("result") or {}).get("video_url") or ""):
         completed = _completed_finalization(customer_id, concept_id)
         if completed:
-            job["result"] = completed
-    return job
+            job = await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=completed)
+    if job.get("status") in {"queued", "processing"}:
+        _schedule_autopilot_finalization(customer_id, concept_id)
+    return _public_finalization_job(job)
 
 
 @app.post("/api/autopilot/workflows/start/{concept_id}")
