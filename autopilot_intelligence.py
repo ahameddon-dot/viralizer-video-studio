@@ -425,6 +425,36 @@ def get_concept(root: Path, customer_id: str, concept_id: str) -> dict[str, Any]
     return item
 
 
+def replace_concept_narration(root: Path, customer_id: str, concept_id: str, narration: str) -> dict[str, Any]:
+    """Lock the user-reviewed narration onto the saved storyboard before animation."""
+    now = int(time.time())
+    clean = " ".join(str(narration or "").split())
+    with _connect(root) as db:
+        row = db.execute(
+            "SELECT content_json FROM autopilot_creative_concepts WHERE id=? AND customer_id=?",
+            (concept_id, customer_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("Creative concept was not found for this customer.")
+        content = _load(dict(row)["content_json"], {})
+        scenes = content.get("storyboard") or []
+        if not scenes:
+            raise ValueError("The saved storyboard has no scenes.")
+        words = clean.split()
+        for index, scene in enumerate(scenes):
+            start = round(len(words) * index / len(scenes))
+            end = round(len(words) * (index + 1) / len(scenes))
+            scene["narration"] = " ".join(words[start:end]) if clean else ""
+            scene["narration_locked"] = True
+        content["narration_script"] = clean
+        content["narration_locked"] = True
+        db.execute(
+            "UPDATE autopilot_creative_concepts SET content_json=?,updated_at=? WHERE id=? AND customer_id=?",
+            (_json(content), now, concept_id, customer_id),
+        )
+    return {"concept_id": concept_id, "narration": clean, "storyboard": scenes}
+
+
 def record_keyframe(root: Path, customer_id: str, concept_id: str, scene_index: int, metadata: dict[str, Any]) -> dict[str, Any]:
     now = int(time.time())
     with _connect(root) as db:

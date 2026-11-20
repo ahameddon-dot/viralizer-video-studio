@@ -102,7 +102,7 @@ from autopilot_store import get_workflow_run, ingest_webhook_event, list_workflo
 from autopilot_contracts import AgentObjectiveCreate, AgentSelection, AssetVersionCreate, AttributionEventCreate, BrandProfileUpsert, BrandSourceAnalyzeRequest, ConceptGenerateRequest, DestructiveConfirmation, KeyframeAnimateRequest, KeyframeGenerateRequest, MetricSnapshotCreate, OpportunityRankRequest, PostForMeConnectionRequest, ProjectAssetRegistration, ProviderConnectionUpsert, PublicationApprovalRequest
 from autopilot_brand_analysis import analyze_brand_sources
 from autopilot_orchestrator import create_objective, make_selection
-from autopilot_intelligence import archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_concepts, list_opportunities, rank_opportunities, record_keyframe, save_brand_profile, update_keyframe_animation
+from autopilot_intelligence import archive_other_opportunities, generate_concepts, get_brand_profile, get_concept, list_concepts, list_opportunities, rank_opportunities, record_keyframe, replace_concept_narration, save_brand_profile, update_keyframe_animation
 from autopilot_lifecycle import approve_and_queue_publication, create_asset_version, get_active_project, list_asset_versions, list_autopilot_projects, list_publications, prepare_project_publication, record_metric_snapshot, start_content_workflow
 from autopilot_growth import create_recommendation, growth_dashboard, list_connections, save_attribution_event, save_connection, update_recommendation
 from autopilot_publishing import FakePublishingAdapter, LocalMediaPostForMeAdapter, submit_publication
@@ -1348,6 +1348,10 @@ class AutopilotDemoAssetRequest(BaseModel):
     caption: str = Field(default="", max_length=20_000)
     title: str = Field(default="", max_length=500)
     hashtags: list[str] = Field(default_factory=list, max_length=100)
+
+
+class AutopilotNarrationLockRequest(BaseModel):
+    narration: str = Field(default="", max_length=4096)
 
 
 class PerformanceTrackingRequest(BaseModel):
@@ -3257,6 +3261,20 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     )
     _schedule_autopilot_finalization(customer_id, concept_id)
     return _public_finalization_job(job)
+
+
+@app.put("/api/autopilot/concepts/{concept_id}/narration")
+async def lock_autopilot_concept_narration(
+    request: Request, concept_id: str, payload: AutopilotNarrationLockRequest
+):
+    """Persist exactly the narration the customer reviewed before animation/final assembly."""
+    user = autopilot_user(request)
+    try:
+        return replace_concept_narration(
+            ROOT, str(user.get("sub", "")), concept_id, payload.narration
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @app.get("/api/autopilot/concepts/{concept_id}/finalize/status")
