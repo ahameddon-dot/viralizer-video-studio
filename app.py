@@ -2462,6 +2462,14 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
         active_execution_id = str(execution.get("id") or execution_id)
         arguments = execution.get("arguments") or {}; name = str(execution.get("tool_name") or "")
         concept_id = str(arguments.get("concept_id") or "")
+        if execution.get("replayed"):
+            result = execution.get("result") or {}
+            media_url = str(result.get("media_url") or (result.get("keyframe") or {}).get("image_url") or "")
+            message = append_message(ROOT, customer_id, conversation_id, "assistant", {
+                "type": "tool_result", "text": "The completed scene was recovered from its saved provider result.",
+                "tool": name, "media_url": media_url, "result": result,
+            })
+            return {"execution_id": active_execution_id, "status": "completed", "replayed": True, "result": result, "message": message}
         if name == "generate_storyboard":
             concept = get_concept(ROOT, customer_id, concept_id)
             if not concept:

@@ -271,6 +271,12 @@ def confirm_tool_execution(root: Path, customer_id: str, conversation_id: str, e
             raise ValueError("Tool execution was not found for this conversation.")
         current = dict(row)
         authorization = _load(current.get("authorization_json"), {})
+        if current.get("status") == "succeeded" and _load(current.get("result_json"), {}):
+            result = current
+            for source, target in (("arguments_json", "arguments"), ("authorization_json", "authorization"), ("result_json", "result"), ("error_json", "error")):
+                result[target] = _load(result.pop(source), {})
+            result["replayed"] = True
+            return result
         retrying = current.get("status") == "failed" or (
             current.get("status") == "proposed" and int(current.get("updated_at") or 0) <= int(time.time()) - 120
         )
