@@ -4,7 +4,21 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _normalize_production_platform(value: Any) -> Any:
+    """Accept legacy UI labels while keeping one canonical production value."""
+    if not isinstance(value, str):
+        return value
+    normalized = "_".join(value.strip().casefold().replace("-", " ").split())
+    aliases = {
+        "youtube": "youtube_shorts",
+        "youtube_short": "youtube_shorts",
+        "youtube_shorts": "youtube_shorts",
+        "shorts": "youtube_shorts",
+    }
+    return aliases.get(normalized, normalized)
 
 
 class WorkflowRunCreate(BaseModel):
@@ -115,6 +129,11 @@ class ConceptGenerateRequest(BaseModel):
     goal: str = Field(default="", max_length=300)
     duration_seconds: int = Field(default=15, ge=5, le=60)
 
+    @field_validator("platform", mode="before")
+    @classmethod
+    def normalize_platform(cls, value: Any) -> Any:
+        return _normalize_production_platform(value)
+
 
 class AssetVersionCreate(BaseModel):
     workflow_run_id: str = Field(min_length=1, max_length=64)
@@ -192,6 +211,11 @@ class AgentObjectiveCreate(BaseModel):
     seed_topics: list[str] = Field(default_factory=list, max_length=20)
     platform: Literal["youtube_shorts", "instagram", "tiktok", "linkedin"] = "youtube_shorts"
     goal: str = Field(default="", max_length=500)
+
+    @field_validator("platform", mode="before")
+    @classmethod
+    def normalize_platform(cls, value: Any) -> Any:
+        return _normalize_production_platform(value)
 
 
 class AgentSelection(BaseModel):

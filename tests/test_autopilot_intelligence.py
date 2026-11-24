@@ -175,6 +175,17 @@ class AutopilotIntelligenceTests(unittest.TestCase):
         stored = get_concept(self.root, "customer-1", concepts[0]["id"])
         self.assertEqual("scene.png", stored["content"]["keyframes"]["0"][0]["filename"])
 
+    def test_creative_director_accepts_legacy_youtube_platform_alias(self):
+        self.brand()
+        opportunity = rank_opportunities(self.root, "customer-1", {
+            "topics": [{"topic": "Ecommerce analytics changes", "viral_score": 90}]
+        })[0]
+        concepts = generate_concepts(self.root, "customer-1", {
+            "opportunity_id": opportunity["id"], "platform": "youtube",
+        })
+        self.assertEqual(3, len(concepts))
+        self.assertTrue(all(item["content"]["platform"] == "youtube_shorts" for item in concepts))
+
     def test_opportunities_and_concepts_cannot_cross_customer_boundary(self):
         self.brand("customer-1")
         self.brand("customer-2")
