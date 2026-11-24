@@ -53,23 +53,32 @@ def save(
     final_asset = snapshot.get("finalAsset") or {}
     final_asset_id = str(final_asset.get("id") or "") if isinstance(final_asset, dict) else ""
     encoded = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
-    with _connect(root) as db:
-        _ensure(db)
-        db.execute(
-            """INSERT INTO autopilot_chat_video_attachments
-            (customer_id,chat_conversation_id,subject,mode,snapshot_json,final_asset_id,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?)
-            ON CONFLICT(customer_id,chat_conversation_id,subject,mode) DO UPDATE SET
-              snapshot_json=excluded.snapshot_json,
-              final_asset_id=excluded.final_asset_id,
-              updated_at=excluded.updated_at""",
-            (customer_id, chat_conversation_id, subject, mode, encoded, final_asset_id, now, now),
-        )
-        row = db.execute(
-            """SELECT * FROM autopilot_chat_video_attachments
-            WHERE customer_id=? AND chat_conversation_id=? AND subject=? AND mode=?""",
-            (customer_id, chat_conversation_id, subject, mode),
-        ).fetchone()
+    row = None
+    for attempt in range(4):
+        try:
+            with _connect(root) as db:
+                _ensure(db)
+                db.execute(
+                    """INSERT INTO autopilot_chat_video_attachments
+                    (customer_id,chat_conversation_id,subject,mode,snapshot_json,final_asset_id,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?)
+                    ON CONFLICT(customer_id,chat_conversation_id,subject,mode) DO UPDATE SET
+                      snapshot_json=excluded.snapshot_json,
+                      final_asset_id=excluded.final_asset_id,
+                      updated_at=excluded.updated_at""",
+                    (customer_id, chat_conversation_id, subject, mode, encoded, final_asset_id, now, now),
+                )
+                row = db.execute(
+                    """SELECT * FROM autopilot_chat_video_attachments
+                    WHERE customer_id=? AND chat_conversation_id=? AND subject=? AND mode=?""",
+                    (customer_id, chat_conversation_id, subject, mode),
+                ).fetchone()
+            break
+        except Exception as exc:
+            retryable = "deadlock" in str(exc).lower() or "serialization" in str(exc).lower()
+            if not retryable or attempt == 3:
+                raise
+            time.sleep(0.05 * (2 ** attempt))
     return _decode(row) or {}
 
 

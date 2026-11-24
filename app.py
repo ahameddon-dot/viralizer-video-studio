@@ -2456,8 +2456,10 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))
     if not payload.confirm_provider_cost:
         raise HTTPException(422, "Confirm the provider-cost action before continuing.")
+    active_execution_id = execution_id
     try:
         execution = confirm_tool_execution(ROOT, customer_id, conversation_id, execution_id)
+        active_execution_id = str(execution.get("id") or execution_id)
         arguments = execution.get("arguments") or {}; name = str(execution.get("tool_name") or "")
         concept_id = str(arguments.get("concept_id") or "")
         if name == "generate_storyboard":
@@ -2535,24 +2537,26 @@ async def confirm_conversation_tool_execution(request: Request, conversation_id:
             summary = "Your final video is ready. The next step is exact-content approval; nothing has been published."
         else:
             raise ValueError("This action still requires the visual approval workflow.")
-        complete_tool_execution(ROOT, customer_id, execution_id, result=result)
+        complete_tool_execution(ROOT, customer_id, active_execution_id, result=result)
         message = append_message(ROOT, customer_id, conversation_id, "assistant", {
             "type": "tool_result", "text": summary, "tool": name,
             "media_url": str(result.get("media_url") or ""), "result": result,
         })
-        return {"execution_id": execution_id, "status": "completed", "result": result, "message": message}
+        return {"execution_id": active_execution_id, "status": "completed", "result": result, "message": message}
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
     except HTTPException as exc:
-        try: complete_tool_execution(ROOT, customer_id, execution_id, error={"message": str(exc.detail)})
+        try: complete_tool_execution(ROOT, customer_id, active_execution_id, error={"message": str(exc.detail)})
         except ValueError: pass
         raise
     except ValueError as exc:
-        try: complete_tool_execution(ROOT, customer_id, execution_id, error={"message": str(exc)})
+        try: complete_tool_execution(ROOT, customer_id, active_execution_id, error={"message": str(exc)})
         except ValueError: pass
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:
         LOGGER.exception("Chat tool confirmation failed execution_id=%s", execution_id)
+        try: complete_tool_execution(ROOT, customer_id, active_execution_id, error={"message": "Provider execution failed before completion."})
+        except ValueError: pass
         raise HTTPException(500, "The approved generation could not start. No provider request was completed; please retry.") from exc
 
 

@@ -271,16 +271,36 @@ def confirm_tool_execution(root: Path, customer_id: str, conversation_id: str, e
             raise ValueError("Tool execution was not found for this conversation.")
         current = dict(row)
         authorization = _load(current.get("authorization_json"), {})
-        if current.get("status") != "blocked" or authorization.get("code") != "cost_confirmation_required":
+        retrying = current.get("status") == "failed" or (
+            current.get("status") == "proposed" and int(current.get("updated_at") or 0) <= int(time.time()) - 120
+        )
+        if current.get("status") != "blocked" and not retrying:
+            raise ValueError("This action is already running or is no longer awaiting confirmation.")
+        previously_confirmed_provider_cost = retrying and current.get("approval_status") == "confirmed" and current.get("cost_class") == "provider_cost"
+        if authorization.get("code") != "cost_confirmation_required" and not previously_confirmed_provider_cost:
             raise ValueError("This action is not awaiting provider-cost confirmation.")
         decision = authorize_tool(root, customer_id, str(current.get("tool_name") or ""), str(current.get("project_context_id") or ""), cost_confirmed=True)
         if not decision.get("execution_enabled"):
             raise PermissionError(str(decision.get("reason") or "The action is not authorized."))
-        updated = db.execute(
-            """UPDATE conversation_tool_executions SET authorization_json=?,approval_status='confirmed',status='proposed',updated_at=?
-            WHERE id=? AND customer_id=? AND conversation_id=? AND status='blocked' RETURNING *""",
-            (_json(decision), int(time.time()), execution_id, customer_id, conversation_id),
-        ).fetchone()
+        now = int(time.time())
+        if retrying:
+            retry_id = uuid.uuid4().hex
+            updated = db.execute(
+                """INSERT INTO conversation_tool_executions
+                (id,conversation_id,customer_id,message_id,workflow_run_id,project_context_id,tool_name,tool_version,
+                 arguments_json,authorization_json,cost_class,approval_status,status,idempotency_key,correlation_id,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING *""",
+                (retry_id, conversation_id, customer_id, current.get("message_id"), current.get("workflow_run_id"),
+                 current.get("project_context_id"), current.get("tool_name"), current.get("tool_version"),
+                 current.get("arguments_json"), _json(decision), current.get("cost_class"), "confirmed", "proposed",
+                 f"{current.get('idempotency_key') or execution_id}:retry:{retry_id}", current.get("correlation_id"), now, now),
+            ).fetchone()
+        else:
+            updated = db.execute(
+                """UPDATE conversation_tool_executions SET authorization_json=?,approval_status='confirmed',status='proposed',updated_at=?
+                WHERE id=? AND customer_id=? AND conversation_id=? AND status='blocked' RETURNING *""",
+                (_json(decision), now, execution_id, customer_id, conversation_id),
+            ).fetchone()
     if not updated:
         raise ValueError("This action has already been handled.")
     result = dict(updated)
