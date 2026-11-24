@@ -110,6 +110,8 @@ services:
         value: true
       - key: RUN_MEDIA_WORKER_IN_WEB
         value: false
+      - key: WEB_CONCURRENCY
+        value: 2
       - key: PROTOTYPE_GENERATION_ENABLED
         value: true
       - key: PROTOTYPE_ALLOWED_ORIGIN
