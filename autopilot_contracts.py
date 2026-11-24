@@ -105,7 +105,7 @@ class KeyframeGenerateRequest(BaseModel):
     # The conversation director and tool contracts support longer storyboards.
     # The route itself verifies the index against the saved storyboard length,
     # so this transport guard must not impose the obsolete three-scene limit.
-    scene_index: int = Field(ge=0, le=20)
+    scene_index: int = Field(ge=0, le=119)
     preserve_identity: bool = True
     user_photo_id: str = Field(default="", pattern=r"^[a-f0-9]{32}$|^$")
     user_direction: str = Field(default="", max_length=2_000)
@@ -113,7 +113,7 @@ class KeyframeGenerateRequest(BaseModel):
 
 
 class KeyframeAnimateRequest(BaseModel):
-    scene_index: int = Field(ge=0, le=20)
+    scene_index: int = Field(ge=0, le=119)
 
 
 class PostForMeConnectionRequest(BaseModel):
@@ -130,7 +130,7 @@ class ConceptGenerateRequest(BaseModel):
     opportunity_id: str = Field(min_length=1, max_length=64)
     platform: Literal["youtube_shorts", "instagram", "tiktok", "linkedin"] = "youtube_shorts"
     goal: str = Field(default="", max_length=300)
-    duration_seconds: int = Field(default=15, ge=5, le=60)
+    duration_seconds: int = Field(default=15, ge=5, le=300)
 
     @field_validator("platform", mode="before")
     @classmethod

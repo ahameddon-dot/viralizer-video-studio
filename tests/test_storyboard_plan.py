@@ -13,7 +13,7 @@ class ScaledStoryboardTests(unittest.TestCase):
         return sp.scaled_storyboard("Big hook.", "AI video", "creators", "Follow for more.", seconds, fake_scene)
 
     def test_scene_counts_and_timing(self):
-        for seconds, count in ((5, 1), (10, 2), (15, 3), (30, 6), (60, 12)):
+        for seconds, count in ((5, 1), (10, 2), (15, 3), (30, 6), (60, 12), (300, 60)):
             scenes = self.build(seconds)
             self.assertEqual(count, len(scenes))
             self.assertEqual(seconds, scenes[-1]["end"])

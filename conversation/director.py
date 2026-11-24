@@ -154,8 +154,8 @@ def _scenes_from_concept(concept: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def parse_duration(text: str) -> int | None:
-    """Return a requested duration in seconds (5..60) or None."""
-    match = re.search(r"\b(\d{1,2})\s*(?:-?\s*)(?:s|sec|secs|second|seconds)\b", text or "", re.I)
+    """Return a requested duration in seconds (5..300) or None."""
+    match = re.search(r"\b(\d{1,3})\s*(?:-?\s*)(?:s|sec|secs|second|seconds)\b", text or "", re.I)
     if not match:
         return None
     value = int(match.group(1))
@@ -512,7 +512,7 @@ _INTENT_RULES = {
     ASK_ABOUT_OPPORTUNITIES: "Answer ONLY from the opportunities listed above. Never ask the customer to restate or list them. Cite rank, score and the reason. Do not call discovery tools. End by asking which one to create.",
     EDIT_SCENE: "Call revise_storyboard for ONLY the referenced scene (scene_index is zero-based: scene 1 is index 0) with the changed narration/visual/motion. Then offer to regenerate that one scene's image. Never touch other scenes.",
     EDIT_WHOLE: "Call revise_storyboard with style_direction (and edits for scenes whose narration should change). Then explain every scene image needs regenerating and ask to proceed.",
-    SET_DURATION: "Acknowledge the requested length (5 to 60 seconds, in 5-second scenes) and tell the customer how many scenes that makes. If no storyboard exists, create it with that duration_seconds.",
+    SET_DURATION: "Acknowledge the requested length (5 to 300 seconds, in 5-second scenes) and tell the customer how many scenes that makes. If no storyboard exists, create it with that duration_seconds.",
     SHOW_RESULTS: "Use the growth report tool. Label simulated data as simulated. If nothing is published yet, say so and suggest the next step.",
     FIND_TRENDS: "Use discover_topics, then rank_opportunities. If the live feed is empty, use the fallback described above instead of asking the customer for ideas.",
     CREATE_FROM_IDEA: "This is the customer's own creative brief, not a trend. Never ask for an opportunity ID and never force trend discovery. If duration is missing, ask once for 5, 10, 15, 30 or 60 seconds. When known, call create_from_idea with the customer's exact idea and show the storyboard.",

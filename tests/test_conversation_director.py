@@ -167,13 +167,14 @@ class ReferenceAndIntentTests(unittest.TestCase):
     def test_duration_parsing(self):
         self.assertEqual(10, d.parse_duration("make it 10 seconds"))
         self.assertEqual(30, d.parse_duration("a 30s video"))
-        self.assertIsNone(d.parse_duration("make it 90 seconds"))
+        self.assertEqual(90, d.parse_duration("make it 90 seconds"))
+        self.assertEqual(300, d.parse_duration("make it 300 seconds"))
         self.assertIsNone(d.parse_duration("make it 2 seconds"))
 
 
 class ScenePlanTests(unittest.TestCase):
     def test_plans_are_whole_five_second_scenes(self):
-        for seconds, scenes, total in ((5, 1, 5), (10, 2, 10), (15, 3, 15), (30, 6, 30), (60, 12, 60), (12, 3, 15), (1, 1, 5), (500, 12, 60)):
+        for seconds, scenes, total in ((5, 1, 5), (10, 2, 10), (15, 3, 15), (30, 6, 30), (60, 12, 60), (300, 60, 300), (12, 3, 15), (1, 1, 5), (500, 60, 300)):
             plan = d.scene_plan(seconds)
             self.assertEqual(scenes, len(plan), seconds)
             self.assertEqual(total, plan[-1][1], seconds)

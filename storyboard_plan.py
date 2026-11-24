@@ -1,7 +1,7 @@
 """Variable-length storyboard planning and safe scene edits (stdlib only).
 
 PixVerse renders fixed 5-second clips, so every video is a whole number of
-5-second scenes: 5s = 1 scene ... 60s = 12 scenes. Durations that are not a
+5-second scenes: 5s = 1 scene ... 300s = 60 scenes. Durations that are not a
 multiple of five are rounded UP so the promised length matches the real video.
 """
 from __future__ import annotations
@@ -11,11 +11,11 @@ import re
 from typing import Any, Callable
 
 SECONDS_PER_SCENE = 5
-MIN_DURATION, MAX_DURATION = 5, 60
+MIN_DURATION, MAX_DURATION = 5, 300
 
 
 def normalize_duration(seconds: Any) -> int:
-    """Clamp to 5..60 and round up to a whole number of 5-second scenes."""
+    """Clamp to 5..300 and round up to a whole number of 5-second scenes."""
     try:
         value = int(float(seconds))
     except (TypeError, ValueError):

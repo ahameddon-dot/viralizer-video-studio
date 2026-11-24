@@ -84,7 +84,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
 
     def test_finalizer_requires_all_variable_length_pixverse_scenes(self):
         self.assertIn('@app.post("/api/autopilot/concepts/{concept_id}/finalize")', self.app)
-        self.assertIn("must contain between 1 and 12 five-second scenes", self.app)
+        self.assertIn("must contain between 1 and 60 five-second scenes", self.app)
         self.assertIn("for scene_index in range(len(storyboard))", self.app)
         self.assertIn("was edited after its image was made", self.app)
         self.assertIn("is not a completed PixVerse clip", self.app)
@@ -96,7 +96,7 @@ class AutopilotReviewUiTests(unittest.TestCase):
         self.assertIn('autopilot_recovery', self.app)
         self.assertIn("async def _ensure_autopilot_finished_video", self.app)
         self.assertIn("for scene_index in range(len(storyboard))", self.app)
-        self.assertIn("1 <= len(storyboard) <= 12", self.app)
+        self.assertIn("1 <= len(storyboard) <= 60", self.app)
         self.assertIn("Waiting for Instagram or YouTube to confirm", self.product)
 
     def test_chat_final_video_includes_speech_branding_and_tracking(self):

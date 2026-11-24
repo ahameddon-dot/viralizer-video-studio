@@ -3108,8 +3108,8 @@ async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload
     if not concept or concept_id != payload.concept_id:
         raise HTTPException(404, "Creative concept was not found.")
     storyboard = concept["content"].get("storyboard") or []
-    if not 1 <= len(storyboard) <= 12:
-        raise HTTPException(409, "The approved storyboard must contain between 1 and 12 five-second scenes.")
+    if not 1 <= len(storyboard) <= 60:
+        raise HTTPException(409, "The approved storyboard must contain between 1 and 60 five-second scenes.")
     clip_root = Path(os.getenv("APP_DATA_DIR", str(ROOT / "data"))) / "autopilot_clips" / customer_id / concept_id
     clip_root.mkdir(parents=True, exist_ok=True)
     clips: list[Path] = []
@@ -3149,7 +3149,7 @@ async def _finalize_autopilot_concept(customer_id: str, concept_id: str, payload
         concat_file.write_text("".join(f"file '{path.as_posix()}'\n" for path in clips), encoding="utf-8")
         completed = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(raw_output)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=max(300, len(clips) * 30),
         )
         if completed.returncode or not raw_output.is_file():
             raw_output.unlink(missing_ok=True)
@@ -3248,8 +3248,6 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
             completed = _completed_finalization(customer_id, concept_id)
             if completed:
                 existing = await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=completed)
-        if existing.get("status") in {"queued", "processing"}:
-            _schedule_autopilot_finalization(customer_id, concept_id)
         return _public_finalization_job(existing)
     completed = _completed_finalization(customer_id, concept_id)
     if completed:
@@ -3259,7 +3257,6 @@ async def finalize_autopilot_concept(request: Request, concept_id: str, payload:
     job = await asyncio.to_thread(
         enqueue_finalization_job, ROOT, customer_id, concept_id, payload.model_dump(mode="json")
     )
-    _schedule_autopilot_finalization(customer_id, concept_id)
     return _public_finalization_job(job)
 
 
@@ -3291,8 +3288,6 @@ async def autopilot_finalization_status(request: Request, concept_id: str):
         completed = _completed_finalization(customer_id, concept_id)
         if completed:
             job = await asyncio.to_thread(finish_finalization_job, ROOT, customer_id, concept_id, result=completed)
-    if job.get("status") in {"queued", "processing"}:
-        _schedule_autopilot_finalization(customer_id, concept_id)
     return _public_finalization_job(job)
 
 
@@ -3595,7 +3590,7 @@ async def _ensure_autopilot_finished_video(filename: str) -> Path | None:
         for scene in storyboard
     ).strip() or " ".join(str((concept or {}).get("content", {}).get("narrative") or (concept or {}).get("content", {}).get("title") or "Viralizer video").split())
     expected = f"viralizer-autopilot-{hashlib.sha256(('branded-speech-v1|' + '|'.join(job_ids) + '|' + narration).encode()).hexdigest()[:32]}.mp4"
-    eligible = 1 <= len(storyboard) <= 12 and filename == expected and all(
+    eligible = 1 <= len(storyboard) <= 60 and filename == expected and all(
         item.get("status") == "complete" and str(item.get("provider_video_url") or "").startswith("https://")
         for item in animations
     )

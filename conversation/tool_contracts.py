@@ -21,14 +21,14 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "narration_text": {"type": "string", "maxLength": 4000},
         "visual_style": {"type": "string", "maxLength": 80},
         "aspect_ratio": {"type": "string", "enum": ["9:16", "16:9", "1:1"]},
-        "duration_seconds": {"type": "integer", "minimum": 5, "maximum": 60}},
+        "duration_seconds": {"type": "integer", "minimum": 5, "maximum": 300}},
         "required": ["idea"], "additionalProperties": False},
-    "create_concepts": {"type": "object", "properties": {"opportunity_id": {"type": "string"}, "platform": {"type": "string", "enum": ["instagram", "youtube", "tiktok", "linkedin"]}, "goal": {"type": "string"}, "duration_seconds": {"type": "integer", "minimum": 5, "maximum": 60, "description": "Video length. Built from 5-second scenes; rounded up to a multiple of 5."}}, "required": ["opportunity_id"], "additionalProperties": False},
+    "create_concepts": {"type": "object", "properties": {"opportunity_id": {"type": "string"}, "platform": {"type": "string", "enum": ["instagram", "youtube", "tiktok", "linkedin"]}, "goal": {"type": "string"}, "duration_seconds": {"type": "integer", "minimum": 5, "maximum": 300, "description": "Video length. Built from 5-second scenes; rounded up to a multiple of 5."}}, "required": ["opportunity_id"], "additionalProperties": False},
     "get_growth_report": {"type": "object", "properties": {}, "additionalProperties": False},
     "revise_storyboard": {"type": "object", "properties": {
         "concept_id": {"type": "string"},
-        "edits": {"type": "array", "maxItems": 12, "items": {"type": "object", "properties": {
-            "scene_index": {"type": "integer", "minimum": 0, "maximum": 11, "description": "Zero-based: scene 1 is index 0."},
+        "edits": {"type": "array", "maxItems": 60, "items": {"type": "object", "properties": {
+            "scene_index": {"type": "integer", "minimum": 0, "maximum": 59, "description": "Zero-based: scene 1 is index 0."},
             "narration": {"type": "string", "description": "New spoken/on-screen line for this scene."},
             "visual": {"type": "string", "description": "What the image should show differently."},
             "motion": {"type": "string", "description": "How the camera/subject should move differently."}},
@@ -37,7 +37,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "summary": {"type": "string", "description": "One short sentence describing the change."}},
         "required": ["concept_id"], "additionalProperties": False},
     "generate_storyboard": {"type": "object", "properties": {"concept_id": {"type": "string"}, "direction": {"type": "string"}}, "required": ["concept_id"], "additionalProperties": False},
-    "generate_keyframe": {"type": "object", "properties": {"concept_id": {"type": "string"}, "scene_index": {"type": "integer", "minimum": 0, "maximum": 20}, "direction": {"type": "string"}}, "required": ["concept_id", "scene_index"], "additionalProperties": False},
+    "generate_keyframe": {"type": "object", "properties": {"concept_id": {"type": "string"}, "scene_index": {"type": "integer", "minimum": 0, "maximum": 59}, "direction": {"type": "string"}}, "required": ["concept_id", "scene_index"], "additionalProperties": False},
     "animate_scene": {"type": "object", "properties": {"concept_id": {"type": "string"}, "scene_index": {"type": "integer", "minimum": 0, "maximum": 20}}, "required": ["concept_id", "scene_index"], "additionalProperties": False},
     "finalize_video": {"type": "object", "properties": {"concept_id": {"type": "string"}}, "required": ["concept_id"], "additionalProperties": False},
     "prepare_publication": {"type": "object", "properties": {"asset_version_id": {"type": "string"}, "title": {"type": "string", "maxLength": 200}, "caption": {"type": "string"}, "destination_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["asset_version_id", "caption", "destination_ids"], "additionalProperties": False},

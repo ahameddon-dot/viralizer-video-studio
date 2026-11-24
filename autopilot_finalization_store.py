@@ -98,6 +98,48 @@ def claim(root: Path, customer_id: str, concept_id: str, lease_seconds: int = 18
     return _decode(row)
 
 
+def claim_due(root: Path, limit: int = 1, lease_seconds: int = 600) -> list[dict[str, Any]]:
+    """Atomically claim restart-safe finalization work for a dedicated worker.
+
+    The web process only enqueues jobs.  Keeping the claim here lets a Render
+    background worker resume expired leases after a deploy or OOM without ever
+    running FFmpeg in the memory-constrained HTTP service.
+    """
+    now = int(time.time())
+    with _connect(root) as db:
+        _ensure(db)
+        if getattr(db, "dialect", "sqlite") == "postgres":
+            rows = db.execute(
+                """WITH candidates AS (
+                  SELECT id FROM autopilot_finalization_jobs
+                  WHERE status IN ('queued','failed','processing')
+                    AND (status<>'processing' OR lease_until<=?)
+                  ORDER BY updated_at FOR UPDATE SKIP LOCKED LIMIT ?
+                )
+                UPDATE autopilot_finalization_jobs AS jobs
+                SET status='processing',
+                    stage='Downloading completed scenes and assembling the final MP4…',
+                    error='',lease_until=?,attempt=attempt+1,updated_at=?
+                FROM candidates WHERE jobs.id=candidates.id RETURNING jobs.*""",
+                (now, limit, now + lease_seconds, now),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                """UPDATE autopilot_finalization_jobs
+                SET status='processing',
+                    stage='Downloading completed scenes and assembling the final MP4…',
+                    error='',lease_until=?,attempt=attempt+1,updated_at=?
+                WHERE id IN (
+                  SELECT id FROM autopilot_finalization_jobs
+                  WHERE status IN ('queued','failed','processing')
+                    AND (status<>'processing' OR lease_until<=?)
+                  ORDER BY updated_at LIMIT ?
+                ) RETURNING *""",
+                (now + lease_seconds, now, now, limit),
+            ).fetchall()
+    return [_decode(row) or {} for row in rows]
+
+
 def renew(root: Path, customer_id: str, concept_id: str, lease_seconds: int = 180) -> None:
     now = int(time.time())
     with _connect(root) as db:
