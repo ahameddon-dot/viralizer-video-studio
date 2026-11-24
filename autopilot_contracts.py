@@ -102,7 +102,10 @@ class BrandSourceAnalyzeRequest(BaseModel):
 
 
 class KeyframeGenerateRequest(BaseModel):
-    scene_index: int = Field(ge=0, le=2)
+    # The conversation director and tool contracts support longer storyboards.
+    # The route itself verifies the index against the saved storyboard length,
+    # so this transport guard must not impose the obsolete three-scene limit.
+    scene_index: int = Field(ge=0, le=20)
     preserve_identity: bool = True
     user_photo_id: str = Field(default="", pattern=r"^[a-f0-9]{32}$|^$")
     user_direction: str = Field(default="", max_length=2_000)
@@ -110,7 +113,7 @@ class KeyframeGenerateRequest(BaseModel):
 
 
 class KeyframeAnimateRequest(BaseModel):
-    scene_index: int = Field(ge=0, le=2)
+    scene_index: int = Field(ge=0, le=20)
 
 
 class PostForMeConnectionRequest(BaseModel):
