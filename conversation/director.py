@@ -155,6 +155,13 @@ def _scenes_from_concept(concept: dict[str, Any]) -> list[dict[str, Any]]:
 
 def parse_duration(text: str) -> int | None:
     """Return a requested duration in seconds (5..300) or None."""
+    # Trusted clients send an unambiguous control value. Prefer it over any
+    # human-readable number in a topic title, reference, narration budget or
+    # creative prompt (for example, "42 seconds" inside source material).
+    control = re.search(r"\bPRODUCTION_DURATION_SECONDS\s*=\s*(\d{1,3})\b", text or "", re.I)
+    if control:
+        value = int(control.group(1))
+        return value if MIN_DURATION <= value <= MAX_DURATION else None
     match = re.search(r"\b(\d{1,3})\s*(?:-?\s*)(?:s|sec|secs|second|seconds)\b", text or "", re.I)
     if not match:
         return None

@@ -170,6 +170,7 @@ class ReferenceAndIntentTests(unittest.TestCase):
         self.assertEqual(90, d.parse_duration("make it 90 seconds"))
         self.assertEqual(300, d.parse_duration("make it 300 seconds"))
         self.assertIsNone(d.parse_duration("make it 2 seconds"))
+        self.assertEqual(5, d.parse_duration("Source mentions 210 seconds. PRODUCTION_DURATION_SECONDS=5"))
 
 
 class ScenePlanTests(unittest.TestCase):
