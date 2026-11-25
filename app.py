@@ -600,6 +600,8 @@ async def require_password(request: Request, call_next):
         or request.url.path == "/api/conversations"
         or request.url.path.startswith("/api/conversations/")
         or request.url.path.startswith("/api/finished-video/viralizer-autopilot-")
+        or request.url.path in {"/api/creatorthon/profile", "/api/creatorthon/topics", "/api/taxonomy"}
+        or request.url.path.startswith("/api/creatorthon/prediction-markets/")
     ) and _provider_relay_request_is_authorized(request)
     # Keep the standalone stakeholder preview independent from the legacy
     # Video Studio login while developing on this machine. Host checking makes
@@ -650,7 +652,7 @@ async def require_password(request: Request, call_next):
         return await call_next(request)
     if request.url.path.startswith("/creatorthon") or request.url.path.startswith("/api/creatorthon"):
         google_user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
-        if request.url.path not in public_paths and not is_public_demo and not google_user:
+        if request.url.path not in public_paths and not is_public_demo and not google_user and not is_provider_relay:
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "Google sign-in required"}, status_code=401)
             if request.url.path.startswith("/creatorthon-v3"):
@@ -1739,6 +1741,17 @@ def creatorthon_admin_user(request: Request) -> dict[str, Any]:
 
 def creatorthon_user(request: Request) -> dict[str, Any]:
     user = read_google_session(request.cookies.get(AUTH_COOKIE, ""))
+    if not user and _provider_relay_request_is_authorized(request):
+        user_id = request.headers.get("X-Viralizer-User-Id", "").strip()
+        if not user_id:
+            raise HTTPException(401, "Verified relay identity required.")
+        email = request.headers.get("X-Viralizer-User-Email", "").strip()
+        user = {
+            "sub": user_id,
+            "email": email,
+            "name": email or "Viralizer user",
+            "is_guest": request.headers.get("X-Viralizer-User-Guest", "") == "1",
+        }
     if not user:
         raise HTTPException(401, "Google sign-in required.")
     if _unlimited_creatorthon_user(user):
