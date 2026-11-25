@@ -1,0 +1,88 @@
+databases:
+  - name: viralizer-video-studio-production-v2-db
+    databaseName: viralizer
+    user: viralizer
+    plan: basic-1gb
+    region: singapore
+    ipAllowList: []
+
+services:
+  - type: web
+    name: viralizer-video-studio-production-v2
+    runtime: docker
+    repo: https://github.com/ahameddon-dot/viralizer-video-studio.git
+    branch: autopilot-staging
+    region: singapore
+    plan: 1c-2g
+    numInstances: 1
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 300
+    envVars: &productionEnv
+      - key: APP_ENVIRONMENT
+        value: production-v2
+      - key: APP_VERSION
+        value: production-v2-1
+      - key: APP_DATA_DIR
+        value: /tmp/viralizer-production-v2-data
+      - key: DATABASE_URL
+        fromDatabase:
+          name: viralizer-video-studio-production-v2-db
+          property: connectionString
+      - key: RUN_MEDIA_WORKER_IN_WEB
+        value: false
+      - key: DAILY_TRENDS_ENABLED
+        value: false
+      - key: MCP_SERVER_URL
+        value: https://mcp.viralizer.ai/mcp
+      - key: MCP_TOOL_NAME
+        value: analyze_topic
+      - key: MCP_TOPIC_ARGUMENT
+        value: keyword
+      - key: PIXVERSE_GROWTH_BASE_URL
+        value: https://growth-api.pixverse.ai
+      - key: OPENAI_IMAGE_MODEL
+        value: gpt-image-2
+      - key: CLOUDFLARE_IMAGE_MODEL
+        value: "@cf/leonardo/lucid-origin"
+      - key: R2_BUCKET_NAME
+        value: viralizer-media
+      - key: APP_PASSWORD
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MCP_API_KEY
+        sync: false
+      - key: PIXVERSE_API_KEY
+        sync: false
+      - key: PIXVERSE_GROWTH_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: POST_FOR_ME_API_KEY
+        sync: false
+      - key: AUTOPILOT_PROVIDER_RELAY_SECRET
+        sync: false
+
+  - type: worker
+    name: viralizer-video-studio-media-worker-v2
+    runtime: docker
+    repo: https://github.com/ahameddon-dot/viralizer-video-studio.git
+    branch: autopilot-staging
+    region: singapore
+    plan: 4c-8g
+    numInstances: 1
+    dockerCommand: python durable_media_worker.py
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 300
+    envVars: *productionEnv
