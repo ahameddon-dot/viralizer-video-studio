@@ -340,6 +340,38 @@ class CreatorthonV3Tests(unittest.TestCase):
         }, 10, "9:16")
         self.assertIn("fully opaque, fully covered athletic clothing", apparel_retry)
         self.assertNotIn("Women's", apparel_retry)
+        innerwear_retry = app._provider_safe_product_retry_prompt({
+            "category": "Fashion",
+            "product": "panty",
+            "product_subtype": "thong",
+            "product_attributes": {"material": "Cotton", "fit": "Slim everyday fit"},
+        }, 10, "9:16")
+        self.assertIn("women's intimate-apparel retail film", innerwear_retry)
+        self.assertIn("Cotton", innerwear_retry)
+        self.assertIn("neutral lower-body retail dress form", innerwear_retry)
+        self.assertNotIn("male model", innerwear_retry)
+        self.assertNotIn("tracksuit", innerwear_retry)
+        self.assertNotIn("athletic clothing", innerwear_retry)
+        sanitized_innerwear = app._provider_safe_product_prompt("premium thong and panty commercial")
+        self.assertNotIn("thong", sanitized_innerwear.casefold())
+        self.assertNotIn("panty", sanitized_innerwear.casefold())
+        self.assertIn("minimal-cut women's opaque undergarment", sanitized_innerwear)
+        innerwear_prompt = app._creatorthon_product_prompt({
+            "category": "Fashion",
+            "product": "panty",
+            "product_subtype": "thong",
+            "product_attributes": {"material": "Cotton", "fit": "Slim", "occasion": "Everyday"},
+            "human_interaction": "Adult model runway walk",
+            "product_visual_spec": {
+                "subject": "one exact thong",
+                "environment": "premium apparel studio",
+                "beats": ["flat lay reveal", "fabric detail", "hero product view"],
+            },
+        }, 10, "9:16")
+        self.assertIn("dress form", innerwear_prompt)
+        self.assertNotIn("tracksuit", innerwear_prompt.casefold())
+        self.assertNotIn("male model", innerwear_prompt.casefold())
+        self.assertNotIn("thong", innerwear_prompt.casefold())
         minimal_retry = app._minimal_grounded_retry_prompt(10, "9:16")
         self.assertIn("uploaded reference", minimal_retry)
         self.assertIn("exact main subject", minimal_retry)

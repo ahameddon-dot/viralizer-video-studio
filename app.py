@@ -165,6 +165,8 @@ def _provider_safe_product_prompt(prompt: str) -> str:
         r"Tamil Muslim wedding(?:-style)?": "traditional Tamil wedding-service",
         r"Muslim wedding(?:-style)?": "traditional wedding-service",
         r"Beef where locally appropriate": "regional meat biryani",
+        r"\bthong\b": "minimal-cut women's opaque undergarment",
+        r"\bpant(?:y|ies)\b": "women's opaque undergarment",
     }
     for pattern, replacement in replacements.items():
         safe = re.sub(pattern, replacement, safe, flags=re.IGNORECASE)
@@ -186,6 +188,21 @@ def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, 
             "accurate hands, hygienic service, warm documentary lighting, no text, no logos, no unrelated food."
         )
     category = str(content.get("category") or content.get("industry") or "").strip().casefold()
+    subtype = str(content.get("product_subtype") or content.get("topic") or "").strip().casefold()
+    innerwear_terms = {"panty", "panties", "thong", "underwear", "innerwear", "lingerie", "brief", "briefs"}
+    if any(term in f"{product} {subtype}" for term in innerwear_terms):
+        attributes = content.get("product_attributes") if isinstance(content.get("product_attributes"), dict) else {}
+        material = str(attributes.get("material") or "opaque cotton fabric").strip()
+        fit = str(attributes.get("fit") or attributes.get("cut") or "minimal-cut everyday fit").strip()
+        return (
+            f"Create a {duration}-second {aspect} premium women's intimate-apparel retail film. The sole product is one "
+            f"fully opaque minimal-cut women's undergarment made from {material}, with a {fit}. Show the exact same item "
+            "throughout on a neutral lower-body retail dress form: first a clean full product reveal, then macro fabric, "
+            "seam and waistband detail, then a slow turntable hero view. Preserve its exact colour, cut, stitching and "
+            "proportions. Tasteful luxury catalogue lighting and realistic fabric physics. Keep the scene limited to "
+            "the dress form, product plinth and premium studio. Department-store product presentation with no people, "
+            "captions, branding or unrelated garments."
+        )
     fashion_terms = {"fashion", "apparel", "clothing", "activewear", "sportswear"}
     if category in fashion_terms or product in fashion_terms:
         return (
@@ -243,6 +260,14 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     mood = clean(content.get("visual_mood"), 12)
     platform = clean(content.get("target_platform"), 12)
     human_interaction = clean(content.get("human_interaction"), 80)
+    identity_text = f"{product} {subtype}".casefold()
+    innerwear_terms = ("panty", "panties", "thong", "underwear", "innerwear", "lingerie", "brief", "briefs")
+    is_innerwear = industry.casefold() == "fashion" and any(term in identity_text for term in innerwear_terms)
+    if is_innerwear:
+        human_interaction = (
+            "Product-only retail presentation on a neutral lower-body dress form; the selected women's undergarment "
+            "is the sole visible fashion item in a tasteful department-store catalogue scene"
+        )
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
     environment = clean(spec.get("environment"), 60) or "a realistic professional setting appropriate to the product"
