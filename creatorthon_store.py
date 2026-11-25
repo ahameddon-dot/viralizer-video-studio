@@ -208,6 +208,11 @@ def _connect(root: Path) -> Iterator[Any]:
         with _POSTGRES_POOL.connection(timeout=10) as connection:
             db = _PostgresAdapter(connection)
             try:
+                # Supavisor connections do not always inherit a usable
+                # search_path.  Pin it for the whole session so both bootstrap
+                # DDL and the application's existing unqualified table queries
+                # consistently resolve to the production public schema.
+                db.execute("SET search_path TO public")
                 if not _POSTGRES_READY:
                     _ensure_postgres_schema(db)
                     connection.commit()
