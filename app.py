@@ -3286,6 +3286,21 @@ async def lock_autopilot_concept_narration(
         raise HTTPException(404, str(exc)) from exc
 
 
+@app.get("/api/autopilot/concepts/{concept_id}/narration")
+async def autopilot_concept_narration(request: Request, concept_id: str):
+    """Return the director's current complete storyboard narration before it is locked."""
+    user = autopilot_user(request); customer_id = str(user.get("sub", ""))
+    concept = get_concept(ROOT, customer_id, concept_id)
+    if not concept:
+        raise HTTPException(404, "Creative concept was not found.")
+    content = concept.get("content") or {}
+    storyboard = content.get("storyboard") or []
+    narration = " ".join(
+        " ".join(str(scene.get("narration") or "").split()) for scene in storyboard
+    ).strip() or " ".join(str(content.get("narration_script") or "").split())
+    return {"concept_id": concept_id, "narration": narration, "scene_count": len(storyboard)}
+
+
 @app.get("/api/autopilot/concepts/{concept_id}/finalize/status")
 async def autopilot_finalization_status(request: Request, concept_id: str):
     user = autopilot_user(request); customer_id = str(user.get("sub", ""))

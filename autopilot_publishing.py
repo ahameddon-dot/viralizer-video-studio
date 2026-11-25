@@ -15,6 +15,7 @@ from autopilot_contracts import PublicationPayload
 from autopilot_providers import PostForMeAdapter, sanitize_publication_result
 from autopilot_store import authorize_publication_step
 from creatorthon_store import _connect
+from object_store import restore_file as restore_object_file
 
 
 class PublishingAdapter(Protocol):
@@ -51,7 +52,7 @@ class LocalMediaPostForMeAdapter:
         if not match:
             raise ValueError("The approved video is not eligible for secure Post for Me upload.")
         path = Path(os.getenv("APP_DATA_DIR", str(self.root / "data"))) / "finished_videos" / match.group(1)
-        if not path.is_file():
+        if not path.is_file() and not await restore_object_file(path, f"finished_videos/{match.group(1)}"):
             raise ValueError("The approved video file is unavailable. Restore the saved project and retry.")
         digest = hashlib.sha256()
         with path.open("rb") as source:
