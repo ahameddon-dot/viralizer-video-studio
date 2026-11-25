@@ -1192,6 +1192,7 @@ class CreatorthonProfileRequest(BaseModel):
 
 class CreatorthonTopicsRequest(BaseModel):
     interests: list[str] = Field(min_length=1, max_length=4)
+    personalize: bool = True
 
 
 class CreatorthonObjectiveRequest(BaseModel):
@@ -4300,6 +4301,12 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
                 cached_keys.add(key)
                 cached_topics.append(topic)
     if all_categories_cached and cached_topics:
+        if not payload.personalize:
+            return {
+                "topics": cached_topics[:50], "count": min(len(cached_topics), 50),
+                "source": "Viralizer category intelligence cache", "cached": True,
+                "personalized": False,
+            }
         personalized = _personalize_topics_fast(cached_topics, role, user_type, interests[0])
         return {
             "topics": personalized, "count": len(personalized),
@@ -4321,6 +4328,9 @@ async def creatorthon_topics(request: Request, payload: CreatorthonTopicsRequest
         if key and key not in combined_keys:
             combined_keys.add(key)
             combined.append(item)
+    if not payload.personalize:
+        return {"topics": combined[:50], "count": min(len(combined), 50),
+                "source": "Worldwide public news sources", "personalized": False}
     personalized = _personalize_topics_fast(combined, role, user_type, interests[0])
     return {"topics": personalized, "count": len(personalized), "source": "Worldwide public news sources",
             "creator_role": role, "role_match_scale": 200}
