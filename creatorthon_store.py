@@ -119,6 +119,22 @@ def _schema_statements() -> list[str]:
     ]
 
 
+def _ensure_postgres_schema(db: Any) -> None:
+    """Create/repair the complete shared schema before a process serves queries.
+
+    Render can start several web instances at the same time.  Keep all bootstrap
+    DDL under one database-wide transaction lock so an instance cannot observe a
+    half-created schema while another instance is still applying migrations.
+    """
+    db.execute("SELECT pg_advisory_xact_lock(hashtext(?))", ("viralizer-schema-bootstrap",))
+    for statement in _schema_statements():
+        db.execute(statement)
+    for name, declaration in _project_columns():
+        _ensure_column(db, "creatorthon_projects", name, declaration)
+    _ensure_event_account_schema(db)
+    apply_migrations(db, Path(__file__).resolve().parent / "migrations")
+
+
 def _project_columns() -> tuple[tuple[str, str], ...]:
     return (
         ("title", "TEXT NOT NULL DEFAULT ''"), ("prompt_json", "TEXT NOT NULL DEFAULT '{}'"),
@@ -193,13 +209,12 @@ def _connect(root: Path) -> Iterator[Any]:
             db = _PostgresAdapter(connection)
             try:
                 if not _POSTGRES_READY:
-                    for statement in _schema_statements():
-                        db.execute(statement)
-                    for name, declaration in _project_columns():
-                        _ensure_column(db, "creatorthon_projects", name, declaration)
-                    _ensure_event_account_schema(db)
-                    apply_migrations(db, Path(__file__).resolve().parent / "migrations")
+                    _ensure_postgres_schema(db)
                     connection.commit()
+                    # Set the process-local ready flag only after PostgreSQL has
+                    # durably committed every schema statement.  Previously the
+                    # flag was set before commit, so a failed commit poisoned the
+                    # process and every later request skipped schema repair.
                     _POSTGRES_READY = True
                 yield db
                 connection.commit()
