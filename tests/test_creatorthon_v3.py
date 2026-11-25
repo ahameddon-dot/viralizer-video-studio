@@ -346,16 +346,17 @@ class CreatorthonV3Tests(unittest.TestCase):
             "product_subtype": "thong",
             "product_attributes": {"material": "Cotton", "fit": "Slim everyday fit"},
         }, 10, "9:16")
-        self.assertIn("women's intimate-apparel retail film", innerwear_retry)
+        self.assertIn("department-store lingerie commercial", innerwear_retry)
         self.assertIn("Cotton", innerwear_retry)
-        self.assertIn("neutral lower-body retail dress form", innerwear_retry)
+        self.assertIn("adult woman professional fashion model", innerwear_retry)
+        self.assertIn("thong brief's narrow T-back cut", innerwear_retry)
+        self.assertIn("rear three-quarter catalogue view", innerwear_retry)
         self.assertNotIn("male model", innerwear_retry)
         self.assertNotIn("tracksuit", innerwear_retry)
         self.assertNotIn("athletic clothing", innerwear_retry)
-        sanitized_innerwear = app._provider_safe_product_prompt("premium thong and panty commercial")
-        self.assertNotIn("thong", sanitized_innerwear.casefold())
-        self.assertNotIn("panty", sanitized_innerwear.casefold())
-        self.assertIn("minimal-cut women's opaque undergarment", sanitized_innerwear)
+        preserved_innerwear = app._provider_safe_product_prompt("premium thong and panty commercial")
+        self.assertIn("thong", preserved_innerwear.casefold())
+        self.assertIn("panty", preserved_innerwear.casefold())
         innerwear_prompt = app._creatorthon_product_prompt({
             "category": "Fashion",
             "product": "panty",
@@ -368,10 +369,11 @@ class CreatorthonV3Tests(unittest.TestCase):
                 "beats": ["flat lay reveal", "fabric detail", "hero product view"],
             },
         }, 10, "9:16")
-        self.assertIn("dress form", innerwear_prompt)
+        self.assertIn("adult woman professional lingerie model", innerwear_prompt)
+        self.assertIn("narrow T-back cut", innerwear_prompt)
         self.assertNotIn("tracksuit", innerwear_prompt.casefold())
         self.assertNotIn("male model", innerwear_prompt.casefold())
-        self.assertNotIn("thong", innerwear_prompt.casefold())
+        self.assertIn("thong", innerwear_prompt.casefold())
         minimal_retry = app._minimal_grounded_retry_prompt(10, "9:16")
         self.assertIn("uploaded reference", minimal_retry)
         self.assertIn("exact main subject", minimal_retry)
@@ -380,6 +382,7 @@ class CreatorthonV3Tests(unittest.TestCase):
         self.assertIn("provider_safe_retry", app_source)
         self.assertIn("_minimal_grounded_retry_prompt", app_source)
         self.assertIn("Generating video with provider-safe direction", app_source)
+        self.assertIn("Viralizer stopped instead of replacing the thong, model, or garment", app_source)
 
     def test_v3_custom_domain_serves_v3_from_root(self):
         request = Request({

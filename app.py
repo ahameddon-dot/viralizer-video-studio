@@ -165,8 +165,7 @@ def _provider_safe_product_prompt(prompt: str) -> str:
         r"Tamil Muslim wedding(?:-style)?": "traditional Tamil wedding-service",
         r"Muslim wedding(?:-style)?": "traditional wedding-service",
         r"Beef where locally appropriate": "regional meat biryani",
-        r"\bthong\b": "minimal-cut women's opaque undergarment",
-        r"\bpant(?:y|ies)\b": "women's opaque undergarment",
+        r"sexuali[sz]ed posing": "provocative editorial framing",
     }
     for pattern, replacement in replacements.items():
         safe = re.sub(pattern, replacement, safe, flags=re.IGNORECASE)
@@ -189,19 +188,19 @@ def _provider_safe_product_retry_prompt(content: dict[str, Any], duration: int, 
         )
     category = str(content.get("category") or content.get("industry") or "").strip().casefold()
     subtype = str(content.get("product_subtype") or content.get("topic") or "").strip().casefold()
-    innerwear_terms = {"panty", "panties", "thong", "underwear", "innerwear", "lingerie", "brief", "briefs"}
-    if any(term in f"{product} {subtype}" for term in innerwear_terms):
+    if _is_innerwear_product(content):
         attributes = content.get("product_attributes") if isinstance(content.get("product_attributes"), dict) else {}
         material = str(attributes.get("material") or "opaque cotton fabric").strip()
         fit = str(attributes.get("fit") or attributes.get("cut") or "minimal-cut everyday fit").strip()
         return (
-            f"Create a {duration}-second {aspect} premium women's intimate-apparel retail film. The sole product is one "
-            f"fully opaque minimal-cut women's undergarment made from {material}, with a {fit}. Show the exact same item "
-            "throughout on a neutral lower-body retail dress form: first a clean full product reveal, then macro fabric, "
-            "seam and waistband detail, then a slow turntable hero view. Preserve its exact colour, cut, stitching and "
-            "proportions. Tasteful luxury catalogue lighting and realistic fabric physics. Keep the scene limited to "
-            "the dress form, product plinth and premium studio. Department-store product presentation with no people, "
-            "captions, branding or unrelated garments."
+            f"Create a {duration}-second {aspect} premium department-store lingerie commercial with one clearly adult "
+            f"woman professional fashion model, age 25 or older. She wears the exact same fully opaque {material} thong "
+            f"brief with a {fit}, paired with a modest opaque camisole. Begin on a full-body front runway view, follow one "
+            "natural confident walk, show a tasteful side turn and brief rear three-quarter catalogue view that clearly "
+            "shows the thong brief's narrow T-back cut, then return to a polished front hero pose. Preserve the exact "
+            "garment colour, waistband, seams, cut and proportions in every frame. Neutral professional expression, "
+            "department-store catalogue posture, realistic fabric movement and premium studio lighting. One consistent "
+            "adult woman and one consistent thong brief throughout; no garment substitution, captions or branding."
         )
     fashion_terms = {"fashion", "apparel", "clothing", "activewear", "sportswear"}
     if category in fashion_terms or product in fashion_terms:
@@ -233,6 +232,12 @@ def _is_sensitive_provider_rejection(exc: Exception) -> bool:
     )
 
 
+def _is_innerwear_product(content: dict[str, Any]) -> bool:
+    """Identify intimate apparel without treating all Fashion products as activewear."""
+    identity = " ".join(str(content.get(key) or "") for key in ("product", "product_subtype", "topic")).casefold()
+    return bool(re.search(r"\b(?:panty|panties|thong|underwear|innerwear|lingerie|brief|briefs)\b", identity))
+
+
 def _minimal_grounded_retry_prompt(duration: int, aspect_ratio: str) -> str:
     """Last-resort visual-only direction; the uploaded reference remains the source of truth."""
     aspect = {"9:16": "vertical", "16:9": "landscape", "1:1": "square"}.get(aspect_ratio, "vertical")
@@ -260,13 +265,12 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
     mood = clean(content.get("visual_mood"), 12)
     platform = clean(content.get("target_platform"), 12)
     human_interaction = clean(content.get("human_interaction"), 80)
-    identity_text = f"{product} {subtype}".casefold()
-    innerwear_terms = ("panty", "panties", "thong", "underwear", "innerwear", "lingerie", "brief", "briefs")
-    is_innerwear = industry.casefold() == "fashion" and any(term in identity_text for term in innerwear_terms)
+    is_innerwear = industry.casefold() == "fashion" and _is_innerwear_product(content)
     if is_innerwear:
         human_interaction = (
-            "Product-only retail presentation on a neutral lower-body dress form; the selected women's undergarment "
-            "is the sole visible fashion item in a tasteful department-store catalogue scene"
+            "One clearly adult woman professional lingerie model, age 25 or older, performs a neutral department-store "
+            "runway walk wearing the exact thong brief with a modest opaque camisole; include front, side and tasteful "
+            "rear three-quarter catalogue views that prove the narrow T-back cut without changing the garment"
         )
     spec = content.get("product_visual_spec") if isinstance(content.get("product_visual_spec"), dict) else {}
     subject = clean(spec.get("subject"), 60) or f"the real {subtype} product"
@@ -300,7 +304,7 @@ def _creatorthon_product_prompt(content: dict[str, Any], duration: int, aspect_r
         f"ADVERTISING ART DIRECTION: {style_direction or style}. Make every frame feel intentionally art-directed for a premium paid social campaign, never like generic stock footage.",
         f"CAMPAIGN: objective {goal or 'conversion'}; target audience {audience or 'relevant customers'}; visual mood {mood or 'premium'}; delivery {platform or aspect}.",
         f"HUMAN PRESENTATION: {human_interaction}" if human_interaction else "Show believable, natural interaction by the intended adult customer whenever people improve the product demonstration.",
-        "For fashion, swimwear, lingerie, innerwear, sheer or transparent garments: use clearly adult professional models only, preserve the garment's real material and transparency, and use selected opaque undergarments, a coverage garment, bodysuit, layering, strategic commercial coverage, or mannequin presentation. Never expose nipples or genitals; never use erotic posing, fetish framing, voyeuristic angles, or an ambiguous-age model.",
+        "For fashion, swimwear, lingerie, innerwear, sheer or transparent garments: use clearly adult professional models age 25 or older, preserve the exact garment category, cut and material, pair it with tasteful opaque catalogue coverage, and use neutral department-store posture and camera angles.",
         "CONVERSION ARC: use the first 2 seconds for an unmistakable scroll-stopping product hook; demonstrate one concrete customer benefit through visible action; build aspiration or appetite; finish on the exact same product in a polished hero composition with clean negative space for a separately added call to action.",
         (f"SEQUENCE RULE: {sequence_mode}. Treat the clip as one continuous event with natural temporal and spatial continuity." if sequence_mode else ""),
         f"CATEGORY CONTINUITY LOCK: preserve the {category_continuity}. Do not jump to a second location, replace the subject, change a person's identity or wardrobe, or reset the time of day.",
@@ -6356,6 +6360,12 @@ async def generate_video(request: GenerateRequest):
             except VideoProviderError as retry_exc:
                 if not _is_sensitive_provider_rejection(retry_exc):
                     raise HTTPException(502, str(retry_exc)) from retry_exc
+                if _is_innerwear_product(content):
+                    raise HTTPException(
+                        422,
+                        "The video provider would not generate the exact adult lingerie catalogue concept. "
+                        "Viralizer stopped instead of replacing the thong, model, or garment. No video credit was spent.",
+                    ) from retry_exc
                 minimal_prompt = _minimal_grounded_retry_prompt(request.duration, request.aspect_ratio)
                 try:
                     job_id = await generate_with_provider(
