@@ -8,7 +8,22 @@ ROOT = Path(__file__).resolve().parent
 async def main() -> None:
     # Both queues share the existing 2 GB worker. They remain isolated durable
     # database queues, and each resumes expired leases after restarts/deploys.
-    await asyncio.gather(media_scheduler(ROOT), finalization_scheduler(ROOT))
+    # Isolate the durable consumers: a transient failure in the Autopilot queue
+    # must never terminate Creatorthon video finishing, and vice versa.
+    async def supervise(name: str, scheduler) -> None:
+        while True:
+            try:
+                await scheduler(ROOT)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"{name} scheduler crashed; restarting: {exc}", flush=True)
+                await asyncio.sleep(5)
+
+    await asyncio.gather(
+        supervise("media", media_scheduler),
+        supervise("finalization", finalization_scheduler),
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

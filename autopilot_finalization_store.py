@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -11,9 +12,25 @@ from typing import Any
 from creatorthon_store import _connect
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
+
 def _ensure(db: Any) -> None:
-    db.execute(
-        """CREATE TABLE IF NOT EXISTS autopilot_finalization_jobs (
+    """Initialize the queue schema once per process.
+
+    Repeating DDL on every queue poll acquires Postgres relation locks and can
+    deadlock with another web/worker process checking the same queue.
+    """
+    global _SCHEMA_READY
+    postgres = getattr(db, "dialect", "sqlite") == "postgres"
+    if postgres and _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if postgres and _SCHEMA_READY:
+            return
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS autopilot_finalization_jobs (
           id TEXT PRIMARY KEY,
           customer_id TEXT NOT NULL,
           concept_id TEXT NOT NULL,
@@ -27,12 +44,14 @@ def _ensure(db: Any) -> None:
           created_at BIGINT NOT NULL,
           updated_at BIGINT NOT NULL,
           UNIQUE(customer_id, concept_id)
-        )"""
-    )
-    db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_autopilot_finalization_status "
-        "ON autopilot_finalization_jobs(status, lease_until)"
-    )
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_autopilot_finalization_status "
+            "ON autopilot_finalization_jobs(status, lease_until)"
+        )
+        if postgres:
+            _SCHEMA_READY = True
 
 
 def _decode(row: Any) -> dict[str, Any] | None:

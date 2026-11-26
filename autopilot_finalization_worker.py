@@ -55,9 +55,16 @@ async def process_claimed(root: Path, job: dict) -> None:
 async def scheduler(root: Path) -> None:
     """Continuously consume durable finalization jobs, one memory-heavy job at a time."""
     while True:
-        jobs = await asyncio.to_thread(claim_due, root, 1, 600)
-        if not jobs:
+        try:
+            jobs = await asyncio.to_thread(claim_due, root, 1, 600)
+            if jobs:
+                await process_claimed(root, jobs[0])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A deadlock aborts only this transaction. Retrying is safe because
+            # jobs are durable and protected by expiring leases.
+            LOG.exception("Autopilot finalization queue poll failed; retrying")
             await asyncio.sleep(5)
             continue
-        await process_claimed(root, jobs[0])
-        await asyncio.sleep(2)
+        await asyncio.sleep(2 if jobs else 5)
